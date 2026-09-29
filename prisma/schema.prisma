@@ -1,0 +1,124 @@
+// Laptop Clinic CRM — Prisma schema
+// One schema, grouped by module (see blueprint §11).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Foundation: roles & users ───────────────────────────────────────────────
+
+model Role {
+  id           String   @id @default(cuid())
+  code         String   @unique // ADMIN, BRANCH_MANAGER, SALES …
+  name         String
+  // Super-admin roles see every active module and menu without permission rows.
+  isSuperAdmin Boolean  @default(false)
+  // Landing page after login, e.g. "/lab" for the chip coordinator.
+  homePath     String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now()) @db.Timestamptz
+  updatedAt    DateTime @updatedAt @db.Timestamptz
+
+  users       User[]
+  permissions RolePermission[]
+
+  @@map("role")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  email        String?  @unique
+  name         String
+  passwordHash String
+  roleId       String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now()) @db.Timestamptz
+  updatedAt    DateTime @updatedAt @db.Timestamptz
+
+  role Role @relation(fields: [roleId], references: [id])
+
+  @@index([roleId])
+  @@map("user")
+}
+
+// ─── Navigation: modules → groups → items ────────────────────────────────────
+//
+// Module  = one icon on the rail / one tile in the app switcher.
+// Menu    = entries of the module sidebar. A GROUP is a collapsible heading,
+//           an ITEM is a link. Items may sit directly under a module
+//           (parentId = null) or inside a group.
+//
+// Visibility: an ITEM shows when the user's role has RolePermission.canView;
+// a GROUP shows when at least one child item shows; a MODULE shows when at
+// least one of its items shows. Add rows here and the UI picks them up.
+
+enum MenuType {
+  GROUP
+  ITEM
+}
+
+model Module {
+  id        String   @id @default(cuid())
+  code      String   @unique // "service"
+  title     String // "Service"
+  icon      String // lucide icon name in kebab-case, e.g. "wrench"
+  path      String   @unique // route prefix, e.g. "/service"
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  menus Menu[]
+
+  @@map("module")
+}
+
+model Menu {
+  id        String   @id @default(cuid())
+  moduleId  String
+  parentId  String?
+  type      MenuType @default(ITEM)
+  code      String   @unique // "service.cases.all"
+  title     String
+  icon      String? // lucide icon name, optional
+  path      String?  @unique // required for ITEM, null for GROUP
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  module      Module           @relation(fields: [moduleId], references: [id])
+  parent      Menu?            @relation("MenuTree", fields: [parentId], references: [id])
+  children    Menu[]           @relation("MenuTree")
+  permissions RolePermission[]
+
+  @@index([moduleId])
+  @@index([parentId])
+  @@map("menu")
+}
+
+model RolePermission {
+  id         String   @id @default(cuid())
+  roleId     String
+  menuId     String
+  canView    Boolean  @default(true)
+  canCreate  Boolean  @default(false)
+  canEdit    Boolean  @default(false)
+  canDelete  Boolean  @default(false)
+  canApprove Boolean  @default(false)
+  createdAt  DateTime @default(now()) @db.Timestamptz
+  updatedAt  DateTime @updatedAt @db.Timestamptz
+
+  role Role @relation(fields: [roleId], references: [id])
+  menu Menu @relation(fields: [menuId], references: [id])
+
+  @@unique([roleId, menuId])
+  @@index([menuId])
+  @@map("role_permission")
+}
