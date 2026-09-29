@@ -37,11 +37,32 @@ export async function deleteSession() {
 
 export type CurrentUser = {
   id: string;
+  userCode: string;
   username: string;
   name: string;
-  email: string | null;
-  role: { id: string; code: string; name: string; isSuperAdmin: boolean; homePath: string | null };
+  email: string;
+  companyId: string;
+  branchId: string | null;
+  defaultModuleId: string | null;
+  isPrimaryAdmin: boolean;
+  privilege: {
+    id: string;
+    code: string;
+    name: string;
+    isSuperAdmin: boolean;
+    homePath: string | null;
+  };
 };
+
+/** True when a user row may sign in / keep a session. */
+export function canSignIn(u: {
+  isActive: boolean;
+  isLocked: boolean;
+  status: string;
+  privilege: { isActive: boolean };
+}) {
+  return u.isActive && !u.isLocked && u.status === "WORKING" && u.privilege.isActive;
+}
 
 /** The signed-in user, or null. Cached per request. */
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
@@ -51,26 +72,29 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
 
   const user = await db.user.findUnique({
     where: { id: session.userId },
-    select: {
-      id: true,
-      username: true,
-      name: true,
-      email: true,
-      isActive: true,
-      role: {
-        select: { id: true, code: true, name: true, isSuperAdmin: true, homePath: true, isActive: true },
-      },
-    },
+    include: { privilege: true },
   });
-  if (!user || !user.isActive || !user.role.isActive) return null;
+  if (!user || !canSignIn(user)) return null;
 
-  const { id, username, name, email, role } = user;
+  const p = user.privilege;
   return {
-    id,
-    username,
-    name,
-    email,
-    role: { id: role.id, code: role.code, name: role.name, isSuperAdmin: role.isSuperAdmin, homePath: role.homePath },
+    id: user.id,
+    userCode: user.userCode,
+    username: user.username,
+    name: [user.firstName, user.lastName].filter(Boolean).join(" "),
+    email: user.email,
+    companyId: user.companyId,
+    branchId: user.branchId,
+    defaultModuleId: user.defaultModuleId,
+    isPrimaryAdmin: user.isPrimaryAdmin,
+    privilege: {
+      id: p.id,
+      code: p.code,
+      name: p.name,
+      // A primary admin always gets full access, whatever the privilege says.
+      isSuperAdmin: p.isSuperAdmin || user.isPrimaryAdmin,
+      homePath: p.homePath,
+    },
   };
 });
 

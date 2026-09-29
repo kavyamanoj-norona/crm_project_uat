@@ -6,7 +6,7 @@ import type { NavEntry, NavItem, NavModule } from "@/lib/navigation";
 
 /**
  * Builds the rail + sidebar tree for a user straight from the database.
- * - ITEM   visible when the role has canView on it (super-admin sees all)
+ * - ITEM   visible when the privilege has canView on it (super-admin sees all)
  * - GROUP  visible when it has at least one visible item
  * - MODULE visible when it has at least one visible item
  */
@@ -22,10 +22,10 @@ export const getNavigation = cache(async (user: CurrentUser): Promise<NavModule[
         },
       },
     }),
-    user.role.isSuperAdmin
+    user.privilege.isSuperAdmin
       ? Promise.resolve(null)
-      : db.rolePermission.findMany({
-          where: { roleId: user.role.id, canView: true },
+      : db.privilegePermission.findMany({
+          where: { privilegeId: user.privilege.id, canView: true },
           select: { menuId: true },
         }),
   ]);

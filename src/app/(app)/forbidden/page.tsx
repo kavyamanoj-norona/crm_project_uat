@@ -7,7 +7,7 @@ export default function ForbiddenPage() {
     <StatusPage
       code="403"
       title="You don't have access"
-      message="Your role doesn't include this page. Ask an administrator if you need it."
+      message="Your privilege doesn't include this page. Ask an administrator if you need it."
       primary={{ href: "/", label: "Go to my home" }}
     />
   );

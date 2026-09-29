@@ -1,32 +1,32 @@
 // Module map from the blueprint §4. Icons are lucide names in kebab-case.
-// `roles` = who can view (ADMIN is super-admin and sees everything anyway).
-// `readOnly` = roles that can view but not create/edit.
-// `approve` = roles that get canApprove on that item.
+// `roles` = privileges that can view (ADMIN is super-admin and sees everything anyway).
+// `readOnly` = privileges that can view but not create/edit.
+// `approve` = privileges that get canApprove on that item.
 
-export const ROLES = [
-  { code: "ADMIN", name: "Admin / Owner", isSuperAdmin: true, homePath: "/dashboard/owner" },
-  { code: "BRANCH_MANAGER", name: "Branch Manager", isSuperAdmin: false, homePath: "/dashboard" },
-  { code: "SALES", name: "Sales", isSuperAdmin: false, homePath: "/dashboard" },
-  { code: "PURCHASE_MANAGER", name: "Purchase Manager", isSuperAdmin: false, homePath: "/inventory/stock" },
-  { code: "CUSTOMER_SUCCESS", name: "Customer Success", isSuperAdmin: false, homePath: "/cs/amount-verification" },
-  { code: "CHIP_COORDINATOR", name: "Chip Level Coordinator", isSuperAdmin: false, homePath: "/lab/inbound" },
+export const PRIVILEGES = [
+  { code: "ADMIN", name: "Admin / Owner", isSuperAdmin: true, isBranchBound: false, homePath: "/dashboard/owner" },
+  { code: "BRANCH_MANAGER", name: "Branch Manager", isSuperAdmin: false, isBranchBound: true, homePath: "/dashboard" },
+  { code: "SALES", name: "Sales", isSuperAdmin: false, isBranchBound: true, homePath: "/dashboard" },
+  { code: "PURCHASE_MANAGER", name: "Purchase Manager", isSuperAdmin: false, isBranchBound: false, homePath: "/inventory/stock" },
+  { code: "CUSTOMER_SUCCESS", name: "Customer Success", isSuperAdmin: false, isBranchBound: false, homePath: "/cs/amount-verification" },
+  { code: "CHIP_COORDINATOR", name: "Chip Level Coordinator", isSuperAdmin: false, isBranchBound: true, homePath: "/lab/inbound" },
 ] as const;
 
-export type RoleCode = (typeof ROLES)[number]["code"];
+export type PrivilegeCode = (typeof PRIVILEGES)[number]["code"];
 
 const BM = "BRANCH_MANAGER";
 const SALES = "SALES";
 const PM = "PURCHASE_MANAGER";
 const CS = "CUSTOMER_SUCCESS";
 const CHIP = "CHIP_COORDINATOR";
-const EVERYONE: RoleCode[] = [BM, SALES, PM, CS, CHIP];
+const EVERYONE: PrivilegeCode[] = [BM, SALES, PM, CS, CHIP];
 
 export type ItemDef = {
   title: string;
   path: string;
   icon: string;
-  roles?: RoleCode[]; // defaults to the module's roles
-  approve?: RoleCode[];
+  roles?: PrivilegeCode[]; // defaults to the module's roles
+  approve?: PrivilegeCode[];
 };
 export type GroupDef = { group: string; icon?: string; items: ItemDef[] };
 export type ModuleDef = {
@@ -34,8 +34,8 @@ export type ModuleDef = {
   title: string;
   icon: string;
   path: string;
-  roles: RoleCode[];
-  readOnly?: RoleCode[];
+  roles: PrivilegeCode[];
+  readOnly?: PrivilegeCode[];
   entries: (ItemDef | GroupDef)[];
 };
 
@@ -313,16 +313,19 @@ export const MODULES: ModuleDef[] = [
     roles: [],
     entries: [
       {
-        group: "Organisation",
+        group: "Master Settings",
         items: [
-          { title: "Branches", path: "/admin/branches", icon: "store" },
+          { title: "Company", path: "/admin/companies", icon: "building-2" },
+          { title: "Branch", path: "/admin/branches", icon: "store" },
+          { title: "Domain", path: "/admin/domains", icon: "network" },
+          { title: "Privilege", path: "/admin/privileges", icon: "key-round" },
           { title: "Users", path: "/admin/users", icon: "users" },
-          { title: "Roles & permissions", path: "/admin/roles", icon: "key-round" },
+          { title: "Modules", path: "/admin/modules", icon: "layout-grid" },
           { title: "Engineers", path: "/admin/engineers", icon: "hard-hat" },
         ],
       },
       {
-        group: "Rules",
+        group: "Rules CRM",
         items: [
           { title: "TAT standards", path: "/admin/tat", icon: "timer" },
           { title: "Discount caps", path: "/admin/discount-caps", icon: "percent" },
@@ -336,7 +339,14 @@ export const MODULES: ModuleDef[] = [
           { title: "Telegram", path: "/admin/telegram", icon: "send" },
         ],
       },
-      { group: "Governance", items: [{ title: "Audit log", path: "/admin/audit-log", icon: "scroll-text" }] },
+      {
+        group: "Security",
+        items: [
+          { title: "Blocked IP", path: "/admin/security/blocked-ips", icon: "shield-ban" },
+          { title: "User Activity Log", path: "/admin/security/activity-log", icon: "list-checks" },
+          { title: "Audit log", path: "/admin/audit-log", icon: "scroll-text" },
+        ],
+      },
     ],
   },
   {
@@ -355,11 +365,39 @@ export const MODULES: ModuleDef[] = [
   },
 ];
 
-export const DEMO_USERS: { username: string; name: string; email: string; role: RoleCode }[] = [
-  { username: "admin", name: "Arun Owner", email: "admin@laptopclinic.local", role: "ADMIN" },
-  { username: "bm.edp", name: "Bindu Manager", email: "bm.edp@laptopclinic.local", role: BM },
-  { username: "sales.edp", name: "Sanjay Sales", email: "sales.edp@laptopclinic.local", role: SALES },
-  { username: "purchase", name: "Priya Purchase", email: "purchase@laptopclinic.local", role: PM },
-  { username: "cs", name: "Chitra Success", email: "cs@laptopclinic.local", role: CS },
-  { username: "chip", name: "Kiran Chip", email: "chip@laptopclinic.local", role: CHIP },
+// ─── Organisation seed ───────────────────────────────────────────────────────
+
+export const COMPANY = { code: "NTL", name: "Norona Tech LLP", email: "info@laptopclinic.in" };
+
+export const BRANCHES = [
+  { code: "EDP", name: "Edappally", isVirtual: false },
+  { code: "LAB", name: "Chip-Level Lab", isVirtual: true },
+];
+
+export const DOMAINS = [
+  { code: "MANAGEMENT", name: "Management", departments: ["Management"] },
+  { code: "SERVICE", name: "Service", departments: ["Front Desk", "Engineering", "Chip-Level Lab"] },
+  { code: "SALES", name: "Sales", departments: ["Sales Team"] },
+  { code: "OPERATIONS", name: "Operations", departments: ["Purchase", "Customer Success"] },
+];
+
+type DemoUser = {
+  username: string;
+  firstName: string;
+  lastName: string;
+  mobile: string;
+  privilege: PrivilegeCode;
+  branch: string | null; // branch code; null = all branches
+  domain: string;
+  department: string;
+  defaultModule: string; // module code
+};
+
+export const DEMO_USERS: DemoUser[] = [
+  { username: "admin", firstName: "Arun", lastName: "Owner", mobile: "9000000001", privilege: "ADMIN", branch: null, domain: "MANAGEMENT", department: "Management", defaultModule: "dashboard" },
+  { username: "bm.edp", firstName: "Bindu", lastName: "Manager", mobile: "9000000002", privilege: BM, branch: "EDP", domain: "MANAGEMENT", department: "Management", defaultModule: "dashboard" },
+  { username: "sales.edp", firstName: "Sanjay", lastName: "Sales", mobile: "9000000003", privilege: SALES, branch: "EDP", domain: "SALES", department: "Sales Team", defaultModule: "service" },
+  { username: "purchase", firstName: "Priya", lastName: "Purchase", mobile: "9000000004", privilege: PM, branch: null, domain: "OPERATIONS", department: "Purchase", defaultModule: "inventory" },
+  { username: "cs", firstName: "Chitra", lastName: "Success", mobile: "9000000005", privilege: CS, branch: null, domain: "OPERATIONS", department: "Customer Success", defaultModule: "cs" },
+  { username: "chip", firstName: "Kiran", lastName: "Chip", mobile: "9000000006", privilege: CHIP, branch: "LAB", domain: "SERVICE", department: "Chip-Level Lab", defaultModule: "lab" },
 ];

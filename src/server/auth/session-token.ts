@@ -6,7 +6,6 @@ export const SESSION_COOKIE = "lc_session";
 
 export type SessionPayload = {
   userId: string;
-  roleId: string;
 };
 
 function getKey() {
@@ -33,10 +32,8 @@ export async function verifySession(
     const { payload } = await jwtVerify(token, getKey(), {
       algorithms: ["HS256"],
     });
-    if (typeof payload.userId !== "string" || typeof payload.roleId !== "string") {
-      return null;
-    }
-    return { userId: payload.userId, roleId: payload.roleId };
+    if (typeof payload.userId !== "string") return null;
+    return { userId: payload.userId };
   } catch {
     return null;
   }

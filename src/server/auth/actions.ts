@@ -3,8 +3,9 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/server/db";
+import { isIpBlocked, logActivity, requestMeta } from "@/server/security/activity";
 import { verifyPassword } from "./password";
-import { createSession, deleteSession } from "./session";
+import { canSignIn, createSession, deleteSession, getCurrentUser } from "./session";
 
 const loginSchema = z.object({
   username: z.string().trim().min(1, "Enter your username or email"),
@@ -30,24 +31,36 @@ export async function login(_prev: LoginState, formData: FormData): Promise<Logi
   }
 
   const { username, password, remember } = parsed.data;
+
+  const { ip } = await requestMeta();
+  if (await isIpBlocked(ip)) {
+    await logActivity({ action: "login.blocked-ip", username });
+    return { error: "Sign-in from this network is blocked. Contact your administrator." };
+  }
+
   const user = await db.user.findFirst({
     where: { OR: [{ username }, { email: username }] },
-    include: { role: true },
+    include: { privilege: true },
   });
 
   // Same message for unknown user and wrong password (blueprint §6).
   if (!user || !(await verifyPassword(password, user.passwordHash))) {
+    await logActivity({ action: "login.failed", userId: user?.id, username });
     return { error: INVALID };
   }
-  if (!user.isActive || !user.role.isActive) {
+  if (!canSignIn(user)) {
+    await logActivity({ action: "login.disabled", userId: user.id, username });
     return { error: "Your account is disabled. Contact your administrator." };
   }
 
-  await createSession({ userId: user.id, roleId: user.roleId }, remember);
+  await createSession({ userId: user.id }, remember);
+  await logActivity({ action: "login.success", userId: user.id, username: user.username });
   redirect("/");
 }
 
 export async function logout() {
+  const user = await getCurrentUser();
+  if (user) await logActivity({ action: "logout", userId: user.id, username: user.username });
   await deleteSession();
   redirect("/login");
 }

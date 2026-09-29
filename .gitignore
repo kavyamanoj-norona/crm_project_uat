@@ -56,3 +56,6 @@ dist/
 /.cursor/
 /.devin/
 /.claude/skills/
+
+# user uploads (dev only; move to object storage)
+/public/uploads/

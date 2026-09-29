@@ -1,5 +1,6 @@
 // Laptop Clinic CRM — Prisma schema
-// One schema, grouped by module (see blueprint §11).
+// One schema, grouped by module (see blueprint §11). No hard deletes:
+// records are switched off with `isActive` instead.
 
 generator client {
   provider = "prisma-client"
@@ -10,40 +11,167 @@ datasource db {
   provider = "postgresql"
 }
 
-// ─── Foundation: roles & users ───────────────────────────────────────────────
+// ─── Organisation: company → branch, domain → department ─────────────────────
 
-model Role {
-  id           String   @id @default(cuid())
-  code         String   @unique // ADMIN, BRANCH_MANAGER, SALES …
-  name         String
-  // Super-admin roles see every active module and menu without permission rows.
-  isSuperAdmin Boolean  @default(false)
-  // Landing page after login, e.g. "/lab" for the chip coordinator.
-  homePath     String?
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now()) @db.Timestamptz
-  updatedAt    DateTime @updatedAt @db.Timestamptz
+model Company {
+  id        String   @id @default(cuid())
+  code      String   @unique // "NTL"
+  name      String
+  gstin     String?
+  email     String?
+  phone     String?
+  address   String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  branches Branch[]
+  users    User[]
+
+  @@map("company")
+}
+
+model Branch {
+  id        String   @id @default(cuid())
+  companyId String
+  code      String   @unique // "EDP" — used in jobsheet numbers
+  name      String // "Edappally"
+  phone     String?
+  address   String?
+  // Virtual branches (e.g. the chip-level lab) hold stock/jobs but no counter.
+  isVirtual Boolean  @default(false)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id])
+  users   User[]
+
+  @@index([companyId])
+  @@map("branch")
+}
+
+model Domain {
+  id        String   @id @default(cuid())
+  code      String   @unique // "SALES"
+  name      String // "Sales"
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  departments Department[]
+  users       User[]
+
+  @@map("domain")
+}
+
+model Department {
+  id        String   @id @default(cuid())
+  domainId  String
+  name      String // "Sales Team"
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  domain Domain @relation(fields: [domainId], references: [id])
+  users  User[]
+
+  @@unique([domainId, name])
+  @@map("department")
+}
+
+// ─── Access: privilege (role) → permissions on menu items ────────────────────
+
+model Privilege {
+  id            String   @id @default(cuid())
+  code          String   @unique // ADMIN, BRANCH_MANAGER, SALES …
+  name          String
+  description   String?
+  // Super-admin privileges see every active module and menu without permission rows.
+  isSuperAdmin  Boolean  @default(false)
+  // Branch-bound privileges only ever see their own branch's data.
+  isBranchBound Boolean  @default(true)
+  // Landing page after login when the user has no default module.
+  homePath      String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now()) @db.Timestamptz
+  updatedAt     DateTime @updatedAt @db.Timestamptz
 
   users       User[]
-  permissions RolePermission[]
+  permissions PrivilegePermission[]
 
-  @@map("role")
+  @@map("privilege")
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum MaritalStatus {
+  SINGLE
+  MARRIED
+  DIVORCED
+  WIDOWED
+}
+
+enum EmploymentStatus {
+  WORKING
+  ON_LEAVE
+  RESIGNED
+  TERMINATED
 }
 
 model User {
-  id           String   @id @default(cuid())
-  username     String   @unique
-  email        String?  @unique
-  name         String
-  passwordHash String
-  roleId       String
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now()) @db.Timestamptz
-  updatedAt    DateTime @updatedAt @db.Timestamptz
+  id               String           @id @default(cuid())
+  userCode         String           @unique // "LC00001"
+  firstName        String
+  lastName         String?
+  mobile           String           @unique
+  email            String           @unique
+  username         String           @unique
+  passwordHash     String
+  dob              DateTime?        @db.Date
+  gender           Gender?
+  maritalStatus    MaritalStatus?
+  state            String?
+  district         String?
+  address          String?
+  imageUrl         String?
+  joiningDate      DateTime?        @db.Date
+  status           EmploymentStatus @default(WORKING)
+  isPrimaryAdmin   Boolean          @default(false)
+  twoFactorEnabled Boolean          @default(false)
+  // Login lock (admin lock or too many failed attempts).
+  isLocked         Boolean          @default(false)
+  isActive         Boolean          @default(true)
 
-  role Role @relation(fields: [roleId], references: [id])
+  companyId       String
+  branchId        String?
+  domainId        String
+  departmentId    String
+  privilegeId     String
+  defaultModuleId String?
 
-  @@index([roleId])
+  createdById String?
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+
+  company       Company           @relation(fields: [companyId], references: [id])
+  branch        Branch?           @relation(fields: [branchId], references: [id])
+  domain        Domain            @relation(fields: [domainId], references: [id])
+  department    Department        @relation(fields: [departmentId], references: [id])
+  privilege     Privilege         @relation(fields: [privilegeId], references: [id])
+  defaultModule Module?           @relation(fields: [defaultModuleId], references: [id])
+  createdBy     User?             @relation("UserCreatedBy", fields: [createdById], references: [id])
+  created       User[]            @relation("UserCreatedBy")
+  activity      UserActivityLog[]
+  blockedIps    BlockedIp[]
+
+  @@index([companyId])
+  @@index([branchId])
+  @@index([privilegeId])
   @@map("user")
 }
 
@@ -54,7 +182,7 @@ model User {
 //           an ITEM is a link. Items may sit directly under a module
 //           (parentId = null) or inside a group.
 //
-// Visibility: an ITEM shows when the user's role has RolePermission.canView;
+// Visibility: an ITEM shows when the user's privilege has canView;
 // a GROUP shows when at least one child item shows; a MODULE shows when at
 // least one of its items shows. Add rows here and the UI picks them up.
 
@@ -74,7 +202,8 @@ model Module {
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
 
-  menus Menu[]
+  menus        Menu[]
+  defaultUsers User[]
 
   @@map("module")
 }
@@ -84,7 +213,7 @@ model Menu {
   moduleId  String
   parentId  String?
   type      MenuType @default(ITEM)
-  code      String   @unique // "service.cases.all"
+  code      String   @unique // "service.cases.all-cases"
   title     String
   icon      String? // lucide icon name, optional
   path      String?  @unique // required for ITEM, null for GROUP
@@ -93,32 +222,68 @@ model Menu {
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
 
-  module      Module           @relation(fields: [moduleId], references: [id])
-  parent      Menu?            @relation("MenuTree", fields: [parentId], references: [id])
-  children    Menu[]           @relation("MenuTree")
-  permissions RolePermission[]
+  module      Module                @relation(fields: [moduleId], references: [id])
+  parent      Menu?                 @relation("MenuTree", fields: [parentId], references: [id])
+  children    Menu[]                @relation("MenuTree")
+  permissions PrivilegePermission[]
 
   @@index([moduleId])
   @@index([parentId])
   @@map("menu")
 }
 
-model RolePermission {
-  id         String   @id @default(cuid())
-  roleId     String
-  menuId     String
-  canView    Boolean  @default(true)
-  canCreate  Boolean  @default(false)
-  canEdit    Boolean  @default(false)
-  canDelete  Boolean  @default(false)
-  canApprove Boolean  @default(false)
-  createdAt  DateTime @default(now()) @db.Timestamptz
-  updatedAt  DateTime @updatedAt @db.Timestamptz
+model PrivilegePermission {
+  id          String   @id @default(cuid())
+  privilegeId String
+  menuId      String
+  canView     Boolean  @default(true)
+  canCreate   Boolean  @default(false)
+  canEdit     Boolean  @default(false)
+  canDelete   Boolean  @default(false)
+  canApprove  Boolean  @default(false)
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
 
-  role Role @relation(fields: [roleId], references: [id])
-  menu Menu @relation(fields: [menuId], references: [id])
+  privilege Privilege @relation(fields: [privilegeId], references: [id])
+  menu      Menu      @relation(fields: [menuId], references: [id])
 
-  @@unique([roleId, menuId])
+  @@unique([privilegeId, menuId])
   @@index([menuId])
-  @@map("role_permission")
+  @@map("privilege_permission")
+}
+
+// ─── Security ────────────────────────────────────────────────────────────────
+
+model BlockedIp {
+  id          String   @id @default(cuid())
+  ip          String   @unique
+  reason      String?
+  isActive    Boolean  @default(true)
+  blockedById String?
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+
+  blockedBy User? @relation(fields: [blockedById], references: [id])
+
+  @@map("blocked_ip")
+}
+
+// Append-only: rows are inserted, never updated or deleted.
+model UserActivityLog {
+  id        String   @id @default(cuid())
+  at        DateTime @default(now()) @db.Timestamptz
+  userId    String? // null when the username didn't match anyone
+  username  String? // what was typed, for failed logins
+  action    String // "login.success", "login.failed", "logout", "user.create" …
+  entity    String?
+  entityId  String?
+  detail    String?
+  ip        String?
+  userAgent String?
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId, at])
+  @@index([at])
+  @@map("user_activity_log")
 }

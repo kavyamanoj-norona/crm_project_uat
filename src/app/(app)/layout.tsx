@@ -18,7 +18,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   return (
     <AppShell
       nav={nav}
-      user={{ name: user.name, username: user.username, roleName: user.role.name }}
+      user={{ name: user.name, username: user.username, roleName: user.privilege.name }}
       greeting={istGreeting(user.name)}
       logout={logout}
     >

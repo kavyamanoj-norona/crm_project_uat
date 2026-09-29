@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "@/server/db";
 import type { CurrentUser } from "@/server/auth/session";
 import type { NavModule } from "@/lib/navigation";
+import { getMenuPermission, type Permission } from "@/server/rbac/guard";
 
 export type ResolvedRoute =
   | { status: "ok"; module: NavModule; groupTitle?: string; itemTitle: string; menuCode: string; permission: Permission }
@@ -9,16 +10,6 @@ export type ResolvedRoute =
   | { status: "forbidden" }
   | { status: "not-found" };
 
-export type Permission = {
-  canView: boolean;
-  canCreate: boolean;
-  canEdit: boolean;
-  canDelete: boolean;
-  canApprove: boolean;
-};
-
-const ALL: Permission = { canView: true, canCreate: true, canEdit: true, canDelete: true, canApprove: true };
-const NONE: Permission = { canView: false, canCreate: false, canEdit: false, canDelete: false, canApprove: false };
 
 /** "/a/b/c" → ["/a", "/a/b", "/a/b/c"] */
 function prefixes(pathname: string) {
@@ -58,12 +49,7 @@ export async function resolveRoute(
   );
   if (!navModule || !visible) return { status: "forbidden" };
 
-  const permission = user.role.isSuperAdmin
-    ? ALL
-    : ((await db.rolePermission.findUnique({
-        where: { roleId_menuId: { roleId: user.role.id, menuId: menu.id } },
-        select: { canView: true, canCreate: true, canEdit: true, canDelete: true, canApprove: true },
-      })) ?? NONE);
+  const permission = await getMenuPermission(user, menu.path!);
 
   return {
     status: "ok",
