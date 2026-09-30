@@ -47,5 +47,5 @@ export async function savePermissions(privilegeId: string, _prev: FormState, for
   }
 
   revalidatePath("/", "layout");
-  redirect(`${ADMIN_PATHS.privileges}/${privilegeId}?saved=1`);
+  redirect(`${ADMIN_PATHS.privileges}/${privilegeId}?saved=${Date.now()}`);
 }

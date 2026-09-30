@@ -1,14 +1,16 @@
 import { cn } from "@/lib/cn";
+import type { ActionResult } from "@/lib/form";
+import { ActionButton } from "@/components/ui/action-button";
 
 type FlagToggleProps = {
   on: boolean;
   label: string;
   /** Server action bound to the row; omit to render read-only. */
-  action?: () => Promise<void>;
+  action?: () => Promise<ActionResult>;
   children?: React.ReactNode;
 };
 
-/** A switch in a table cell that submits a bound server action. */
+/** A switch in a table cell that runs a bound server action and toasts the result. */
 export function FlagToggle({ on, label, action, children }: FlagToggleProps) {
   const visual = children ?? (
     <span
@@ -19,13 +21,17 @@ export function FlagToggle({ on, label, action, children }: FlagToggleProps) {
     />
   );
 
-  if (!action) return <span aria-label={`${label}: ${on ? "on" : "off"}`}>{visual}</span>;
+  if (!action) {
+    return (
+      <span aria-label={`${label}: ${on ? "on" : "off"}`} className="inline-block opacity-60">
+        {visual}
+      </span>
+    );
+  }
 
   return (
-    <form action={action}>
-      <button type="submit" role="switch" aria-checked={on} aria-label={label} title={label} className="align-middle">
-        {visual}
-      </button>
-    </form>
+    <ActionButton action={action} label={label} role="switch" checked={on}>
+      {visual}
+    </ActionButton>
   );
 }

@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { requireUser } from "@/server/auth/session";
 import { getNavigation } from "@/server/navigation/get-navigation";
 import { resolveRoute } from "@/server/navigation/resolve-route";
+import { getBranchScope } from "@/server/branch-scope";
 
 // Catch-all for every menu path stored in the database. Real screens get their
 // own route folder (e.g. app/(app)/service/cases/page.tsx), which takes
@@ -23,6 +24,7 @@ export default async function MenuPlaceholderPage({ params }: PageProps<"/[...sl
   const crumbs = [route.module.title, route.groupTitle, route.itemTitle].filter(
     (c): c is string => Boolean(c),
   );
+  const scope = await getBranchScope(user);
   const flags = Object.entries(route.permission).filter(([, v]) => v).map(([k]) => k.replace(/^can/, ""));
 
   return (
@@ -36,6 +38,10 @@ export default async function MenuPlaceholderPage({ params }: PageProps<"/[...sl
           <code className="rounded bg-surface-muted px-1.5 py-0.5 text-xs">{route.menuCode}</code>.
         </p>
         <p className="mt-3 text-xs text-text-muted">Permissions: {flags.join(" · ")}</p>
+        <p className="mt-1 text-xs text-text-muted">
+          Data scope: {scope.branch ? `${scope.branch.name} (${scope.branch.code})` : "All branches"}
+          {scope.canSwitch ? " — change it from the branch selector in the header" : " — fixed to your branch"}
+        </p>
       </div>
     </>
   );

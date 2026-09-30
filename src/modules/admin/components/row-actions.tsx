@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { Pencil, Power, PowerOff } from "lucide-react";
+import type { ActionResult } from "@/lib/form";
+import { ActionButton } from "@/components/ui/action-button";
 
 type RowActionsProps = {
   editHref?: string;
   /** Server action already bound to the row id. */
-  toggle?: () => Promise<void>;
+  toggle?: () => Promise<ActionResult>;
   active?: boolean;
   children?: React.ReactNode;
 };
@@ -12,7 +14,7 @@ type RowActionsProps = {
 const iconBtn =
   "inline-flex size-8 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface-muted hover:text-text";
 
-/** Edit link + activate/deactivate button. There are no hard deletes. */
+/** Edit link + activate/deactivate button (with toast). There are no hard deletes. */
 export function RowActions({ editHref, toggle, active, children }: RowActionsProps) {
   return (
     <div className="flex items-center gap-1">
@@ -23,16 +25,9 @@ export function RowActions({ editHref, toggle, active, children }: RowActionsPro
         </Link>
       )}
       {toggle && (
-        <form action={toggle}>
-          <button
-            type="submit"
-            className={iconBtn}
-            aria-label={active ? "Deactivate" : "Activate"}
-            title={active ? "Deactivate" : "Activate"}
-          >
-            {active ? <PowerOff className="size-4 text-danger" /> : <Power className="size-4 text-success" />}
-          </button>
-        </form>
+        <ActionButton action={toggle} label={active ? "Deactivate" : "Activate"} className={iconBtn}>
+          {active ? <PowerOff className="size-4 text-danger" /> : <Power className="size-4 text-success" />}
+        </ActionButton>
       )}
     </div>
   );

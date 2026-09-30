@@ -21,17 +21,35 @@ npm run dev                      # http://localhost:3000
 Demo logins (password `Welcome@123`): `admin`, `bm.edp`, `sales.edp`,
 `purchase`, `cs`, `chip` — each privilege sees a different set of modules.
 
-## Master Settings (Admin → /admin)
+## Modules
 
-Set these up in order — each one feeds the dropdowns of the next:
+| # | Module | Menus |
+|---|---|---|
+| 1 | Service | Dashboard · Cases · New Case (Intake) · Chip-Level Lab · Uncollected Devices |
+| 2 | Sales & Finance | Dashboard · Direct Sales · Daybook & Expenses |
+| 3 | Inventory | Dashboard · Stock & Purchasing · Catalog |
+| 4 | Customers & Support | Dashboard · Customer Database · CS Workspace · Announcements · Portal Preview |
+| 5 | Company (Owner/Admin) | Owner Dashboard · AI Agents — "The Seven" · Audit Log |
+| 6 | Master Settings | Users · Company · Privilege · Modules · Rules · Security (Block List, User Activity) |
 
-1. **Company** → 2. **Branch** (belongs to a company) → 3. **Domain** and its
-**Departments** → 4. **Privilege** (then click *Permissions* to tick which menus
-it can View / Create / Edit / Delete / Approve) → 5. **Users**.
+The list lives in `prisma/seed/navigation.ts`. `npm run db:seed` adds and updates
+it; `npm run db:seed:sync` also **removes** any module or menu that is not in
+that file (including ones added through the UI).
 
-**Modules** manages the rail icons; click *Menus* on a module to add groups and
-items. **Security** has Blocked IP (sign-in refused from those addresses) and
-the User Activity Log (logins, logouts and every Master Settings change).
+## Master Settings flow
+
+1. **Company**: the company, then its **Branches** and **Domains & Departments** (tabs).
+2. **Privilege**: create one, then *Permissions* to tick View / Create / Edit /
+   Delete / Approve per menu.
+3. **Users**: company → branch, domain → department, privilege and default
+   module. The eye icon opens the user's details and recent activity.
+4. **Modules**: rail icons; *Menus* adds sidebar groups and items.
+5. **Rules**: discount cap, GST, service TAT hours and sign-in security. Code
+   reads them with `getNumberRule()` / `getBooleanRule()` from `src/server/rules.ts`.
+6. **Security**: **Block List** refuses sign-in from listed IPs; **User Activity**
+   logs sign-ins, failures, lockouts and every Master Settings change. After
+   `LOGIN_MAX_ATTEMPTS` failed sign-ins an account locks for `LOGIN_LOCK_MINUTES`;
+   unlock it with the lock icon on the Users screen.
 
 ## How the dynamic menu works
 
@@ -54,7 +72,7 @@ precedence over the placeholder catch-all. Server actions check permissions
 with `requireActionPermission(path, "canCreate")` from `src/server/rbac/guard.ts`.
 
 Re-running `npm run db:seed` is safe: it upserts and never overwrites
-permissions or passwords changed in the UI.
+permissions, rules or passwords changed in the UI.
 
 ## Layout
 
@@ -72,4 +90,12 @@ src/proxy.ts                      auth gate (Next 16 name for middleware)
 ## Scripts
 
 `dev`, `build`, `start`, `lint`, `typecheck`, `db:migrate`, `db:seed`,
-`db:reset`, `db:studio`, `db:generate`.
+`db:seed:sync`, `db:reset`, `db:studio`, `db:generate`.
+
+## Branch scope
+
+The header shows a branch selector. Admins and privileges with **Own branch only**
+switched off pick *All branches* or one branch; branch-bound users see their own
+branch as a fixed chip. Server code applies it with
+`branchWhere(await getBranchScope(user))` from `src/server/branch-scope.ts` — use it
+in every query on a table that has `branchId`. Records from another branch return 404.

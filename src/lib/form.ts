@@ -11,6 +11,9 @@ export type FormState = {
 
 export const initialFormState: FormState = {};
 
+/** Result of a one-click action (toggle, lock …), shown as a toast. */
+export type ActionResult = { ok: boolean; message: string };
+
 /** Trimmed text; empty → null. */
 export const optionalText = z
   .string()
@@ -22,12 +25,12 @@ export const requiredText = (label: string) => z.string().trim().min(1, `${label
 
 /** Checkbox value: "on" when checked, missing otherwise. */
 export const checkbox = z
-  .union([z.literal("on"), z.literal("true"), z.null(), z.undefined()])
+  .union([z.literal("on"), z.literal("true"), z.literal(""), z.null(), z.undefined()])
   .transform((v) => v === "on" || v === "true");
 
-/** Reads the named fields from FormData (missing → null). */
+/** Reads the named text fields from FormData; missing fields read as "" so they get the normal "… is required" message. */
 export function pick(formData: FormData, keys: readonly string[]) {
-  return Object.fromEntries(keys.map((k) => [k, formData.get(k)]));
+  return Object.fromEntries(keys.map((k) => [k, formData.get(k) ?? ""]));
 }
 
 /** Text values of a submitted form, minus passwords and files. */
@@ -45,4 +48,16 @@ export function toFieldErrors(error: z.ZodError, formData?: FormData): FormState
     fieldErrors: z.flattenError(error).fieldErrors,
     values: formData ? formValues(formData) : undefined,
   };
+}
+
+/**
+ * Validates submitted FormData against a schema (same one the server uses).
+ * Returns field errors, or null when valid. Safe in the browser.
+ */
+export function validateForm(schema: z.ZodType, formData: FormData, keys?: readonly string[]) {
+  const shape = (schema as unknown as { shape?: Record<string, unknown> }).shape;
+  const names = keys ?? (shape ? Object.keys(shape) : [...formData.keys()]);
+  const result = schema.safeParse(pick(formData, names));
+  if (result.success) return null;
+  return z.flattenError(result.error).fieldErrors as Record<string, string[] | undefined>;
 }

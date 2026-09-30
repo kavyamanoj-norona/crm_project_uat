@@ -2,47 +2,65 @@
 
 import { useActionState, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { initialFormState, type FormState } from "@/lib/form";
+import { initialFormState, validateForm, type FormState } from "@/lib/form";
+import { useFormFeedback } from "@/hooks/use-form-feedback";
 import { DISTRICTS, INDIAN_STATES } from "@/lib/india";
 import { Button, LinkButton } from "@/components/ui/button";
-import { Field, Input, Select, Switch, Textarea } from "@/components/ui/field";
-import { FormMessage } from "@/components/forms/form-message";
+import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import type { SelectOptions } from "../queries";
-import { EMPLOYMENT_STATUSES, GENDERS, MARITAL_STATUSES, PASSWORD_MIN, label } from "../user-schema";
+import {
+  EMPLOYMENT_STATUSES,
+  GENDERS,
+  MARITAL_STATUSES,
+  PASSWORD_MIN,
+  USER_FIELDS,
+  createUserSchema,
+  editUserSchema,
+  label,
+} from "../user-schema";
+
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+
+/** Same rules as the server, so bad input never leaves the browser. */
+function validateUser(fd: FormData, editing: boolean) {
+  const errors = validateForm(editing ? editUserSchema : createUserSchema, fd, USER_FIELDS) ?? {};
+  const image = fd.get("image");
+  if (image instanceof File && image.size > 0) {
+    if (!IMAGE_TYPES.includes(image.type)) errors.image = ["Use a JPG, PNG or WebP image"];
+    else if (image.size > IMAGE_MAX_BYTES) errors.image = ["Image must be 2 MB or smaller"];
+  }
+  return Object.keys(errors).length ? errors : null;
+}
 
 export type UserFormValues = Record<string, string>;
 
 type UserFormProps = {
   action: (prev: FormState, formData: FormData) => Promise<FormState>;
   options: SelectOptions;
-  /** Editing: the user's current values (dates as yyyy-mm-dd, booleans as "on"). */
+  /** Editing: the user's current values (dates as yyyy-mm-dd). New: defaults. */
   initial?: UserFormValues;
   id?: string;
-  canSetPrimaryAdmin: boolean;
 };
 
 const enumOptions = (values: readonly string[]) => values.map((v) => ({ value: v, label: label(v) }));
 
-export function UserForm({ action, options, initial, id, canSetPrimaryAdmin }: UserFormProps) {
+export function UserForm({ action, options, initial, id }: UserFormProps) {
   const [state, formAction, pending] = useActionState(action, initialFormState);
+  const { errors, onSubmit, onChange } = useFormFeedback({ state, validate: (fd) => validateUser(fd, Boolean(id)) });
   const v: UserFormValues = state.values ?? initial ?? { status: "WORKING", state: "Kerala" };
 
   return (
     <form
       key={`${id ?? "new"}-${JSON.stringify(state.values ?? {})}`}
       action={formAction}
+      onSubmit={onSubmit}
+      onChange={onChange}
       className="space-y-4"
       noValidate
     >
-      <FormMessage ok={state.ok} message={state.message} />
       {id && <input type="hidden" name="id" value={id} />}
-      <UserFields
-        v={v}
-        errors={state.fieldErrors ?? {}}
-        options={options}
-        editing={Boolean(id)}
-        canSetPrimaryAdmin={canSetPrimaryAdmin}
-      />
+      <UserFields v={v} errors={errors} options={options} editing={Boolean(id)} />
       <div className="flex gap-2">
         <Button type="submit" disabled={pending}>
           {pending && <Loader2 className="size-4 animate-spin" />}
@@ -67,13 +85,11 @@ function UserFields({
   errors,
   options,
   editing,
-  canSetPrimaryAdmin,
 }: {
   v: UserFormValues;
   errors: Record<string, string[] | undefined>;
   options: SelectOptions;
   editing: boolean;
-  canSetPrimaryAdmin: boolean;
 }) {
   // Dependent selects: branch follows company, department follows domain, district follows state.
   const [companyId, setCompanyId] = useState(v.companyId ?? "");
@@ -109,15 +125,18 @@ function UserFields({
         <Input {...f("username")} autoComplete="off" placeholder="Username" />
       </Field>
 
-      <Field
-        label="Password"
-        htmlFor="password"
-        required={!editing}
-        error={errors.password}
-        hint={editing ? "Leave blank to keep the current password" : `At least ${PASSWORD_MIN} characters`}
-      >
-        <Input id="password" name="password" type="password" autoComplete="new-password" aria-invalid={errors.password ? true : undefined} />
-      </Field>
+      {/* Editing changes the password from the key button in the Users table. */}
+      {!editing && (
+        <Field label="Password" htmlFor="password" required error={errors.password} hint={`At least ${PASSWORD_MIN} characters`}>
+          <Input
+            id="password"
+            name="password"
+            type="password"
+            autoComplete="new-password"
+            aria-invalid={errors.password ? true : undefined}
+          />
+        </Field>
+      )}
       <Field label="DOB" htmlFor="dob" error={errors.dob}>
         <Input {...f("dob")} type="date" />
       </Field>
@@ -137,15 +156,6 @@ function UserFields({
           <Input key={stateName} {...f("district")} placeholder="District" />
         )}
       </Field>
-      <div className="flex items-end pb-2">
-        <Switch
-          id="isPrimaryAdmin"
-          name="isPrimaryAdmin"
-          label="Primary Admin"
-          defaultChecked={v.isPrimaryAdmin === "on"}
-          disabled={!canSetPrimaryAdmin}
-        />
-      </div>
 
       <Field label="Address" htmlFor="address" error={errors.address} className="lg:col-span-2">
         <Textarea {...f("address")} placeholder="Address" />
