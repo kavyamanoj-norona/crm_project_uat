@@ -141,10 +141,13 @@ model User {
   imageUrl         String?
   joiningDate      DateTime?        @db.Date
   status           EmploymentStatus @default(WORKING)
-  isPrimaryAdmin   Boolean          @default(false)
   twoFactorEnabled Boolean          @default(false)
-  // Login lock (admin lock or too many failed attempts).
+  // Locked by an administrator (unlock from the Users screen).
   isLocked         Boolean          @default(false)
+  // Automatic lockout after too many failed sign-ins (limits come from Rules).
+  failedLoginCount Int              @default(0)
+  lockedUntil      DateTime?        @db.Timestamptz
+  lastLoginAt      DateTime?        @db.Timestamptz
   isActive         Boolean          @default(true)
 
   companyId       String
@@ -168,6 +171,7 @@ model User {
   created       User[]            @relation("UserCreatedBy")
   activity      UserActivityLog[]
   blockedIps    BlockedIp[]
+  rulesUpdated  Rule[]
 
   @@index([companyId])
   @@index([branchId])
@@ -250,6 +254,36 @@ model PrivilegePermission {
   @@unique([privilegeId, menuId])
   @@index([menuId])
   @@map("privilege_permission")
+}
+
+// ─── Rules: business settings editable in Master Settings → Rules ───────────
+
+enum RuleValueType {
+  NUMBER
+  PERCENT
+  HOURS
+  MINUTES
+  BOOLEAN
+  TEXT
+}
+
+model Rule {
+  id          String        @id @default(cuid())
+  code        String        @unique // "DISCOUNT_CAP_PERCENT" — read by code via getRule()
+  name        String
+  category    String // "Pricing", "Service TAT", "Security" …
+  valueType   RuleValueType
+  value       String // stored as text, parsed by valueType
+  description String?
+  isActive    Boolean       @default(true)
+  updatedById String?
+  createdAt   DateTime      @default(now()) @db.Timestamptz
+  updatedAt   DateTime      @updatedAt @db.Timestamptz
+
+  updatedBy User? @relation(fields: [updatedById], references: [id])
+
+  @@index([category])
+  @@map("rule")
 }
 
 // ─── Security ────────────────────────────────────────────────────────────────

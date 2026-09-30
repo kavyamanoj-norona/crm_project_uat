@@ -1,7 +1,15 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useMemo, useState } from "react";
 import { Eye, EyeOff, Loader2, Lock, Mail } from "lucide-react";
+import { z } from "zod";
+import { validateForm } from "@/lib/form";
+import { useFormFeedback } from "@/hooks/use-form-feedback";
+
+const loginFields = z.object({
+  username: z.string().trim().min(1, "Enter your username or email"),
+  password: z.string().min(1, "Enter your password"),
+});
 
 type LoginState = {
   error?: string;
@@ -17,15 +25,16 @@ const inputCls =
 
 export function LoginForm({ action }: LoginFormProps) {
   const [state, formAction, pending] = useActionState(action, {});
+  // Login errors ("Invalid username or password", lockout …) come back as `error`.
+  const formState = useMemo(() => ({ message: state.error, fieldErrors: state.fieldErrors }), [state]);
+  const { errors, onSubmit, onChange } = useFormFeedback({
+    state: formState,
+    validate: (fd) => validateForm(loginFields, fd),
+  });
   const [showPassword, setShowPassword] = useState(false);
 
   return (
-    <form action={formAction} className="space-y-5" noValidate>
-      {state.error && (
-        <p role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">
-          {state.error}
-        </p>
-      )}
+    <form action={formAction} onSubmit={onSubmit} onChange={onChange} className="space-y-5" noValidate>
 
       <div>
         <label htmlFor="username" className="mb-1.5 block text-sm font-medium">
@@ -35,7 +44,7 @@ export function LoginForm({ action }: LoginFormProps) {
           <Mail className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-text-muted" />
           <input id="username" name="username" autoComplete="username" required className={inputCls} />
         </div>
-        {state.fieldErrors?.username && <p className="mt-1 text-xs text-danger">{state.fieldErrors.username[0]}</p>}
+        {errors.username && <p className="mt-1 text-xs text-danger">{errors.username[0]}</p>}
       </div>
 
       <div>
@@ -61,7 +70,7 @@ export function LoginForm({ action }: LoginFormProps) {
             {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
           </button>
         </div>
-        {state.fieldErrors?.password && <p className="mt-1 text-xs text-danger">{state.fieldErrors.password[0]}</p>}
+        {errors.password && <p className="mt-1 text-xs text-danger">{errors.password[0]}</p>}
       </div>
 
       <div className="flex items-center justify-between text-sm">

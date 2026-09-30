@@ -4,7 +4,7 @@ import { useActionState, useRef } from "react";
 import { Loader2 } from "lucide-react";
 import { initialFormState, type FormState } from "@/lib/form";
 import { Button } from "@/components/ui/button";
-import { FormMessage } from "@/components/forms/form-message";
+import { useFormFeedback } from "@/hooks/use-form-feedback";
 import { NavIcon } from "@/components/ui/nav-icon";
 
 const FLAGS = [
@@ -28,6 +28,7 @@ type PermissionMatrixProps = {
 
 export function PermissionMatrix({ modules, action, readOnly }: PermissionMatrixProps) {
   const [state, formAction, pending] = useActionState(action, initialFormState);
+  useFormFeedback({ state }); // server result → toast
   const formRef = useRef<HTMLFormElement>(null);
 
   /** Toggle one flag for every item in a module. */
@@ -42,7 +43,6 @@ export function PermissionMatrix({ modules, action, readOnly }: PermissionMatrix
 
   return (
     <form ref={formRef} action={formAction} className="space-y-4">
-      <FormMessage ok={state.ok} message={state.message} />
 
       <div className="overflow-x-auto rounded-lg border border-border">
         <table className="w-full min-w-[720px] text-sm">

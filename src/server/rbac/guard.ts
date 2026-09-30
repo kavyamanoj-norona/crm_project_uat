@@ -22,13 +22,24 @@ export class ForbiddenError extends Error {
   }
 }
 
-/** Permission of `user` on the active menu item at `path` (NONE if missing or inactive). */
+/** "/a/b/c" → ["/a", "/a/b", "/a/b/c"] */
+export function pathPrefixes(pathname: string) {
+  const parts = pathname.split("/").filter(Boolean);
+  return parts.map((_, i) => `/${parts.slice(0, i + 1).join("/")}`);
+}
+
+/**
+ * Permission of `user` on the page at `path`. The deepest active menu item
+ * whose path is a prefix of `path` owns it, so sub-pages such as
+ * /admin/companies/branches inherit the permission of /admin/companies.
+ */
 export async function getMenuPermission(user: CurrentUser, path: string): Promise<Permission> {
-  const menu = await db.menu.findUnique({
-    where: { path },
-    select: { id: true, isActive: true, module: { select: { isActive: true } } },
+  const menus = await db.menu.findMany({
+    where: { type: "ITEM", isActive: true, path: { in: pathPrefixes(path) }, module: { isActive: true } },
+    select: { id: true, path: true },
   });
-  if (!menu || !menu.isActive || !menu.module.isActive) return NONE;
+  const menu = menus.sort((a, b) => (b.path?.length ?? 0) - (a.path?.length ?? 0))[0];
+  if (!menu) return NONE;
   if (user.privilege.isSuperAdmin) return ALL;
 
   const row = await db.privilegePermission.findUnique({

@@ -4,9 +4,11 @@ export default function AppNotFound() {
   return (
     <StatusPage
       code="404"
-      title="Page not found"
+      kind="not-found"
+      title="Oops. This page was not found."
       message="The page or record you're looking for doesn't exist or was moved."
-      primary={{ href: "/", label: "Go to dashboard" }}
+      primary={{ href: "/", label: "Back to home" }}
+      showBack
     />
   );
 }

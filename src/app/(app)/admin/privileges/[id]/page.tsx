@@ -58,7 +58,7 @@ export default async function PrivilegePermissionsPage({ params, searchParams }:
     <AdminPage
       title={`${privilege.name} — permissions`}
       subtitle="Tick View to show a menu in the sidebar. Modules and groups appear automatically when any item inside is visible."
-      saved={Boolean(param(sp, "saved"))}
+      saved={param(sp, "saved")}
       actions={
         <LinkButton href={ADMIN_PATHS.privileges} variant="secondary">
           <ArrowLeft className="size-4" /> Back

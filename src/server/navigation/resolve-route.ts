@@ -2,7 +2,7 @@ import "server-only";
 import { db } from "@/server/db";
 import type { CurrentUser } from "@/server/auth/session";
 import type { NavModule } from "@/lib/navigation";
-import { getMenuPermission, type Permission } from "@/server/rbac/guard";
+import { getMenuPermission, pathPrefixes, type Permission } from "@/server/rbac/guard";
 
 export type ResolvedRoute =
   | { status: "ok"; module: NavModule; groupTitle?: string; itemTitle: string; menuCode: string; permission: Permission }
@@ -10,12 +10,6 @@ export type ResolvedRoute =
   | { status: "forbidden" }
   | { status: "not-found" };
 
-
-/** "/a/b/c" → ["/a", "/a/b", "/a/b/c"] */
-function prefixes(pathname: string) {
-  const parts = pathname.split("/").filter(Boolean);
-  return parts.map((_, i) => `/${parts.slice(0, i + 1).join("/")}`);
-}
 
 /**
  * Decides what a URL inside the shell maps to, using the menu table as the
@@ -27,7 +21,7 @@ export async function resolveRoute(
   nav: NavModule[],
   pathname: string,
 ): Promise<ResolvedRoute> {
-  const candidates = prefixes(pathname);
+  const candidates = pathPrefixes(pathname);
 
   const menus = await db.menu.findMany({
     where: { type: "ITEM", isActive: true, path: { in: candidates }, module: { isActive: true } },

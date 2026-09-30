@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { checkbox, optionalText, requiredText } from "@/lib/form";
+import { optionalText, requiredText } from "@/lib/form";
 
 const optionalDate = z
   .string()
@@ -34,8 +34,8 @@ export const userSchema = z.object({
     .trim()
     .toLowerCase()
     .regex(/^[a-z0-9._]{3,30}$/, "3–30 characters: letters, digits, . or _"),
-  // Required on create, optional on edit (blank = keep current password).
-  password: z.string(),
+  // Only sent when creating; editing changes it through the Change password dialog.
+  password: z.string().optional(),
   dob: optionalDate,
   gender: optionalEnum(GENDERS),
   maritalStatus: optionalEnum(MARITAL_STATUSES),
@@ -44,7 +44,6 @@ export const userSchema = z.object({
   address: optionalText,
   joiningDate: optionalDate,
   status: z.enum(EMPLOYMENT_STATUSES, { error: "Select an active status" }),
-  isPrimaryAdmin: checkbox,
   companyId: requiredText("Company"),
   branchId: requiredText("Branch"),
   domainId: requiredText("Domain"),
@@ -55,6 +54,20 @@ export const userSchema = z.object({
 
 export type UserInput = z.output<typeof userSchema>;
 
+const passwordRule = z.string().min(PASSWORD_MIN, `Password must be at least ${PASSWORD_MIN} characters`);
+
+/** Creating a user: password is required. */
+export const createUserSchema = userSchema.extend({ password: passwordRule });
+/** Editing a user: the password is changed separately. */
+export const editUserSchema = userSchema.omit({ password: true });
+
+/** Change password dialog. */
+export const passwordChangeSchema = z
+  .object({ password: passwordRule, confirmPassword: z.string() })
+  .refine((v) => v.password === v.confirmPassword, { path: ["confirmPassword"], message: "Passwords don't match" });
+
 export const USER_FIELDS = Object.keys(userSchema.shape);
 
 export const label = (v: string) => v.charAt(0) + v.slice(1).toLowerCase().replace(/_/g, " ");
+
+export const STATUS_TONE = { WORKING: "success", ON_LEAVE: "warning", RESIGNED: "neutral", TERMINATED: "danger" } as const;

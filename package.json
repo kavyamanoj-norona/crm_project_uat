@@ -13,6 +13,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed",
+    "db:seed:sync": "prisma db seed -- --prune",
     "db:reset": "prisma migrate reset",
     "db:studio": "prisma studio"
   },

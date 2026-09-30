@@ -10,6 +10,12 @@ function createClient() {
   return new PrismaClient({ adapter });
 }
 
-export const db = globalForPrisma.prisma ?? createClient();
+// After `prisma generate` the dev server hot-reloads a new PrismaClient class;
+// a cached instance of the old class would miss new models, so replace it.
+const cached = globalForPrisma.prisma;
+export const db = cached instanceof PrismaClient ? cached : createClient();
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = db;
+if (process.env.NODE_ENV !== "production") {
+  if (cached && cached !== db) void cached.$disconnect();
+  globalForPrisma.prisma = db;
+}

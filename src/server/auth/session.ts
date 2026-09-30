@@ -3,6 +3,8 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/server/db";
+import { RULES, getNumberRule } from "@/server/rules";
+import { BRANCH_COOKIE } from "@/server/branch-scope";
 import {
   SESSION_COOKIE,
   signSession,
@@ -10,13 +12,13 @@ import {
   type SessionPayload,
 } from "./session-token";
 
-const SESSION_HOURS = 12;
 const REMEMBER_DAYS = 7;
 
 export async function createSession(payload: SessionPayload, remember: boolean) {
+  const sessionHours = await getNumberRule(RULES.sessionHours, 12); // Master Settings → Rules
   const ms = remember
     ? REMEMBER_DAYS * 24 * 60 * 60 * 1000
-    : SESSION_HOURS * 60 * 60 * 1000;
+    : Math.max(1, sessionHours) * 60 * 60 * 1000;
   const expiresAt = new Date(Date.now() + ms);
   const token = await signSession(payload, expiresAt);
 
@@ -33,6 +35,7 @@ export async function createSession(payload: SessionPayload, remember: boolean) 
 export async function deleteSession() {
   const cookieStore = await cookies();
   cookieStore.delete(SESSION_COOKIE);
+  cookieStore.delete(BRANCH_COOKIE); // next user starts on their own scope
 }
 
 export type CurrentUser = {
@@ -43,13 +46,15 @@ export type CurrentUser = {
   email: string;
   companyId: string;
   branchId: string | null;
+  branch: { id: string; code: string; name: string } | null;
   defaultModuleId: string | null;
-  isPrimaryAdmin: boolean;
   privilege: {
     id: string;
     code: string;
     name: string;
     isSuperAdmin: boolean;
+    /** Branch-bound privileges only ever see their own branch. */
+    isBranchBound: boolean;
     homePath: string | null;
   };
 };
@@ -72,7 +77,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
 
   const user = await db.user.findUnique({
     where: { id: session.userId },
-    include: { privilege: true },
+    include: { privilege: true, branch: { select: { id: true, code: true, name: true } } },
   });
   if (!user || !canSignIn(user)) return null;
 
@@ -85,14 +90,14 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     email: user.email,
     companyId: user.companyId,
     branchId: user.branchId,
+    branch: user.branch,
     defaultModuleId: user.defaultModuleId,
-    isPrimaryAdmin: user.isPrimaryAdmin,
     privilege: {
       id: p.id,
       code: p.code,
       name: p.name,
-      // A primary admin always gets full access, whatever the privilege says.
-      isSuperAdmin: p.isSuperAdmin || user.isPrimaryAdmin,
+      isSuperAdmin: p.isSuperAdmin,
+      isBranchBound: p.isBranchBound && !p.isSuperAdmin,
       homePath: p.homePath,
     },
   };

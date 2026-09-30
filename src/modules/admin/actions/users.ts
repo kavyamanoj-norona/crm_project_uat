@@ -5,13 +5,19 @@ import path from "node:path";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/server/db";
-import { formValues, pick, toFieldErrors, type FormState } from "@/lib/form";
+import { pick, toFieldErrors, type ActionResult, type FormState } from "@/lib/form";
 import { hashPassword } from "@/server/auth/password";
 import { FieldError, handleActionError } from "@/server/prisma-errors";
 import { ForbiddenError, requireActionPermission } from "@/server/rbac/guard";
 import { logActivity } from "@/server/security/activity";
 import { ADMIN_PATHS } from "../paths";
-import { PASSWORD_MIN, USER_FIELDS, userSchema, type UserInput } from "../user-schema";
+import {
+  USER_FIELDS,
+  createUserSchema,
+  editUserSchema,
+  passwordChangeSchema,
+  type UserInput,
+} from "../user-schema";
 
 const LABELS = { username: "Username", email: "Email", mobile: "Mobile", userCode: "User ID" };
 const IMAGE_TYPES: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
@@ -49,34 +55,25 @@ async function saveImage(file: File, userId: string) {
 }
 
 export async function saveUser(_prev: FormState, formData: FormData): Promise<FormState> {
-  const parsed = userSchema.safeParse(pick(formData, USER_FIELDS));
+  const id = formData.get("id")?.toString() || null;
+  // Create needs a password; edit never touches it (see changeUserPassword).
+  const schema = id ? editUserSchema : createUserSchema;
+  const parsed = schema.safeParse(pick(formData, USER_FIELDS));
   if (!parsed.success) return toFieldErrors(parsed.error, formData);
 
-  const id = formData.get("id")?.toString() || null;
-  const { password, ...data } = parsed.data;
-  // Required on create; on edit a blank password keeps the current one.
-  if ((!id || password) && password.length < PASSWORD_MIN) {
-    return {
-      message: "Please fix the highlighted fields.",
-      fieldErrors: { password: [`Password must be at least ${PASSWORD_MIN} characters`] },
-      values: formValues(formData),
-    };
-  }
-
+  const { password, ...data } = { password: undefined as string | undefined, ...parsed.data };
   const image = formData.get("image");
   const file = image instanceof File && image.size > 0 ? image : null;
 
   let savedId: string;
   try {
     const actor = await requireActionPermission(ADMIN_PATHS.users, id ? "canEdit" : "canCreate");
-    if (data.isPrimaryAdmin && !actor.privilege.isSuperAdmin) throw new ForbiddenError();
     await checkRelations(data);
 
-    const passwordHash = password ? await hashPassword(password) : undefined;
     const user = id
-      ? await db.user.update({ where: { id }, data: { ...data, ...(passwordHash ? { passwordHash } : {}) } })
+      ? await db.user.update({ where: { id }, data })
       : await db.user.create({
-          data: { ...data, passwordHash: passwordHash!, userCode: await nextUserCode(), createdById: actor.id },
+          data: { ...data, passwordHash: await hashPassword(password!), userCode: await nextUserCode(), createdById: actor.id },
         });
     savedId = user.id;
 
@@ -89,28 +86,66 @@ export async function saveUser(_prev: FormState, formData: FormData): Promise<Fo
   }
 
   revalidatePath(ADMIN_PATHS.users);
-  redirect(`${ADMIN_PATHS.users}?saved=1${id ? "" : `&highlight=${savedId}`}`);
+  redirect(`${ADMIN_PATHS.users}?saved=${Date.now()}${id ? "" : `&highlight=${savedId}`}`);
 }
 
-const FLAGS = ["twoFactorEnabled", "isLocked", "isPrimaryAdmin", "isActive"] as const;
+/** Change password dialog on the Users screen. Also clears any lockout. */
+export async function changeUserPassword(userId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const parsed = passwordChangeSchema.safeParse(pick(formData, ["password", "confirmPassword"]));
+  if (!parsed.success) return toFieldErrors(parsed.error);
+  try {
+    const actor = await requireActionPermission(ADMIN_PATHS.users, "canEdit");
+    await db.user.update({
+      where: { id: userId },
+      data: { passwordHash: await hashPassword(parsed.data.password), failedLoginCount: 0, lockedUntil: null },
+    });
+    await logActivity({ action: "user.password-change", userId: actor.id, entity: "User", entityId: userId });
+  } catch (e) {
+    return handleActionError(e);
+  }
+  return { ok: true, message: "Password changed." };
+}
+
+/** Locked by an admin, or automatically after too many failed sign-ins. */
+function isUserLocked(u: { isLocked: boolean; lockedUntil: Date | null }) {
+  return u.isLocked || (u.lockedUntil !== null && u.lockedUntil > new Date());
+}
+
+const FLAGS = ["twoFactorEnabled", "isLocked", "isActive"] as const;
 export type UserFlag = (typeof FLAGS)[number];
 
+const FLAG_MESSAGES: Record<UserFlag, [on: string, off: string]> = {
+  twoFactorEnabled: ["Two-factor authentication turned on.", "Two-factor authentication turned off."],
+  isLocked: ["User locked.", "User unlocked."],
+  isActive: ["User enabled.", "User disabled."],
+};
+
 /** Flips one boolean flag on a user from the users table. */
-export async function toggleUserFlag(id: string, flag: UserFlag) {
-  if (!FLAGS.includes(flag)) throw new Error("Unknown flag");
-  const actor = await requireActionPermission(ADMIN_PATHS.users, "canEdit");
-  if (flag === "isPrimaryAdmin" && !actor.privilege.isSuperAdmin) throw new ForbiddenError();
-  // Don't let admins lock themselves out.
-  if (id === actor.id && flag !== "twoFactorEnabled") throw new ForbiddenError();
+export async function toggleUserFlag(id: string, flag: UserFlag): Promise<ActionResult> {
+  if (!FLAGS.includes(flag)) return { ok: false, message: "Unknown option." };
+  try {
+    const actor = await requireActionPermission(ADMIN_PATHS.users, "canEdit");
+    // Don't let admins lock themselves out.
+    if (id === actor.id && flag !== "twoFactorEnabled") return { ok: false, message: "You can't change this on your own account." };
 
-  const user = await db.user.findUnique({
-    where: { id },
-    select: { twoFactorEnabled: true, isLocked: true, isPrimaryAdmin: true, isActive: true },
-  });
-  if (!user) return;
-  const next = !user[flag];
-  await db.user.update({ where: { id }, data: { [flag]: next } });
+    const user = await db.user.findUnique({
+      where: { id },
+      select: { twoFactorEnabled: true, isLocked: true, isActive: true, lockedUntil: true },
+    });
+    if (!user) return { ok: false, message: "User not found." };
+    const current = flag === "isLocked" ? isUserLocked(user) : user[flag];
+    const next = !current;
+    await db.user.update({
+      where: { id },
+      // Unlocking also clears an automatic lockout from failed sign-ins.
+      data: flag === "isLocked" && !next ? { isLocked: false, lockedUntil: null, failedLoginCount: 0 } : { [flag]: next },
+    });
 
-  await logActivity({ action: `user.${flag}.${next ? "on" : "off"}`, userId: actor.id, entity: "User", entityId: id });
-  revalidatePath(ADMIN_PATHS.users);
+    await logActivity({ action: `user.${flag}.${next ? "on" : "off"}`, userId: actor.id, entity: "User", entityId: id });
+    revalidatePath(ADMIN_PATHS.users);
+    return { ok: true, message: FLAG_MESSAGES[flag][next ? 0 : 1] };
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { ok: false, message: e.message };
+    throw e;
+  }
 }

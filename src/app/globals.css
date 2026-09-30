@@ -54,6 +54,21 @@
   --radius-token: var(--radius);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* status-page illustration motion (skipped under prefers-reduced-motion) */
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-float-slow: float 9s ease-in-out infinite reverse;
+  --animate-search: search 5s ease-in-out infinite;
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+  @keyframes search {
+    0%, 100% { transform: translate(0, 0) rotate(0deg); }
+    30% { transform: translate(-26px, 6px) rotate(-6deg); }
+    60% { transform: translate(-10px, 14px) rotate(4deg); }
+  }
 }
 
 body {

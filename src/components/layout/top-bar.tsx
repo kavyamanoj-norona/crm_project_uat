@@ -5,13 +5,15 @@ import { Bell, LogOut, Maximize, Menu, PanelLeft, Search, Settings, Sun, Moon } 
 import type { NavModule } from "@/lib/navigation";
 import { useDismiss } from "@/hooks/use-dismiss";
 import { AppSwitcher } from "./app-switcher";
-import type { LogoutAction } from "./types";
+import { BranchSwitcher } from "./branch-switcher";
+import type { LogoutAction, ShellBranch } from "./types";
 
 type TopBarProps = {
   nav: NavModule[];
   activeModule: NavModule | null;
   greeting: string;
   logout: LogoutAction;
+  branch: ShellBranch;
   onOpenMobile: () => void;
   onToggleSidebar: () => void;
   sidebarCollapsed: boolean;
@@ -25,6 +27,7 @@ export function TopBar({
   activeModule,
   greeting,
   logout,
+  branch,
   onOpenMobile,
   onToggleSidebar,
   sidebarCollapsed,
@@ -57,14 +60,17 @@ export function TopBar({
         {isEvening ? <Moon className="size-4 text-primary" /> : <Sun className="size-4 text-warning" />}
       </div>
 
-      <div className="ml-auto flex items-center gap-1">
-        <label className="relative mr-2 hidden sm:block">
+      <div className="ml-auto flex min-w-0 items-center gap-1">
+        <div className="mr-1 sm:mr-2">
+          <BranchSwitcher {...branch} />
+        </div>
+        <label className="relative mr-2 hidden md:block">
           <span className="sr-only">Search</span>
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-text-muted" />
           <input
             type="search"
             placeholder="Search or ask Kiran…"
-            className="h-9 w-56 rounded-lg border border-border bg-surface-muted pr-12 pl-9 text-sm outline-none placeholder:text-text-muted focus:border-primary lg:w-72"
+            className="h-9 w-48 rounded-lg border border-border bg-surface-muted pr-12 pl-9 text-sm outline-none placeholder:text-text-muted focus:border-primary xl:w-72"
           />
           <kbd className="absolute top-1/2 right-2 -translate-y-1/2 rounded border border-border px-1.5 text-[10px] text-text-muted">
             ⌘K

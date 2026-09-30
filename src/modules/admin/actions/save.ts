@@ -19,13 +19,14 @@ import {
   moduleSchema,
   privilegeSchema,
 } from "../schemas";
+import { ruleSchema } from "../rule-schema";
 
 type SaveOptions<S extends z.ZodType> = {
   entity: string;
   path: string;
   schema: S;
   labels?: Record<string, string>;
-  /** Where to go after saving (defaults to `${path}?saved=1`). */
+  /** Where to go after saving (defaults to `${path}?saved=<timestamp>`). */
   redirectTo?: (id: string) => string;
   write: (data: z.output<S>, id: string | null, userId: string) => Promise<{ id: string }>;
 };
@@ -53,7 +54,7 @@ async function save<S extends z.ZodType>(formData: FormData, opts: SaveOptions<S
   }
 
   revalidatePath(opts.path, "layout");
-  redirect(opts.redirectTo?.(savedId) ?? `${opts.path}?saved=1`);
+  redirect(opts.redirectTo?.(savedId) ?? `${opts.path}?saved=${Date.now()}`);
 }
 
 export async function saveCompany(_prev: FormState, formData: FormData) {
@@ -92,7 +93,7 @@ export async function saveDomain(_prev: FormState, formData: FormData) {
 export async function saveDepartment(_prev: FormState, formData: FormData) {
   return save(formData, {
     entity: "Department",
-    path: ADMIN_PATHS.domains,
+    path: ADMIN_PATHS.departments,
     schema: departmentSchema,
     labels: { domainId: "Department in this domain", name: "Department" },
     write: (data, id) =>
@@ -137,7 +138,7 @@ export async function saveMenu(_prev: FormState, formData: FormData) {
     path: ADMIN_PATHS.modules,
     schema: menuSchema,
     labels: { path: "Path", code: "Menu" },
-    redirectTo: () => `${ADMIN_PATHS.modules}/${formData.get("moduleId")}?saved=1`,
+    redirectTo: () => `${ADMIN_PATHS.modules}/${formData.get("moduleId")}?saved=${Date.now()}`,
     write: async (data, id) => {
       const mod = await db.module.findUniqueOrThrow({ where: { id: data.moduleId } });
       if (data.type === "ITEM" && data.path && data.path !== mod.path && !data.path.startsWith(`${mod.path}/`)) {
@@ -166,5 +167,18 @@ export async function saveBlockedIp(_prev: FormState, formData: FormData) {
       id
         ? db.blockedIp.update({ where: { id }, data })
         : db.blockedIp.create({ data: { ...data, blockedById: userId } }),
+  });
+}
+
+export async function saveRule(_prev: FormState, formData: FormData) {
+  return save(formData, {
+    entity: "Rule",
+    path: ADMIN_PATHS.rules,
+    schema: ruleSchema,
+    labels: { code: "Code" },
+    write: (data, id, userId) =>
+      id
+        ? db.rule.update({ where: { id }, data: { ...data, updatedById: userId } })
+        : db.rule.create({ data: { ...data, updatedById: userId } }),
   });
 }

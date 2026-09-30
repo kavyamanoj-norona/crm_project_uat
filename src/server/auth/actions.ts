@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/server/db";
+import { RULES, getNumberRule } from "@/server/rules";
 import { isIpBlocked, logActivity, requestMeta } from "@/server/security/activity";
 import { verifyPassword } from "./password";
 import { canSignIn, createSession, deleteSession, getCurrentUser } from "./session";
@@ -19,6 +20,27 @@ export type LoginState = {
 };
 
 const INVALID = "Invalid username or password.";
+
+function lockedMessage(until: Date) {
+  const time = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" }).format(until);
+  return `Too many failed attempts. Your account is locked until ${time}.`;
+}
+
+/** Counts a failed sign-in; locks the account once the Rules limit is reached. */
+async function recordFailedLogin(userId: string, attempts: number): Promise<Date | null> {
+  const [max, minutes] = await Promise.all([
+    getNumberRule(RULES.loginMaxAttempts, 5),
+    getNumberRule(RULES.loginLockMinutes, 15),
+  ]);
+  if (max > 0 && attempts >= max) {
+    const lockedUntil = new Date(Date.now() + minutes * 60_000);
+    await db.user.update({ where: { id: userId }, data: { failedLoginCount: 0, lockedUntil } });
+    await logActivity({ action: "user.auto-lock", userId, detail: `${attempts} failed attempts` });
+    return lockedUntil;
+  }
+  await db.user.update({ where: { id: userId }, data: { failedLoginCount: attempts } });
+  return null;
+}
 
 export async function login(_prev: LoginState, formData: FormData): Promise<LoginState> {
   const parsed = loginSchema.safeParse({
@@ -43,9 +65,18 @@ export async function login(_prev: LoginState, formData: FormData): Promise<Logi
     include: { privilege: true },
   });
 
+  if (user?.lockedUntil && user.lockedUntil > new Date()) {
+    await logActivity({ action: "login.locked", userId: user.id, username });
+    return { error: lockedMessage(user.lockedUntil) };
+  }
+
   // Same message for unknown user and wrong password (blueprint §6).
   if (!user || !(await verifyPassword(password, user.passwordHash))) {
     await logActivity({ action: "login.failed", userId: user?.id, username });
+    if (user) {
+      const lockedUntil = await recordFailedLogin(user.id, user.failedLoginCount + 1);
+      if (lockedUntil) return { error: lockedMessage(lockedUntil) };
+    }
     return { error: INVALID };
   }
   if (!canSignIn(user)) {
@@ -53,6 +84,10 @@ export async function login(_prev: LoginState, formData: FormData): Promise<Logi
     return { error: "Your account is disabled. Contact your administrator." };
   }
 
+  await db.user.update({
+    where: { id: user.id },
+    data: { failedLoginCount: 0, lockedUntil: null, lastLoginAt: new Date() },
+  });
   await createSession({ userId: user.id }, remember);
   await logActivity({ action: "login.success", userId: user.id, username: user.username });
   redirect("/");
