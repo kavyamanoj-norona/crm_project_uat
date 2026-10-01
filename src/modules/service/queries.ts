@@ -42,6 +42,7 @@ export async function intakeOptions(scope: BranchScope) {
 // ─── Cases ───────────────────────────────────────────────────────────────────
 
 export const CASE_SORTS = ["createdAt", "jobsheetNo", "status", "stageChangedAt", "estimatedCostPaise"] as const;
+export const UNCOLLECTED_SORTS = ["stageChangedAt", "jobsheetNo", "estimatedCostPaise"] as const;
 
 /** "Type" filter on the Cases list → warranty status. */
 export const CASE_TYPE_FILTERS = {
@@ -53,6 +54,60 @@ export const CASE_TYPE_FILTERS = {
 export type CaseTypeFilter = keyof typeof CASE_TYPE_FILTERS;
 
 export const isCaseTypeFilter = (v: string | undefined): v is CaseTypeFilter => !!v && v in CASE_TYPE_FILTERS;
+
+/** Ready-for-delivery cases that have exceeded the configured uncollected age. */
+export async function listUncollectedCases(list: ListState, scope: { branchId?: string }) {
+  const days = await getNumberRule(RULES.uncollectedAfterDays, 15);
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const digits = list.q.replace(/\D/g, "");
+  const where: Prisma.CaseWhereInput = {
+    ...scope,
+    status: "READY_FOR_DELIVERY",
+    stageChangedAt: { lt: cutoff },
+    ...(list.q
+      ? {
+          OR: [
+            { jobsheetNo: contains(list.q) },
+            { brand: contains(list.q) },
+            { model: contains(list.q) },
+            { customer: { name: contains(list.q) } },
+            ...(digits.length >= 3 ? [{ customer: { phone: { contains: digits } } }] : []),
+          ],
+        }
+      : {}),
+  };
+  const orderBy: Prisma.CaseOrderByWithRelationInput =
+    list.sort === "estimatedCostPaise"
+      ? { estimatedCostPaise: { sort: list.dir, nulls: "last" } }
+      : { [list.sort]: list.dir };
+
+  const [rows, total] = await Promise.all([
+    db.case.findMany({
+      where,
+      orderBy: [orderBy, { stageChangedAt: "asc" }],
+      select: {
+        id: true,
+        jobsheetNo: true,
+        brand: true,
+        model: true,
+        stageChangedAt: true,
+        estimatedCostPaise: true,
+        customer: { select: { name: true, phone: true } },
+        payments: { select: { amountPaise: true } },
+        whatsappMessages: {
+          where: { templateName: "pickup_reminder" },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { status: true, sentAt: true, createdAt: true },
+        },
+      },
+      ...pageArgs(list),
+    }),
+    db.case.count({ where }),
+  ]);
+
+  return { rows, total, days };
+}
 
 /** Tabs are the case stages; `type` narrows by warranty status. */
 export async function listCases(list: ListState, scope: { branchId?: string }, type?: CaseTypeFilter) {

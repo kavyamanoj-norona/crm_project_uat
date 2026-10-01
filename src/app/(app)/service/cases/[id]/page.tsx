@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, ArrowRight, FileText, Image as ImageIcon, IndianRupee, Pencil } from "lucide-react";
+import { ArrowLeft, ArrowRight, FileText, Image as ImageIcon, IndianRupee, MessageCircle, Pencil, Send } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { LinkButton } from "@/components/ui/button";
+import { ActionButton } from "@/components/ui/action-button";
+import { buttonClass, LinkButton } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { KvList } from "@/components/ui/kv-list";
 import { SecretReveal } from "@/components/ui/secret-reveal";
@@ -21,7 +22,12 @@ import { formatPhone } from "@/lib/phone";
 import { param } from "@/modules/admin/components/admin-page";
 import { CUSTOMER_PATHS } from "@/modules/customers/paths";
 import { LEAD_SOURCE_LABELS } from "@/modules/customers/schemas";
-import { cancelCase, changeCaseStage, moveCaseToNextStage, revealDevicePassword, saveEstimate } from "@/modules/service/actions/case";
+import { cancelCase, changeCaseStage, moveCaseToNextStage, revealDevicePassword, saveEstimate, submitDiagnosis } from "@/modules/service/actions/case";
+import { sendWhatsAppTemplate } from "@/modules/service/actions/whatsapp";
+import { quoteWhatsAppLink } from "@/server/notify/customer";
+import { WA_TEMPLATE_MAP } from "@/server/notify/whatsapp-templates";
+import { SendWhatsAppButton } from "@/modules/service/components/send-whatsapp-button";
+import { db } from "@/server/db";
 import { EstimateDialog } from "@/modules/service/components/estimate-dialog";
 import { ITEM_TYPE_LABELS, ITEM_TYPE_TONE } from "@/modules/admin/item-schema";
 import { StageActions } from "@/modules/service/components/stage-actions";
@@ -107,7 +113,17 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
   const [c, customers] = await Promise.all([getCase(id, scope), getMenuPermission(user, CUSTOMER_PATHS.database)]);
   // Outside the header branch → 404, so other branches' cases don't leak.
   if (!c) notFound();
-  const extras = await getCaseExtras(c.customer.id, scope);
+  const [extras, waMessages] = await Promise.all([
+    getCaseExtras(c.customer.id, scope),
+    db.whatsAppMessage.findMany({
+      where: { caseId: c.id },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true, templateName: true, status: true, error: true, createdAt: true,
+        createdBy: { select: { firstName: true, lastName: true } },
+      },
+    }),
+  ]);
   const reached = reachedAt(c);
 
   const paid = c.payments.reduce((sum, p) => sum + p.amountPaise, 0);
@@ -118,6 +134,20 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
   const cancelledFrom = c.status === "CANCELLED" ? c.statusHistory.find((h) => h.toStatus === "CANCELLED")?.fromStatus : null;
   const portalCode = c.jobsheetNo.split("-").pop();
   const half = extras.gstPercent / 2;
+
+  // WhatsApp link shown when the quote is pending customer decision
+  const waLink = c.status === "PENDING_APPROVAL" && c.estimatedCostPaise
+    ? quoteWhatsAppLink({
+        customerName: c.customer.name,
+        customerPhone: c.customer.phone,
+        jobsheetNo: c.jobsheetNo,
+        device,
+        estimatePaise: c.estimatedCostPaise,
+        branchName: c.branch.name,
+      })
+    : null;
+
+  const sendWhatsApp = sendWhatsAppTemplate.bind(null, c.id);
 
   // Start diagnosis (at Intake) / Edit items (Diagnosis, Pending approval)
   const estimateMode = !permission.canEdit ? null : c.status === "INTAKE" ? "start" : ESTIMATE_EDITABLE.includes(c.status) ? "edit" : null;
@@ -188,6 +218,18 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
             <LinkButton href={SERVICE_PATHS.cases} variant="secondary">
               <ArrowLeft className="size-4" /> Back
             </LinkButton>
+            {waLink && (
+              <LinkButton href={waLink} variant="secondary" target="_blank" rel="noopener noreferrer">
+                <MessageCircle className="size-4" /> WhatsApp customer
+              </LinkButton>
+            )}
+            {permission.canEdit && c.customer.phone && (
+              <SendWhatsAppButton
+                customerName={c.customer.name}
+                customerPhone={formatPhone(c.customer.phone)}
+                action={sendWhatsApp}
+              />
+            )}
             {permission.canEdit && isOpenStatus(c.status) && (
               <StageActions
                 jobsheetNo={c.jobsheetNo}
@@ -196,7 +238,21 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
                 moveNext={moveCaseToNextStage.bind(null, c.id)}
                 changeStage={changeCaseStage.bind(null, c.id)}
                 cancel={cancelCase.bind(null, c.id)}
-                primary={estimateMode === "start" ? estimate : undefined}
+                primary={
+                  estimateMode === "start"
+                    ? estimate
+                    : c.status === "DIAGNOSIS" && c.estimatedCostPaise && permission.canEdit
+                      ? (
+                          <ActionButton
+                            action={submitDiagnosis.bind(null, c.id)}
+                            label="Send quote to customer"
+                            className={buttonClass("navy")}
+                          >
+                            <Send className="size-4" /> Send quote to customer
+                          </ActionButton>
+                        )
+                      : undefined
+                }
               />
             )}
           </>
@@ -383,6 +439,31 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
               ]}
             />
           </Card>
+
+          {waMessages.length > 0 && (
+            <Card title="WhatsApp messages">
+              <ul className="divide-y divide-border">
+                {waMessages.map((m) => {
+                  const tpl = WA_TEMPLATE_MAP.get(m.templateName);
+                  const statusTone =
+                    m.status === "SENT" ? "success" : m.status === "FAILED" ? "danger" : "neutral";
+                  return (
+                    <li key={m.id} className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0 text-sm">
+                      <div className="min-w-0">
+                        <p className="font-medium truncate">{tpl?.label ?? m.templateName}</p>
+                        <p className="text-text-muted text-xs mt-0.5">
+                          {formatDateTime(m.createdAt)}
+                          {m.createdBy && ` · ${[m.createdBy.firstName, m.createdBy.lastName].filter(Boolean).join(" ")}`}
+                        </p>
+                        {m.error && <p className="text-danger text-xs mt-0.5 truncate">{m.error}</p>}
+                      </div>
+                      <Badge tone={statusTone} className="shrink-0">{m.status}</Badge>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Card>
+          )}
         </div>
       </div>
     </>

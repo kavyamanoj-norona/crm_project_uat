@@ -6,4 +6,5 @@ export const SERVICE_PATHS = {
   cases: "/service/cases",
   newCase: "/service/new",
   uncollected: "/service/uncollected",
+  lab: "/service/lab",
 } as const;

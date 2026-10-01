@@ -6,6 +6,7 @@ import { decryptText } from "@/server/crypto";
 import { branchWhere, getBranchScope } from "@/server/branch-scope";
 import { ForbiddenError, requireActionPermission } from "@/server/rbac/guard";
 import { logActivity } from "@/server/security/activity";
+import { sendQuoteNotification } from "@/server/notify/customer";
 import { pick, toFieldErrors, type ActionResult, type FormState } from "@/lib/form";
 import type { CurrentUser } from "@/server/auth/session";
 import type { RevealResult } from "@/components/ui/secret-reveal";
@@ -122,6 +123,49 @@ export async function revealDevicePassword(caseId: string): Promise<RevealResult
     const value = decryptText(row.devicePasswordEnc);
     await logActivity({ action: "case.password-reveal", userId: user.id, entity: "Case", entityId: caseId, detail: row.jobsheetNo });
     return { ok: true, value };
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { ok: false, message: e.message };
+    throw e;
+  }
+}
+
+/**
+ * "Send quote to customer" — moves the case from Diagnosis to Pending approval
+ * and fires the customer notification. Requires at least one billable item.
+ */
+export async function submitDiagnosis(caseId: string): Promise<ActionResult> {
+  try {
+    const user = await requireActionPermission(SERVICE_PATHS.cases, "canEdit");
+    const scope = branchWhere(await getBranchScope(user));
+    const c = await db.case.findFirst({
+      where: { id: caseId, ...scope },
+      select: {
+        status: true,
+        estimatedCostPaise: true,
+        jobsheetNo: true,
+        brand: true,
+        model: true,
+        customer: { select: { name: true, phone: true } },
+        branch: { select: { name: true } },
+      },
+    });
+    if (!c) return { ok: false, message: "Case not found." };
+    if (c.status !== "DIAGNOSIS") return { ok: false, message: "Only cases in Diagnosis can be submitted for approval." };
+    if (!c.estimatedCostPaise) return { ok: false, message: "Add at least one item to the estimate before sending to the customer." };
+
+    const moved = await applyStage(caseId, "DIAGNOSIS", "PENDING_APPROVAL", "Quote sent to customer", user.id, scope);
+    if (!moved) return { ok: false, message: STALE };
+
+    const notifyArgs = {
+      customerName: c.customer.name,
+      customerPhone: c.customer.phone,
+      jobsheetNo: c.jobsheetNo,
+      device: [c.brand, c.model].filter(Boolean).join(" "),
+      estimatePaise: c.estimatedCostPaise,
+      branchName: c.branch.name,
+    };
+    await sendQuoteNotification(notifyArgs);
+    return { ok: true, message: "Quote sent — case moved to Pending approval. Open WhatsApp on the case page to notify the customer." };
   } catch (e) {
     if (e instanceof ForbiddenError) return { ok: false, message: e.message };
     throw e;

@@ -187,6 +187,7 @@ model User {
   itemsUpdated     Item[]              @relation("ItemUpdatedBy")
   caseItemsAdded   CaseItem[]          @relation("CaseItemAddedBy")
   caseItemsRemoved CaseItem[]          @relation("CaseItemRemovedBy")
+  whatsappMessages WhatsAppMessage[]
 
   @@index([companyId])
   @@index([branchId])
@@ -397,11 +398,12 @@ model Customer {
   createdAt   DateTime     @default(now()) @db.Timestamptz
   updatedAt   DateTime     @updatedAt @db.Timestamptz
 
-  createdBy    User?     @relation("CustomerCreatedBy", fields: [createdById], references: [id])
-  updatedBy    User?     @relation("CustomerUpdatedBy", fields: [updatedById], references: [id])
-  cases        Case[]    @relation("CaseCustomer")
-  accountCases Case[]    @relation("CaseAccount")
-  payments     Payment[]
+  createdBy        User?             @relation("CustomerCreatedBy", fields: [createdById], references: [id])
+  updatedBy        User?             @relation("CustomerUpdatedBy", fields: [updatedById], references: [id])
+  cases            Case[]            @relation("CaseCustomer")
+  accountCases     Case[]            @relation("CaseAccount")
+  payments         Payment[]
+  whatsappMessages WhatsAppMessage[]
 
   @@index([name])
   @@index([createdAt])
@@ -496,11 +498,12 @@ model Case {
   engineer      User?               @relation("CaseEngineer", fields: [engineerId], references: [id])
   createdBy     User?               @relation("CaseCreatedBy", fields: [createdById], references: [id])
   updatedBy     User?               @relation("CaseUpdatedBy", fields: [updatedById], references: [id])
-  items         CaseItem[]
-  receivedItems CaseReceivedItem[]
-  attachments   CaseAttachment[]
-  statusHistory CaseStatusHistory[]
-  payments      Payment[]
+  items            CaseItem[]
+  receivedItems    CaseReceivedItem[]
+  attachments      CaseAttachment[]
+  statusHistory    CaseStatusHistory[]
+  payments         Payment[]
+  whatsappMessages WhatsAppMessage[]
 
   @@index([branchId, status, createdAt])
   @@index([branchId, stageChangedAt])
@@ -659,4 +662,35 @@ model UserActivityLog {
   @@index([userId, at])
   @@index([at])
   @@map("user_activity_log")
+}
+
+// ─── WhatsApp messaging ───────────────────────────────────────────────────────
+
+enum WaMessageStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+// Append-only log of every WhatsApp template message sent from a service case.
+model WhatsAppMessage {
+  id            String          @id @default(cuid())
+  caseId        String
+  customerId    String
+  templateName  String
+  phone         String          // E.164 recipient (e.g. +919847012345)
+  payload       Json            // Full request body sent to Meta
+  status        WaMessageStatus @default(QUEUED)
+  metaMessageId String?         // wamid returned by Meta on success
+  error         String?
+  sentAt        DateTime?       @db.Timestamptz
+  createdById   String?
+  createdAt     DateTime        @default(now()) @db.Timestamptz
+
+  case      Case     @relation(fields: [caseId], references: [id])
+  customer  Customer @relation(fields: [customerId], references: [id])
+  createdBy User?    @relation(fields: [createdById], references: [id])
+
+  @@index([caseId, createdAt])
+  @@map("whatsapp_message")
 }
