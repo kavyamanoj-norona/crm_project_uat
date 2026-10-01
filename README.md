@@ -51,6 +51,25 @@ that file (including ones added through the UI).
    `LOGIN_MAX_ATTEMPTS` failed sign-ins an account locks for `LOGIN_LOCK_MINUTES`;
    unlock it with the lock icon on the Users screen.
 
+## Service & Customers
+
+- **New Case (Intake)** `/service/new`: type the phone first; a known customer's
+  details fill in. Saving creates or updates the customer (the phone is the dedupe
+  key), the case, its received items, intake photos, the first timeline entry and an
+  advance `Payment` row, all in one transaction.
+- **Jobsheet numbers** `LC-{BRANCH}-{YYMM}-{SEQ}` (e.g. `LC-EDP-2609-0001`) restart
+  each month per branch (month in IST). `nextJobsheetNo()` in
+  `src/modules/service/jobsheet.ts` takes the number from the `number_sequence`
+  table with one atomic `INSERT … ON CONFLICT … RETURNING` inside the save
+  transaction, so numbers never repeat and a failed save leaves no gap.
+  `Case.jobsheetNo` is also unique in the database.
+- **Cases** `/service/cases`: list with stage tabs; the details page has the
+  timeline, photos and the device passcode (stored encrypted with
+  `DATA_ENCRYPTION_KEY`; every reveal is logged).
+- **Customer Database** `/customers/database`: shared by all branches. The list
+  shows who created and who last updated each customer; the details page has
+  the full change history ("Changed: Email, PIN code") from the activity log.
+
 ## How the dynamic menu works
 
 | Table             | Holds                                                         |

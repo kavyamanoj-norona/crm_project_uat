@@ -1,18 +1,6 @@
 import { z } from "zod";
-import { optionalText, requiredText } from "@/lib/form";
-
-const optionalDate = z
-  .string()
-  .trim()
-  .transform((v) => (v === "" ? null : v))
-  .pipe(z.iso.date("Enter a valid date").nullable())
-  .transform((v) => (v ? new Date(`${v}T00:00:00Z`) : null));
-
-const optionalEnum = <T extends readonly [string, ...string[]]>(values: T) =>
-  z
-    .string()
-    .transform((v) => (v === "" ? null : v))
-    .pipe(z.enum(values).nullable());
+import { optionalDate, optionalText, requiredText } from "@/lib/form";
+import { enumLabel, optionalEnum } from "@/lib/enum";
 
 export const GENDERS = ["MALE", "FEMALE", "OTHER"] as const;
 export const MARITAL_STATUSES = ["SINGLE", "MARRIED", "DIVORCED", "WIDOWED"] as const;
@@ -68,6 +56,6 @@ export const passwordChangeSchema = z
 
 export const USER_FIELDS = Object.keys(userSchema.shape);
 
-export const label = (v: string) => v.charAt(0) + v.slice(1).toLowerCase().replace(/_/g, " ");
+export const label = enumLabel;
 
 export const STATUS_TONE = { WORKING: "success", ON_LEAVE: "warning", RESIGNED: "neutral", TERMINATED: "danger" } as const;

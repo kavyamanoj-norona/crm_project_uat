@@ -35,14 +35,14 @@ export function DataTable<T>({ columns, rows, rowKey, empty = "No records found.
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
       <table className="w-full min-w-max text-sm">
-        <thead className="bg-primary-soft/70 text-[13px] font-semibold text-text">
+        <thead className="border-b border-border bg-surface text-[11px] font-bold tracking-[1px] text-text-muted uppercase">
           <tr>
             {columns.map((c) => (
               <th
                 key={c.header}
                 scope="col"
                 className={cn(
-                  "border-r border-border/70 px-3 py-3 whitespace-nowrap last:border-r-0",
+                  "px-3 py-2.5 whitespace-nowrap",
                   alignCls[c.align ?? (c.header === "#" ? "center" : "left")],
                   c.className,
                 )}
@@ -55,7 +55,7 @@ export function DataTable<T>({ columns, rows, rowKey, empty = "No records found.
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-border">
+        <tbody className="divide-y divide-border/70">
           {rows.length === 0 ? (
             <tr>
               <td colSpan={columns.length} className="px-4 py-12 text-center text-text-muted">
@@ -66,13 +66,13 @@ export function DataTable<T>({ columns, rows, rowKey, empty = "No records found.
             rows.map((row, i) => (
               <tr
                 key={rowKey(row)}
-                className={cn("transition-colors hover:bg-surface-muted/70", highlight?.(row) && "bg-primary-soft/50")}
+                className={cn("transition-colors hover:bg-primary-soft", highlight?.(row) && "bg-primary-soft")}
               >
                 {columns.map((c) => (
                   <td
                     key={c.header}
                     className={cn(
-                      "border-r border-border/60 px-3 py-3 whitespace-nowrap last:border-r-0 group-data-[density=compact]/table:py-1.5",
+                      "px-3 py-2.5 whitespace-nowrap group-data-[density=compact]/table:py-1.5",
                       alignCls[c.align ?? (c.header === "#" ? "center" : "left")],
                       c.className,
                     )}

@@ -358,3 +358,52 @@ export async function selectOptions() {
 }
 
 export type SelectOptions = Awaited<ReturnType<typeof selectOptions>>;
+
+// ─── Items (catalog) ─────────────────────────────────────────────────────────
+
+export const ITEM_SORTS = ["code", "name", "category", "pricePaise", "maxDiscountPercent", "updatedAt"] as const;
+
+const ITEM_TABS: Record<string, Prisma.ItemWhereInput> = {
+  service: { type: "SERVICE", isActive: true },
+  part: { type: "PART", isActive: true },
+  accessory: { type: "ACCESSORY", isActive: true },
+  inactive: { isActive: false },
+};
+
+/** Tabs are the item types (active) plus Inactive. */
+export async function listItems(list: ListState) {
+  const search: Prisma.ItemWhereInput = list.q
+    ? {
+        OR: [
+          { code: contains(list.q) },
+          { name: contains(list.q) },
+          { category: contains(list.q) },
+          { brand: contains(list.q) },
+          { hsnSac: { contains: list.q } },
+        ],
+      }
+    : {};
+  const where = { ...search, ...(ITEM_TABS[list.tab] ?? {}) };
+  const [rows, total, all, ...counts] = await Promise.all([
+    db.item.findMany({
+      where,
+      orderBy: [{ [list.sort]: list.dir }, { name: "asc" }],
+      include: { updatedBy: { select: { firstName: true, lastName: true } } },
+      ...pageArgs(list),
+    }),
+    db.item.count({ where }),
+    db.item.count({ where: search }),
+    ...Object.values(ITEM_TABS).map((w) => db.item.count({ where: { ...search, ...w } })),
+  ]);
+  const labels = { service: "Services", part: "Spare parts", accessory: "Accessories", inactive: "Inactive" };
+  const tabs: FilterTab[] = [
+    { key: "", label: "All", count: all },
+    ...Object.keys(ITEM_TABS).map((k, i) => ({ key: k, label: labels[k as keyof typeof labels], count: counts[i]! })),
+  ];
+  return { rows, total, tabs };
+}
+
+/** Categories in use, for the item form's suggestions. */
+export const listItemCategories = async () =>
+  (await db.item.findMany({ where: { category: { not: null } }, distinct: ["category"], select: { category: true }, orderBy: { category: "asc" } }))
+    .map((r) => r.category!);

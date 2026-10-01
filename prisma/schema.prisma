@@ -44,8 +44,10 @@ model Branch {
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
 
-  company Company @relation(fields: [companyId], references: [id])
-  users   User[]
+  company  Company   @relation(fields: [companyId], references: [id])
+  users    User[]
+  cases    Case[]
+  payments Payment[]
 
   @@index([companyId])
   @@map("branch")
@@ -173,6 +175,19 @@ model User {
   blockedIps    BlockedIp[]
   rulesUpdated  Rule[]
 
+  customersCreated Customer[]          @relation("CustomerCreatedBy")
+  customersUpdated Customer[]          @relation("CustomerUpdatedBy")
+  casesCreated     Case[]              @relation("CaseCreatedBy")
+  casesUpdated     Case[]              @relation("CaseUpdatedBy")
+  casesAssigned    Case[]              @relation("CaseEngineer")
+  caseStatusMoves  CaseStatusHistory[]
+  caseAttachments  CaseAttachment[]
+  paymentsReceived Payment[]
+  itemsCreated     Item[]              @relation("ItemCreatedBy")
+  itemsUpdated     Item[]              @relation("ItemUpdatedBy")
+  caseItemsAdded   CaseItem[]          @relation("CaseItemAddedBy")
+  caseItemsRemoved CaseItem[]          @relation("CaseItemRemovedBy")
+
   @@index([companyId])
   @@index([branchId])
   @@index([privilegeId])
@@ -284,6 +299,330 @@ model Rule {
 
   @@index([category])
   @@map("rule")
+}
+
+// ─── Item catalog (Master Settings → Manage → Items) ─────────────────────────
+
+enum ItemType {
+  SERVICE // labour / service charge
+  PART // spare part fitted in the device
+  ACCESSORY // sold alongside (bag, mouse …)
+}
+
+// What a case can be billed for. Price is the list price; the lowest price
+// staff may bill is price × (100 − maxDiscountPercent) / 100 (minimum selling price).
+model Item {
+  id                 String   @id @default(cuid())
+  code               String   @unique // "SV-CLN", "KB-DELL-5518"
+  name               String
+  type               ItemType @default(SERVICE)
+  category           String? // "Keyboard", "Display", "Cleaning" …
+  brand              String?
+  unit               String   @default("Nos")
+  hsnSac             String? // HSN (goods) / SAC (services) code for GST invoices
+  gstPercent         Int      @default(18)
+  pricePaise         Int
+  maxDiscountPercent Int      @default(0)
+  warrantyDays       Int?
+  description        String?
+  isActive           Boolean  @default(true)
+  createdById        String?
+  updatedById        String?
+  createdAt          DateTime @default(now()) @db.Timestamptz
+  updatedAt          DateTime @updatedAt @db.Timestamptz
+
+  createdBy User?      @relation("ItemCreatedBy", fields: [createdById], references: [id])
+  updatedBy User?      @relation("ItemUpdatedBy", fields: [updatedById], references: [id])
+  caseItems CaseItem[]
+
+  @@index([name])
+  @@index([type, isActive])
+  @@map("item")
+}
+
+// ─── Numbering ───────────────────────────────────────────────────────────────
+
+// Counters behind human codes (blueprint §11). One row per key, e.g.
+// "JOBSHEET:EDP:2609" or "CUSTOMER". Incremented atomically by nextSequence()
+// inside the transaction that uses the number, so a rolled-back save leaves no gap.
+model NumberSequence {
+  key       String   @id
+  value     Int      @default(0)
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@map("number_sequence")
+}
+
+// ─── Customers ───────────────────────────────────────────────────────────────
+
+enum CustomerType {
+  INDIVIDUAL
+  BUSINESS // B2B account, e.g. a hotel; can be billed for other people's cases
+}
+
+// "How did you hear about us?"
+enum LeadSource {
+  REPEAT_CUSTOMER
+  WALK_IN
+  REFERRAL
+  ADVERTISEMENT
+  SOCIAL_MEDIA
+  GOOGLE_SEARCH
+  OTHER
+}
+
+// Shared by every branch; the phone number is the dedupe key.
+model Customer {
+  id          String       @id @default(cuid())
+  code        String       @unique // "CU000001"
+  type        CustomerType @default(INDIVIDUAL)
+  name        String
+  phone       String       @unique // digits only: 9847012345 or 04842401234
+  altPhone    String?
+  email       String?
+  gstin       String?
+  address     String?
+  state       String?
+  district    String?
+  pincode     String?
+  // How they first found us; each case keeps its own source too.
+  source      LeadSource?
+  notes       String?
+  // Kept in step by case intake so lists sort without aggregating 100k rows.
+  visitCount  Int          @default(0)
+  lastVisitAt DateTime?    @db.Timestamptz
+  isActive    Boolean      @default(true)
+  createdById String?
+  updatedById String?
+  createdAt   DateTime     @default(now()) @db.Timestamptz
+  updatedAt   DateTime     @updatedAt @db.Timestamptz
+
+  createdBy    User?     @relation("CustomerCreatedBy", fields: [createdById], references: [id])
+  updatedBy    User?     @relation("CustomerUpdatedBy", fields: [updatedById], references: [id])
+  cases        Case[]    @relation("CaseCustomer")
+  accountCases Case[]    @relation("CaseAccount")
+  payments     Payment[]
+
+  @@index([name])
+  @@index([createdAt])
+  @@index([lastVisitAt])
+  @@map("customer")
+}
+
+// ─── Service: cases ──────────────────────────────────────────────────────────
+
+enum IntakeType {
+  WALK_IN
+  PICKUP
+  ON_SITE
+}
+
+enum ProductType {
+  LAPTOP
+  PRINTER
+  DESKTOP
+  OTHER
+}
+
+enum WarrantyStatus {
+  NON_WARRANTY
+  WARRANTY
+  RETURN
+}
+
+enum CaseStatus {
+  INTAKE
+  DIAGNOSIS
+  PENDING_APPROVAL
+  AWAITING_STOCK
+  QUALITY_CHECK
+  READY_FOR_DELIVERY
+  CLOSED
+  CANCELLED
+}
+
+enum ItemCondition {
+  GOOD
+  FAIR
+  WORN
+  DAMAGED
+}
+
+enum PaymentMode {
+  UPI
+  CASH
+  CARD
+  OTHER
+}
+
+model Case {
+  id                   String         @id @default(cuid())
+  jobsheetNo           String         @unique // LC-EDP-2609-0001, see modules/service/jobsheet.ts
+  branchId             String
+  customerId           String
+  // B2B account billed for this case (a BUSINESS customer), if any.
+  accountId            String?
+  intakeType           IntakeType     @default(WALK_IN)
+  source               LeadSource
+  status               CaseStatus     @default(INTAKE)
+  // When the current stage began — drives the "Age" column and TAT alerts.
+  stageChangedAt       DateTime       @default(now()) @db.Timestamptz
+  // Pickup / on-site visits
+  siteAddress          String?
+  siteLatitude         Float?
+  siteLongitude        Float?
+  // Device
+  productType          ProductType
+  brand                String
+  model                String?
+  serialNo             String?
+  warrantyStatus       WarrantyStatus
+  // AES-256-GCM (server/crypto.ts); every reveal is written to the activity log.
+  devicePasswordEnc    String?
+  problemReported      String
+  // Money
+  estimatedCostPaise   Int?
+  gstInvoiceRequired   Boolean        @default(false)
+  expectedDeliveryDate DateTime?      @db.Date
+  engineerId           String?
+  createdById          String?
+  updatedById          String?
+  createdAt            DateTime       @default(now()) @db.Timestamptz
+  updatedAt            DateTime       @updatedAt @db.Timestamptz
+
+  branch        Branch              @relation(fields: [branchId], references: [id])
+  customer      Customer            @relation("CaseCustomer", fields: [customerId], references: [id])
+  account       Customer?           @relation("CaseAccount", fields: [accountId], references: [id])
+  engineer      User?               @relation("CaseEngineer", fields: [engineerId], references: [id])
+  createdBy     User?               @relation("CaseCreatedBy", fields: [createdById], references: [id])
+  updatedBy     User?               @relation("CaseUpdatedBy", fields: [updatedById], references: [id])
+  items         CaseItem[]
+  receivedItems CaseReceivedItem[]
+  attachments   CaseAttachment[]
+  statusHistory CaseStatusHistory[]
+  payments      Payment[]
+
+  @@index([branchId, status, createdAt])
+  @@index([branchId, stageChangedAt])
+  @@index([customerId])
+  @@index([accountId])
+  @@index([engineerId])
+  @@map("service_case") // "case" is an SQL keyword
+}
+
+// Billable lines of a case, picked from the item catalog at diagnosis. Code,
+// name and prices are copied from the item so later catalog edits don't
+// rewrite the estimate. Rows are never updated or deleted: editing the
+// estimate stamps removedAt on the old lines and inserts new ones.
+model CaseItem {
+  id             String    @id @default(cuid())
+  caseId         String
+  itemId         String
+  code           String
+  name           String
+  type           ItemType
+  quantity       Int       @default(1)
+  listPricePaise Int // catalog price per unit when added
+  minPricePaise  Int // lowest allowed per unit when added
+  unitPricePaise Int // billed per unit
+  gstPercent     Int
+  lineTotalPaise Int // unitPrice × quantity
+  sortOrder      Int       @default(0)
+  addedById      String?
+  createdAt      DateTime  @default(now()) @db.Timestamptz
+  removedAt      DateTime? @db.Timestamptz
+  removedById    String?
+
+  case      Case  @relation(fields: [caseId], references: [id])
+  item      Item  @relation(fields: [itemId], references: [id])
+  addedBy   User? @relation("CaseItemAddedBy", fields: [addedById], references: [id])
+  removedBy User? @relation("CaseItemRemovedBy", fields: [removedById], references: [id])
+
+  @@index([caseId, removedAt])
+  @@index([itemId])
+  @@map("case_item")
+}
+
+// Accessories handed over with the device (charger, bag …).
+model CaseReceivedItem {
+  id          String        @id @default(cuid())
+  caseId      String
+  name        String
+  referenceNo String?
+  condition   ItemCondition @default(GOOD)
+  sortOrder   Int           @default(0)
+  createdAt   DateTime      @default(now()) @db.Timestamptz
+
+  case Case @relation(fields: [caseId], references: [id])
+
+  @@index([caseId])
+  @@map("case_received_item")
+}
+
+model CaseAttachment {
+  id          String   @id @default(cuid())
+  caseId      String
+  kind        String   @default("INTAKE_PHOTO")
+  url         String
+  fileName    String
+  sizeBytes   Int
+  createdById String?
+  createdAt   DateTime @default(now()) @db.Timestamptz
+
+  case      Case  @relation(fields: [caseId], references: [id])
+  createdBy User? @relation(fields: [createdById], references: [id])
+
+  @@index([caseId])
+  @@map("case_attachment")
+}
+
+// Append-only stage history; the case timeline reads from here.
+model CaseStatusHistory {
+  id          String      @id @default(cuid())
+  caseId      String
+  fromStatus  CaseStatus?
+  toStatus    CaseStatus
+  note        String?
+  changedById String?
+  at          DateTime    @default(now()) @db.Timestamptz
+
+  case      Case  @relation(fields: [caseId], references: [id])
+  changedBy User? @relation(fields: [changedById], references: [id])
+
+  @@index([caseId, at])
+  @@map("case_status_history")
+}
+
+// ─── Finance ─────────────────────────────────────────────────────────────────
+
+enum PaymentKind {
+  ADVANCE
+  FINAL
+  OTHER
+}
+
+// Money received. Immutable: corrections go through refunds / adjustments.
+model Payment {
+  id           String      @id @default(cuid())
+  branchId     String
+  caseId       String?
+  customerId   String
+  kind         PaymentKind
+  mode         PaymentMode
+  amountPaise  Int
+  reference    String? // UPI / card reference
+  receivedById String?
+  createdAt    DateTime    @default(now()) @db.Timestamptz
+
+  branch     Branch   @relation(fields: [branchId], references: [id])
+  case       Case?    @relation(fields: [caseId], references: [id])
+  customer   Customer @relation(fields: [customerId], references: [id])
+  receivedBy User?    @relation(fields: [receivedById], references: [id])
+
+  @@index([branchId, createdAt])
+  @@index([caseId])
+  @@index([customerId])
+  @@map("payment")
 }
 
 // ─── Security ────────────────────────────────────────────────────────────────

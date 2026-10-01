@@ -20,6 +20,7 @@ import {
   privilegeSchema,
 } from "../schemas";
 import { ruleSchema } from "../rule-schema";
+import { itemSchema } from "../item-schema";
 
 type SaveOptions<S extends z.ZodType> = {
   entity: string;
@@ -180,5 +181,19 @@ export async function saveRule(_prev: FormState, formData: FormData) {
       id
         ? db.rule.update({ where: { id }, data: { ...data, updatedById: userId } })
         : db.rule.create({ data: { ...data, updatedById: userId } }),
+  });
+}
+
+export async function saveItem(_prev: FormState, formData: FormData) {
+  return save(formData, {
+    entity: "Item",
+    path: ADMIN_PATHS.items,
+    schema: itemSchema,
+    labels: { code: "Item code" },
+    write: (data, id, userId) => {
+      const { price, ...rest } = data;
+      const row = { ...rest, pricePaise: price!, updatedById: userId };
+      return id ? db.item.update({ where: { id }, data: row }) : db.item.create({ data: { ...row, createdById: userId } });
+    },
   });
 }

@@ -22,6 +22,7 @@ const TARGETS = {
   menu: { path: ADMIN_PATHS.modules, model: () => db.menu },
   blockedIp: { path: ADMIN_PATHS.blockedIps, model: () => db.blockedIp },
   rule: { path: ADMIN_PATHS.rules, model: () => db.rule },
+  item: { path: ADMIN_PATHS.items, model: () => db.item },
 } as const;
 
 export type ToggleTarget = keyof typeof TARGETS;
@@ -67,4 +68,5 @@ const LABELS: Record<ToggleTarget, string> = {
   menu: "Menu",
   blockedIp: "IP block",
   rule: "Rule",
+  item: "Item",
 };

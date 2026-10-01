@@ -30,4 +30,9 @@ export const RULES = {
   sessionHours: "SESSION_HOURS",
   discountCapPercent: "DISCOUNT_CAP_PERCENT",
   defaultGstPercent: "DEFAULT_GST_PERCENT",
+  gstInclusive: "GST_INCLUSIVE_PRICING",
+  tatDiagnosisHours: "TAT_DIAGNOSIS_HOURS",
+  tatApprovalFollowupHours: "TAT_APPROVAL_FOLLOWUP_HOURS",
+  tatRepairHours: "TAT_REPAIR_HOURS",
+  uncollectedAfterDays: "UNCOLLECTED_AFTER_DAYS",
 } as const;

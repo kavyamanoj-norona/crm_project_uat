@@ -21,6 +21,24 @@ export function formatDateTime(d: Date | null | undefined) {
   return d ? dateTimeFmt.format(d) : "—";
 }
 
+const shortDateTimeFmt = new Intl.DateTimeFormat("en-IN", {
+  timeZone: TZ,
+  day: "numeric",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+/** 30 Sept, 11:54 am — for compact captions where the year is obvious. */
+export function formatShortDateTime(d: Date | null | undefined) {
+  return d ? shortDateTimeFmt.format(d) : "—";
+}
+
+/** Today in IST as yyyy-mm-dd (the business day, blueprint §11). */
+export function todayIst() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date());
+}
+
 /** yyyy-mm-dd for <input type="date"> (calendar date columns are stored as UTC midnight). */
 export function toDateInput(d: Date | null | undefined) {
   return d ? d.toISOString().slice(0, 10) : "";

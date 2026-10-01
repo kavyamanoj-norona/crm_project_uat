@@ -11,17 +11,21 @@ type FilterSelectProps = {
   value: string;
   options: { value: string; label: string }[];
   className?: string;
+  /** Query param it sets (default `tab`). */
+  param?: string;
+  /** Accessible name. */
+  label?: string;
 };
 
-/** Phone-sized replacement for FilterTabs. */
-export function FilterSelect({ path, query, prefix, value, options, className }: FilterSelectProps) {
+/** Dropdown filter bound to a query param; also the phone-sized replacement for FilterTabs. */
+export function FilterSelect({ path, query, prefix, value, options, className, param = "tab", label = "Filter" }: FilterSelectProps) {
   const router = useRouter();
   return (
     <label className={cn("block w-full", className)}>
-      <span className="sr-only">Filter</span>
+      <span className="sr-only">{label}</span>
       <select
         value={value}
-        onChange={(e) => router.push(listHref({ path, query, prefix }, { tab: e.target.value || null }), { scroll: false })}
+        onChange={(e) => router.push(listHref({ path, query, prefix }, { [param]: e.target.value || null }), { scroll: false })}
         className="h-10 w-full rounded-lg border border-border bg-primary-soft/60 px-3 text-sm font-medium text-text outline-none focus:border-primary"
       >
         {options.map((o) => (

@@ -23,6 +23,22 @@ export const optionalText = z
 
 export const requiredText = (label: string) => z.string().trim().min(1, `${label} is required`);
 
+/** <input type="date"> value (yyyy-mm-dd) → UTC midnight Date; empty → null. */
+export const optionalDate = z
+  .string()
+  .trim()
+  .transform((v) => (v === "" ? null : v))
+  .pipe(z.iso.date("Enter a valid date").nullable())
+  .transform((v) => (v ? new Date(`${v}T00:00:00Z`) : null));
+
+/** Optional email; empty → null. */
+export const optionalEmail = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .transform((v) => (v === "" ? null : v))
+  .pipe(z.email("Enter a valid email").nullable());
+
 /** Checkbox value: "on" when checked, missing otherwise. */
 export const checkbox = z
   .union([z.literal("on"), z.literal("true"), z.literal(""), z.null(), z.undefined()])

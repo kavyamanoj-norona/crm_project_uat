@@ -17,9 +17,18 @@ function uniqueFields(e: unknown): string[] | null {
   if (typeof e !== "object" || e === null || (e as { code?: string }).code !== "P2002") return null;
   const meta = (e as { meta?: Record<string, unknown> }).meta ?? {};
   if (Array.isArray(meta.target)) return meta.target as string[];
-  // Driver-adapter shape: meta.driverAdapterError.cause.constraint.fields
-  const cause = (meta.driverAdapterError as { cause?: { constraint?: { fields?: string[] } } })?.cause;
-  return cause?.constraint?.fields?.map((f) => f.replace(/"/g, "")) ?? [];
+  // Driver-adapter shape: meta.driverAdapterError.cause.constraint.{fields | index}
+  const cause = (meta.driverAdapterError as {
+    cause?: { table?: string; constraint?: { fields?: string[]; index?: string } };
+  })?.cause;
+  const constraint = cause?.constraint;
+  if (constraint?.fields) return constraint.fields.map((f) => f.replace(/"/g, ""));
+  // Prisma names unique indexes <table>_<field>[_<field>…]_key, e.g. customer_phone_key.
+  const index = constraint?.index;
+  if (index && cause?.table && index.startsWith(`${cause.table}_`) && index.endsWith("_key")) {
+    return index.slice(cause.table.length + 1, -4).split("_");
+  }
+  return [];
 }
 
 /** Turns known errors into a FormState; rethrows anything unexpected. */

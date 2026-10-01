@@ -121,6 +121,11 @@ export const MODULES: ModuleDef[] = [
       { title: "Modules", path: "/admin/modules", icon: "layout-grid" },
       { title: "Rules", path: "/admin/rules", icon: "sliders-horizontal" },
       {
+        group: "Manage",
+        icon: "boxes",
+        items: [{ title: "Items", path: "/admin/manage/items", icon: "package" }],
+      },
+      {
         group: "Security",
         icon: "lock",
         items: [

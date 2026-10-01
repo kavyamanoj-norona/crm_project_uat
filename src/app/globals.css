@@ -1,28 +1,44 @@
 @import "tailwindcss";
 
-/* Laptop Clinic design tokens (blueprint §5). The theme customizer will only
-   change these variables / data attributes on <html>, never component classes. */
+/* dark: follows the theme attribute, not the OS setting */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* Laptop Clinic design tokens — brand guidelines: sky #29ace1, navy #1f1c5b
+   (blueprint §5, front-end prototype). The theme customizer will only change
+   these variables / data attributes on <html>, never component classes. */
 :root {
   --brand-navy: #1f1c5b;
-  --primary: #29ace1;
-  --primary-hover: #1b93c4;
-  --primary-soft: #e6f6fc; /* brand-50 */
+  --brand-navy-hover: #34317a;
+  --primary: #29ace1; /* sky */
+  --primary-hover: #1d9bd0;
+  --primary-soft: #eaf7fd; /* sky-050 */
   --primary-foreground: #ffffff;
 
-  --background: #f5f7fb;
+  --background: #f6f7fb;
   --surface: #ffffff;
-  --surface-muted: #f1f4f9;
-  --border: #e3e8ef;
-  --text: #1c2434;
-  --text-muted: #64748b;
+  --surface-muted: #f3f3f9; /* navy-050 */
+  --border: #e2e5ee;
+  --text: #232337;
+  --text-muted: #6b6e85;
 
-  --success: #16a34a;
-  --warning: #d97706;
-  --danger: #dc2626;
-  --radius: 0.625rem;
+  --success: #0e9f6e;
+  --warning: #b45309;
+  --danger: #c2313a;
+  --radius: 0.75rem;
+
+  /* navy sidebar + icon rail */
+  --sidebar: #1f1c5b;
+  --sidebar-rail: #19164d;
+  --sidebar-text: #cfd3ee;
+  --sidebar-muted: #8f93c4;
+  --sidebar-line: rgb(255 255 255 / 0.12);
+  --sidebar-hover: rgb(255 255 255 / 0.07);
 }
 
 [data-theme="dark"] {
+  --sidebar: #141236;
+  --sidebar-rail: #0f0d2b;
+  --brand-navy-hover: #4a46a0;
   --primary: #3bb8ea;
   --primary-hover: #5cc6ef;
   --primary-soft: #102b3a;
@@ -38,6 +54,13 @@
 
 @theme inline {
   --color-brand-navy: var(--brand-navy);
+  --color-brand-navy-hover: var(--brand-navy-hover);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-rail: var(--sidebar-rail);
+  --color-sidebar-text: var(--sidebar-text);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-line: var(--sidebar-line);
+  --color-sidebar-hover: var(--sidebar-hover);
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
   --color-primary-soft: var(--primary-soft);
@@ -52,7 +75,9 @@
   --color-warning: var(--warning);
   --color-danger: var(--danger);
   --radius-token: var(--radius);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-source-sans), "Myriad Pro", "Segoe UI", system-ui, sans-serif;
+  /* the prototype's soft navy-tinted card shadow */
+  --shadow-sm: 0 1px 2px rgb(31 28 91 / 0.06), 0 4px 14px rgb(31 28 91 / 0.06);
   --font-mono: var(--font-geist-mono);
 
   /* status-page illustration motion (skipped under prefers-reduced-motion) */

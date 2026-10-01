@@ -4,6 +4,7 @@ import Link from "next/link";
 import { cn } from "@/lib/cn";
 import type { NavModule } from "@/lib/navigation";
 import { NavIcon } from "@/components/ui/nav-icon";
+import { BrandMark } from "./brand-mark";
 import { ProfileMenu } from "./profile-menu";
 import type { LogoutAction, ShellUser } from "./types";
 
@@ -19,15 +20,15 @@ export function IconRail({ nav, activeModule, user, logout, onNavigate }: IconRa
   return (
     <nav
       aria-label="Modules"
-      className="flex h-full w-16 flex-col items-center border-r border-border bg-surface py-3"
+      className="flex h-full w-12 flex-col items-center border-r border-sidebar-line bg-sidebar-rail pb-3"
     >
       <Link
         href="/"
         onClick={onNavigate}
-        className="mb-4 flex size-10 items-center justify-center rounded-xl bg-brand-navy text-sm font-bold text-white"
+        className="mb-3 flex h-16 w-full shrink-0 items-center justify-center border-b border-sidebar-line hover:bg-sidebar-hover"
         aria-label="Laptop Clinic home"
       >
-        LC
+        <BrandMark size={30} />
       </Link>
 
       <ul className="flex flex-1 flex-col items-center gap-1">
@@ -41,8 +42,8 @@ export function IconRail({ nav, activeModule, user, logout, onNavigate }: IconRa
                 aria-label={module.title}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex size-11 items-center justify-center rounded-xl text-text-muted transition-colors hover:bg-surface-muted hover:text-text",
-                  active && "bg-primary-soft text-primary hover:bg-primary-soft hover:text-primary",
+                  "flex size-10 items-center justify-center rounded-xl text-sidebar-text transition-colors hover:bg-sidebar-hover hover:text-white",
+                  active && "bg-primary text-white hover:bg-primary hover:text-white",
                 )}
               >
                 <NavIcon name={module.icon} className="size-5" />

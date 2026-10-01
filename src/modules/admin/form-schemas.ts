@@ -9,6 +9,7 @@ import {
   privilegeSchema,
 } from "./schemas";
 import { ruleSchema } from "./rule-schema";
+import { itemSchema } from "./item-schema";
 
 /**
  * Schemas the browser validates with before submitting. Server pages pass the
@@ -24,6 +25,7 @@ export const FORM_SCHEMAS = {
   menu: menuSchema,
   blockedIp: blockedIpSchema,
   rule: ruleSchema,
+  item: itemSchema,
 };
 
 export type FormSchemaKey = keyof typeof FORM_SCHEMAS;

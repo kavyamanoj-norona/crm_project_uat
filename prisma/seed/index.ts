@@ -14,6 +14,7 @@ import {
   type PrivilegeCode,
 } from "./navigation";
 import { DEFAULT_RULES } from "./rules";
+import { DEFAULT_ITEMS } from "./items";
 
 // Idempotent: safe to re-run. It upserts and never overwrites permissions,
 // rules or passwords that were changed in the UI.
@@ -75,6 +76,13 @@ async function seedRules() {
   for (const r of DEFAULT_RULES) {
     // create-only: values edited in Master Settings → Rules are kept
     await db.rule.upsert({ where: { code: r.code }, update: {}, create: { ...r } });
+  }
+}
+
+async function seedItems() {
+  for (const { code, ...item } of DEFAULT_ITEMS) {
+    // create-only: prices edited in Master Settings → Items are kept
+    await db.item.upsert({ where: { code }, update: {}, create: { code, ...item } });
   }
 }
 
@@ -195,6 +203,7 @@ async function main() {
   if (process.argv.includes("--prune")) await pruneNavigation();
   const privilegeIds = await seedPrivileges();
   await seedRules();
+  await seedItems();
   const { moduleIds, permissionCount } = await seedNavigation(privilegeIds);
   const org = await seedOrganisation();
 
@@ -223,7 +232,7 @@ async function main() {
 
   console.log(
     `Seeded ${PRIVILEGES.length} privileges, ${MODULES.length} modules, ${permissionCount} permissions, ` +
-      `${BRANCHES.length} branches, ${DOMAINS.length} domains, ${DEFAULT_RULES.length} rules, ${DEMO_USERS.length} users.`,
+      `${BRANCHES.length} branches, ${DOMAINS.length} domains, ${DEFAULT_RULES.length} rules, ${DEFAULT_ITEMS.length} items, ${DEMO_USERS.length} users.`,
   );
   console.table(DEMO_USERS.map((u) => ({ username: u.username, privilege: u.privilege, password: DEMO_PASSWORD })));
 }

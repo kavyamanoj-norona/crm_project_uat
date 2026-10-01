@@ -55,7 +55,7 @@ export function TopBar({
         </button>
       )}
 
-      <div className="hidden items-center gap-2 text-sm font-medium lg:flex">
+      <div className="hidden items-center gap-2 text-[15px] font-bold whitespace-nowrap text-brand-navy lg:flex dark:text-text">
         {greeting}
         {isEvening ? <Moon className="size-4 text-primary" /> : <Sun className="size-4 text-warning" />}
       </div>
@@ -70,7 +70,7 @@ export function TopBar({
           <input
             type="search"
             placeholder="Search or ask Kiran…"
-            className="h-9 w-48 rounded-lg border border-border bg-surface-muted pr-12 pl-9 text-sm outline-none placeholder:text-text-muted focus:border-primary xl:w-72"
+            className="h-9 w-48 rounded-full border border-border bg-surface-muted pr-12 pl-9 text-sm outline-none placeholder:text-text-muted focus:border-primary xl:w-80"
           />
           <kbd className="absolute top-1/2 right-2 -translate-y-1/2 rounded border border-border px-1.5 text-[10px] text-text-muted">
             ⌘K

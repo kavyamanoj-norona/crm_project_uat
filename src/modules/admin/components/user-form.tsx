@@ -4,9 +4,9 @@ import { useActionState, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { initialFormState, validateForm, type FormState } from "@/lib/form";
 import { useFormFeedback } from "@/hooks/use-form-feedback";
-import { DISTRICTS, INDIAN_STATES } from "@/lib/india";
 import { Button, LinkButton } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
+import { StateDistrictFields } from "@/components/forms/state-district-fields";
 import type { SelectOptions } from "../queries";
 import {
   EMPLOYMENT_STATUSES,
@@ -91,14 +91,12 @@ function UserFields({
   options: SelectOptions;
   editing: boolean;
 }) {
-  // Dependent selects: branch follows company, department follows domain, district follows state.
+  // Dependent selects: branch follows company, department follows domain.
   const [companyId, setCompanyId] = useState(v.companyId ?? "");
   const [domainId, setDomainId] = useState(v.domainId ?? "");
-  const [stateName, setStateName] = useState(v.state ?? "");
 
   const branches = options.branches.filter((b) => b.companyId === companyId);
   const departments = options.departments.filter((d) => d.domainId === domainId);
-  const districts = DISTRICTS[stateName];
 
   const f = (name: string) => ({
     id: name,
@@ -140,22 +138,7 @@ function UserFields({
       <Field label="DOB" htmlFor="dob" error={errors.dob}>
         <Input {...f("dob")} type="date" />
       </Field>
-      <Field label="State" htmlFor="state" error={errors.state}>
-        <Select
-          {...f("state")}
-          value={stateName}
-          defaultValue={undefined}
-          onChange={(e) => setStateName(e.target.value)}
-          options={INDIAN_STATES.map((s) => ({ value: s, label: s }))}
-        />
-      </Field>
-      <Field label="District" htmlFor="district" error={errors.district}>
-        {districts ? (
-          <Select key={stateName} {...f("district")} options={districts.map((d) => ({ value: d, label: d }))} />
-        ) : (
-          <Input key={stateName} {...f("district")} placeholder="District" />
-        )}
-      </Field>
+      <StateDistrictFields state={v.state} district={v.district} errors={errors} />
 
       <Field label="Address" htmlFor="address" error={errors.address} className="lg:col-span-2">
         <Textarea {...f("address")} placeholder="Address" />

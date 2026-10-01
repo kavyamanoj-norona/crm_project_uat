@@ -11,6 +11,8 @@ import type { LogoutAction, ShellBranch, ShellUser } from "./types";
 
 type AppShellProps = {
   nav: NavModule[];
+  /** Badge per menu path, e.g. { "/service/cases": 37 }. */
+  counts: Record<string, number>;
   user: ShellUser;
   greeting: string;
   logout: LogoutAction;
@@ -18,8 +20,8 @@ type AppShellProps = {
   children: React.ReactNode;
 };
 
-/** Icon rail (64px) + module sidebar (256px) + top bar (64px) + content. */
-export function AppShell({ nav, user, greeting, logout, branch, children }: AppShellProps) {
+/** Icon rail (48px) + module sidebar (192px) + top bar (64px) + content. */
+export function AppShell({ nav, counts, user, greeting, logout, branch, children }: AppShellProps) {
   const pathname = usePathname();
   const activeModule = findActiveModule(nav, pathname);
   const [collapsed, setCollapsed] = useState(false);
@@ -49,13 +51,14 @@ export function AppShell({ nav, user, greeting, logout, branch, children }: AppS
           <ModuleSidebar
             module={activeModule}
             pathname={pathname}
+            counts={counts}
             onNavigate={closeMobile}
             className={cn(!showSidebar && "md:hidden")}
           />
         )}
       </aside>
 
-      <div className={cn("transition-[padding] duration-200", showSidebar ? "md:pl-80" : "md:pl-16")}>
+      <div className={cn("transition-[padding] duration-200", showSidebar ? "md:pl-[240px]" : "md:pl-12")}>
         <TopBar
           nav={nav}
           activeModule={activeModule}

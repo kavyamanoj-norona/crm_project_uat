@@ -17,6 +17,8 @@ export type FieldConfig = {
   placeholder?: string;
   hint?: string;
   options?: { value: string; label: string }[];
+  /** Text inputs: values offered while typing (still free text). */
+  suggestions?: string[];
   /** Grid columns to span on large screens (of 4). */
   span?: 1 | 2 | 3 | 4;
 };
@@ -99,7 +101,21 @@ export function EntityForm({ fields, schema, action, initial = {}, id, cancelHre
               ) : f.type === "select" ? (
                 <Select {...common} options={f.options ?? []} defaultValue={value == null ? "" : String(value)} />
               ) : (
-                <Input {...common} type={f.type ?? "text"} defaultValue={value == null ? "" : String(value)} />
+                <>
+                  <Input
+                    {...common}
+                    type={f.type ?? "text"}
+                    defaultValue={value == null ? "" : String(value)}
+                    list={f.suggestions?.length ? `${f.name}-suggestions` : undefined}
+                  />
+                  {f.suggestions?.length ? (
+                    <datalist id={`${f.name}-suggestions`}>
+                      {f.suggestions.map((o) => (
+                        <option key={o} value={o} />
+                      ))}
+                    </datalist>
+                  ) : null}
+                </>
               )}
             </Field>
           );

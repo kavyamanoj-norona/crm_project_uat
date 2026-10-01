@@ -32,10 +32,10 @@ export function ProfileMenu({ user, logout }: { user: ShellUser; logout: LogoutA
         aria-label="Open profile menu"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className="relative flex size-10 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground"
+        className="relative flex size-9 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground"
       >
         {initials(user.name)}
-        <span className="absolute right-0 bottom-0 size-2.5 rounded-full bg-success ring-2 ring-surface" />
+        <span className="absolute right-0 bottom-0 size-2.5 rounded-full bg-success ring-2 ring-sidebar-rail" />
       </button>
 
       {open && (

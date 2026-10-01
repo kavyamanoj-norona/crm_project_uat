@@ -11,6 +11,7 @@ export const ADMIN_PATHS = {
   privileges: "/admin/privileges",
   modules: "/admin/modules",
   rules: "/admin/rules",
+  items: "/admin/manage/items",
   blockedIps: "/admin/security/blocked-ips",
   activityLog: "/admin/security/activity-log",
 } as const;

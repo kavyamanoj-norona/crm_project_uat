@@ -18,7 +18,7 @@ export function Field({ label, htmlFor, required, error, hint, className, childr
   const message = Array.isArray(error) ? error[0] : error;
   return (
     <div className={className}>
-      <label htmlFor={htmlFor} className="mb-1.5 block text-sm font-medium text-text">
+      <label htmlFor={htmlFor} className="mb-1.5 block text-[12.5px] font-bold text-brand-navy dark:text-text">
         {label}
         {required && <span className="ml-0.5 text-danger">*</span>}
       </label>

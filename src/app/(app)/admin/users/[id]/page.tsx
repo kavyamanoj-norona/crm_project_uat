@@ -4,6 +4,7 @@ import { ArrowLeft, Pencil } from "lucide-react";
 import { db } from "@/server/db";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { DetailItem } from "@/components/ui/detail-item";
 import { LinkButton } from "@/components/ui/button";
 import { ListView } from "@/components/data/list-view";
 import { listState } from "@/lib/list";
@@ -17,15 +18,6 @@ import { requirePageAccess } from "@/server/rbac/guard";
 import { getBranchScope } from "@/server/branch-scope";
 
 export const metadata = { title: "User details" };
-
-function Item({ term, children }: { term: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <dt className="text-xs font-medium tracking-wide text-text-muted uppercase">{term}</dt>
-      <dd className="mt-1 text-sm text-text">{children || "—"}</dd>
-    </div>
-  );
-}
 
 export default async function UserDetailsPage({ params, searchParams }: PageProps<"/admin/users/[id]">) {
   const { user: me, permission } = await requirePageAccess(ADMIN_PATHS.users);
@@ -99,23 +91,23 @@ export default async function UserDetailsPage({ params, searchParams }: PageProp
 
         <Card title="Details" className="xl:col-span-2">
           <dl className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            <Item term="Mobile">{user.mobile}</Item>
-            <Item term="Email">{user.email}</Item>
-            <Item term="Gender">{user.gender && label(user.gender)}</Item>
-            <Item term="Date of birth">{user.dob && formatDate(user.dob)}</Item>
-            <Item term="Marital status">{user.maritalStatus && label(user.maritalStatus)}</Item>
-            <Item term="Joining date">{user.joiningDate && formatDate(user.joiningDate)}</Item>
-            <Item term="Company">{user.company.name}</Item>
-            <Item term="Branch">{user.branch ? `${user.branch.name} (${user.branch.code})` : "All branches"}</Item>
-            <Item term="Domain / Department">{`${user.domain.name} · ${user.department.name}`}</Item>
-            <Item term="Default module">{user.defaultModule?.title}</Item>
-            <Item term="State / District">{[user.state, user.district].filter(Boolean).join(", ")}</Item>
-            <Item term="Address">{user.address}</Item>
-            <Item term="Last sign-in">{user.lastLoginAt && formatDateTime(user.lastLoginAt)}</Item>
-            <Item term="Created">
+            <DetailItem term="Mobile">{user.mobile}</DetailItem>
+            <DetailItem term="Email">{user.email}</DetailItem>
+            <DetailItem term="Gender">{user.gender && label(user.gender)}</DetailItem>
+            <DetailItem term="Date of birth">{user.dob && formatDate(user.dob)}</DetailItem>
+            <DetailItem term="Marital status">{user.maritalStatus && label(user.maritalStatus)}</DetailItem>
+            <DetailItem term="Joining date">{user.joiningDate && formatDate(user.joiningDate)}</DetailItem>
+            <DetailItem term="Company">{user.company.name}</DetailItem>
+            <DetailItem term="Branch">{user.branch ? `${user.branch.name} (${user.branch.code})` : "All branches"}</DetailItem>
+            <DetailItem term="Domain / Department">{`${user.domain.name} · ${user.department.name}`}</DetailItem>
+            <DetailItem term="Default module">{user.defaultModule?.title}</DetailItem>
+            <DetailItem term="State / District">{[user.state, user.district].filter(Boolean).join(", ")}</DetailItem>
+            <DetailItem term="Address">{user.address}</DetailItem>
+            <DetailItem term="Last sign-in">{user.lastLoginAt && formatDateTime(user.lastLoginAt)}</DetailItem>
+            <DetailItem term="Created">
               {formatDateTime(user.createdAt)}
               {user.createdBy ? ` by ${user.createdBy.firstName}` : ""}
-            </Item>
+            </DetailItem>
           </dl>
         </Card>
       </div>

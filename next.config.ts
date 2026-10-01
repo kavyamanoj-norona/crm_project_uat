@@ -3,8 +3,9 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   experimental: {
     serverActions: {
-      // User photos are capped at 2 MB; leave room for multipart overhead.
-      bodySizeLimit: "3mb",
+      // Intake photos: up to 8 × 5 MB (usually far less after in-browser
+      // compression); user photos 2 MB. Leaves room for multipart overhead.
+      bodySizeLimit: "45mb",
     },
   },
 };
