@@ -39,8 +39,8 @@ export default async function UncollectedDevicesPage({ searchParams }: PageProps
     <AdminPage
       title={scope.branch ? `Uncollected devices — ${scope.branch.name}` : "Uncollected devices — all branches"}
       group="Service"
-      subtitle={`Ready for delivery longer than ${days} days · oldest cases first · pickup reminder history shows messages sent from this CRM`}
-      actions={<Badge tone={total > 0 ? "warning" : "success"}>{total} waiting</Badge>}
+      subtitle={`All ready-for-delivery cases · cases idle >${days} days are highlighted · pickup reminder history shows messages sent from this CRM`}
+      actions={<Badge tone={total > 0 ? "warning" : "success"}>{total} ready for delivery</Badge>}
     >
       <ListView
         list={list}
@@ -80,9 +80,10 @@ export default async function UncollectedDevicesPage({ searchParams }: PageProps
             sort: "stageChangedAt",
             cell: (c) => {
               const idleDays = Math.floor((now.getTime() - c.stageChangedAt.getTime()) / DAY_MS);
+              const overdue = idleDays >= days;
               return (
                 <span className="flex flex-col items-start gap-1">
-                  <Badge tone="danger">{idleDays} days</Badge>
+                  <Badge tone={overdue ? "danger" : "warning"}>{idleDays} {idleDays === 1 ? "day" : "days"}</Badge>
                   <span className="text-xs text-text-muted">Ready {formatDate(c.stageChangedAt)}</span>
                 </span>
               );

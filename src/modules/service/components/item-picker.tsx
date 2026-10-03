@@ -65,7 +65,7 @@ export function ItemPicker({ catalog, exclude, onPick }: ItemPickerProps) {
         <ul id="item-results" role="listbox" className="absolute top-full z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-xl border border-border bg-surface py-1 shadow-lg">
           {results.length === 0 && (
             <li className="px-4 py-3 text-sm text-text-muted">
-              {catalog.length === 0 ? "No items yet — add them in Master Settings → Manage → Items." : "No matching item."}
+              {catalog.length === 0 ? "No items yet — add them in Service → Items." : "No matching item."}
             </li>
           )}
           {results.map((i, n) => (

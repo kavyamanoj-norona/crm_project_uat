@@ -18,6 +18,7 @@ import {
   ESTIMATE_EDITABLE,
   cancelSchema,
   estimateSchema,
+  feedbackSchema,
   isOpenStatus,
   nextStage,
   stageChangeSchema,
@@ -168,6 +169,30 @@ export async function submitDiagnosis(caseId: string): Promise<ActionResult> {
     return { ok: true, message: "Quote sent — case moved to Pending approval. Open WhatsApp on the case page to notify the customer." };
   } catch (e) {
     if (e instanceof ForbiddenError) return { ok: false, message: e.message };
+    throw e;
+  }
+}
+
+/** Save (create or update) feedback for a closed/cancelled case. */
+export async function saveCaseFeedback(caseId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const parsed = feedbackSchema.safeParse(pick(formData, ["rating", "comment", "customerBehaviour"]));
+  if (!parsed.success) return toFieldErrors(parsed.error, formData);
+  try {
+    const user = await requireActionPermission(SERVICE_PATHS.cases, "canEdit");
+    const { row, scope } = await scopedCase(caseId, user);
+    if (!row) return { message: "Case not found." };
+    if (row.status !== "CLOSED" && row.status !== "CANCELLED")
+      return { message: "Feedback can only be added to closed or cancelled cases." };
+    await db.caseFeedback.upsert({
+      where: { caseId },
+      create: { caseId, ...parsed.data, createdById: user.id },
+      update: { ...parsed.data },
+    });
+    await logActivity({ action: "case.feedback", userId: user.id, entity: "Case", entityId: caseId, detail: `Rating ${parsed.data.rating}/5` });
+    revalidatePath(SERVICE_PATHS.cases, "layout");
+    return { ok: true, message: "Feedback saved." };
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { message: e.message };
     throw e;
   }
 }

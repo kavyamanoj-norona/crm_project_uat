@@ -1,0 +1,5 @@
+export const SALES_PATHS = {
+  dashboard: "/sales/dashboard",
+  direct: "/sales/direct",
+  daybook: "/sales/daybook",
+} as const;

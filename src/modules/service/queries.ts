@@ -55,15 +55,13 @@ export type CaseTypeFilter = keyof typeof CASE_TYPE_FILTERS;
 
 export const isCaseTypeFilter = (v: string | undefined): v is CaseTypeFilter => !!v && v in CASE_TYPE_FILTERS;
 
-/** Ready-for-delivery cases that have exceeded the configured uncollected age. */
+/** All ready-for-delivery cases; those past the uncollected threshold are highlighted. */
 export async function listUncollectedCases(list: ListState, scope: { branchId?: string }) {
   const days = await getNumberRule(RULES.uncollectedAfterDays, 15);
-  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   const digits = list.q.replace(/\D/g, "");
   const where: Prisma.CaseWhereInput = {
     ...scope,
     status: "READY_FOR_DELIVERY",
-    stageChangedAt: { lt: cutoff },
     ...(list.q
       ? {
           OR: [
@@ -176,6 +174,7 @@ export const getCase = (id: string, scope: { branchId?: string }) =>
       attachments: { orderBy: { createdAt: "asc" }, include: { createdBy: who } },
       statusHistory: { orderBy: { at: "desc" }, include: { changedBy: who } },
       payments: { orderBy: { createdAt: "asc" }, include: { receivedBy: who } },
+      feedback: { include: { createdBy: who } },
     },
   });
 

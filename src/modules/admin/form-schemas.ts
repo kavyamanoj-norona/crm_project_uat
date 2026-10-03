@@ -10,6 +10,7 @@ import {
 } from "./schemas";
 import { ruleSchema } from "./rule-schema";
 import { itemSchema } from "./item-schema";
+import { stockAdjustSchema, purchaseRequestSchema, stockTransferSchema } from "../inventory/schemas";
 
 /**
  * Schemas the browser validates with before submitting. Server pages pass the
@@ -26,6 +27,9 @@ export const FORM_SCHEMAS = {
   blockedIp: blockedIpSchema,
   rule: ruleSchema,
   item: itemSchema,
+  stockAdjust: stockAdjustSchema,
+  purchaseRequest: purchaseRequestSchema,
+  stockTransfer: stockTransferSchema,
 };
 
 export type FormSchemaKey = keyof typeof FORM_SCHEMAS;

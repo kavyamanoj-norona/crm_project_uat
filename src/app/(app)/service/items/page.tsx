@@ -11,18 +11,18 @@ import { AdminPage, param } from "@/modules/admin/components/admin-page";
 import { EntityForm, type FieldConfig } from "@/modules/admin/components/entity-form";
 import { RowActions } from "@/modules/admin/components/row-actions";
 import { ITEM_TYPE_LABELS, ITEM_TYPE_TONE, gstOptions, itemTypeOptions, unitOptions } from "@/modules/admin/item-schema";
-import { ADMIN_PATHS } from "@/modules/admin/paths";
 import { ITEM_SORTS, listItemCategories, listItems } from "@/modules/admin/queries";
+import { SERVICE_PATHS } from "@/modules/service/paths";
 import { RULES, getNumberRule } from "@/server/rules";
 import { requirePageAccess } from "@/server/rbac/guard";
 
 export const metadata = { title: "Items" };
 
 
-export default async function ItemsPage({ searchParams }: PageProps<"/admin/manage/items">) {
-  const { permission } = await requirePageAccess(ADMIN_PATHS.items);
+export default async function ItemsPage({ searchParams }: PageProps<"/service/items">) {
+  const { permission } = await requirePageAccess(SERVICE_PATHS.items);
   const sp = await searchParams;
-  const list = listState(ADMIN_PATHS.items, sp, { sorts: ITEM_SORTS, defaultSort: "name", defaultDir: "asc" });
+  const list = listState(SERVICE_PATHS.items, sp, { sorts: ITEM_SORTS, defaultSort: "name", defaultDir: "asc" });
   const editId = param(sp, "edit");
 
   const [{ rows, total, tabs }, editing, categories, discountCap] = await Promise.all([
@@ -55,6 +55,7 @@ export default async function ItemsPage({ searchParams }: PageProps<"/admin/mana
   return (
     <AdminPage
       title="Items"
+      group="Service"
       subtitle="Services, spare parts and accessories that can be added to a case at diagnosis"
       saved={param(sp, "saved")}
       form={
@@ -62,7 +63,7 @@ export default async function ItemsPage({ searchParams }: PageProps<"/admin/mana
           ? {
               label: "Add Item",
               editingTitle: editing ? `${editing.name} (${editing.code})` : undefined,
-              cancelHref: ADMIN_PATHS.items,
+              cancelHref: SERVICE_PATHS.items,
               content: <EntityForm fields={fields} schema="item" action={saveItem} id={editing?.id} initial={initial} />,
             }
           : undefined
@@ -110,7 +111,7 @@ export default async function ItemsPage({ searchParams }: PageProps<"/admin/mana
             cell: (r) =>
               permission.canEdit && (
                 <RowActions
-                  editHref={`${ADMIN_PATHS.items}?edit=${r.id}`}
+                  editHref={`${SERVICE_PATHS.items}?edit=${r.id}`}
                   toggle={toggleActive.bind(null, "item", r.id)}
                   active={r.isActive}
                 />

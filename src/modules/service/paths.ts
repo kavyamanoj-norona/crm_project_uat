@@ -7,4 +7,5 @@ export const SERVICE_PATHS = {
   newCase: "/service/new",
   uncollected: "/service/uncollected",
   lab: "/service/lab",
+  items: "/service/items",
 } as const;

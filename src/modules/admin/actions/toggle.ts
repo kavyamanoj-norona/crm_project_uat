@@ -6,6 +6,7 @@ import { ForbiddenError, requireActionPermission } from "@/server/rbac/guard";
 import { logActivity } from "@/server/security/activity";
 import type { ActionResult } from "@/lib/form";
 import { ADMIN_PATHS } from "../paths";
+import { SERVICE_PATHS } from "../../service/paths";
 
 type Toggleable = {
   findUnique(args: { where: { id: string }; select: { isActive: true } }): Promise<{ isActive: boolean } | null>;
@@ -22,7 +23,7 @@ const TARGETS = {
   menu: { path: ADMIN_PATHS.modules, model: () => db.menu },
   blockedIp: { path: ADMIN_PATHS.blockedIps, model: () => db.blockedIp },
   rule: { path: ADMIN_PATHS.rules, model: () => db.rule },
-  item: { path: ADMIN_PATHS.items, model: () => db.item },
+  item: { path: SERVICE_PATHS.items, model: () => db.item },
 } as const;
 
 export type ToggleTarget = keyof typeof TARGETS;

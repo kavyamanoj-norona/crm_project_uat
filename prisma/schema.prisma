@@ -49,6 +49,11 @@ model Branch {
   cases    Case[]
   payments Payment[]
 
+  stockItems       StockItem[]
+  purchaseRequests PurchaseRequest[]
+  transfersOut     StockTransfer[]   @relation("TransferFrom")
+  transfersIn      StockTransfer[]   @relation("TransferTo")
+
   @@index([companyId])
   @@map("branch")
 }
@@ -188,6 +193,14 @@ model User {
   caseItemsAdded   CaseItem[]          @relation("CaseItemAddedBy")
   caseItemsRemoved CaseItem[]          @relation("CaseItemRemovedBy")
   whatsappMessages WhatsAppMessage[]
+
+  caseFeedbacks            CaseFeedback[]
+
+  stockItemsUpdated        StockItem[]        @relation("StockItemUpdatedBy")
+  purchaseRequestsRaised   PurchaseRequest[]  @relation("PRRequestedBy")
+  purchaseRequestsReviewed PurchaseRequest[]  @relation("PRReviewedBy")
+  transfersCreated         StockTransfer[]    @relation("TransferCreatedBy")
+  transfersApproved        StockTransfer[]    @relation("TransferApprovedBy")
 
   @@index([companyId])
   @@index([branchId])
@@ -335,6 +348,10 @@ model Item {
   createdBy User?      @relation("ItemCreatedBy", fields: [createdById], references: [id])
   updatedBy User?      @relation("ItemUpdatedBy", fields: [updatedById], references: [id])
   caseItems CaseItem[]
+
+  stockItems        StockItem[]
+  purchaseRequests  PurchaseRequest[]
+  transferItems     StockTransferItem[]
 
   @@index([name])
   @@index([type, isActive])
@@ -504,6 +521,8 @@ model Case {
   statusHistory    CaseStatusHistory[]
   payments         Payment[]
   whatsappMessages WhatsAppMessage[]
+  purchaseRequests PurchaseRequest[]
+  feedback         CaseFeedback?
 
   @@index([branchId, status, createdAt])
   @@index([branchId, stageChangedAt])
@@ -594,6 +613,33 @@ model CaseStatusHistory {
 
   @@index([caseId, at])
   @@map("case_status_history")
+}
+
+// ─── Service: feedback ───────────────────────────────────────────────────────
+
+enum CustomerBehaviour {
+  COOPERATIVE   // polite and easy to work with
+  NORMAL        // no notable interaction
+  DIFFICULT     // raised concerns / hard to please
+  RUDE          // abusive or disrespectful
+  EXCELLENT     // went out of their way to appreciate the team
+}
+
+// One-per-case feedback record, written when a case is closed.
+model CaseFeedback {
+  id                String            @id @default(cuid())
+  caseId            String            @unique
+  rating            Int               // 1–5 stars
+  comment           String?
+  customerBehaviour CustomerBehaviour @default(NORMAL)
+  createdById       String?
+  createdAt         DateTime          @default(now()) @db.Timestamptz
+  updatedAt         DateTime          @updatedAt @db.Timestamptz
+
+  case      Case  @relation(fields: [caseId], references: [id])
+  createdBy User? @relation(fields: [createdById], references: [id])
+
+  @@map("case_feedback")
 }
 
 // ─── Finance ─────────────────────────────────────────────────────────────────
@@ -693,4 +739,113 @@ model WhatsAppMessage {
 
   @@index([caseId, createdAt])
   @@map("whatsapp_message")
+}
+
+// ─── Inventory: stock, purchasing, transfers ──────────────────────────────────
+
+enum PurchaseRequestStatus {
+  PENDING    // raised, awaiting PM review
+  WITH_PM    // with purchase manager
+  APPROVED   // PM approved; awaiting arrival
+  REJECTED   // PM rejected
+  FULFILLED  // stock received at branch
+}
+
+enum TransferStatus {
+  PENDING_APPROVAL // awaiting PM approval
+  APPROVED         // approved; ready to dispatch
+  DISPATCHED       // sent from source branch
+  RECEIVED         // received at destination
+  CANCELLED        // cancelled before dispatch
+}
+
+// Physical units of an item at a branch. One row per (branch, item) pair.
+model StockItem {
+  id          String   @id @default(cuid())
+  branchId    String
+  itemId      String
+  quantity    Int      @default(0)
+  unitCodes   String[] // individual sticker codes, e.g. ["KB123","KB124"]
+  updatedById String?
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+
+  branch    Branch @relation(fields: [branchId], references: [id])
+  item      Item   @relation(fields: [itemId], references: [id])
+  updatedBy User?  @relation("StockItemUpdatedBy", fields: [updatedById], references: [id])
+
+  @@unique([branchId, itemId])
+  @@index([branchId])
+  @@map("stock_item")
+}
+
+// A branch requests an item from the purchase manager.
+model PurchaseRequest {
+  id            String                @id @default(cuid())
+  code          String                @unique // "PR-EDP-2610-001"
+  branchId      String
+  itemId        String
+  caseId        String?               // case that triggered the request
+  quantity      Int                   @default(1)
+  notes         String?
+  status        PurchaseRequestStatus @default(PENDING)
+  slaBreachAt   DateTime?             @db.Timestamptz
+  requestedById String?
+  reviewedById  String?
+  reviewedAt    DateTime?             @db.Timestamptz
+  createdAt     DateTime              @default(now()) @db.Timestamptz
+  updatedAt     DateTime              @updatedAt @db.Timestamptz
+
+  branch      Branch @relation(fields: [branchId], references: [id])
+  item        Item   @relation(fields: [itemId], references: [id])
+  case        Case?  @relation(fields: [caseId], references: [id])
+  requestedBy User?  @relation("PRRequestedBy", fields: [requestedById], references: [id])
+  reviewedBy  User?  @relation("PRReviewedBy", fields: [reviewedById], references: [id])
+
+  @@index([branchId, status])
+  @@index([itemId])
+  @@map("purchase_request")
+}
+
+// Planned movement of stock between branches.
+model StockTransfer {
+  id           String         @id @default(cuid())
+  code         String         @unique // "TR-EDP-LAB-2610-001"
+  fromBranchId String
+  toBranchId   String
+  status       TransferStatus @default(PENDING_APPROVAL)
+  notes        String?
+  createdById  String?
+  approvedById String?
+  approvedAt   DateTime?      @db.Timestamptz
+  dispatchedAt DateTime?      @db.Timestamptz
+  receivedAt   DateTime?      @db.Timestamptz
+  createdAt    DateTime       @default(now()) @db.Timestamptz
+  updatedAt    DateTime       @updatedAt @db.Timestamptz
+
+  fromBranch Branch              @relation("TransferFrom", fields: [fromBranchId], references: [id])
+  toBranch   Branch              @relation("TransferTo", fields: [toBranchId], references: [id])
+  createdBy  User?               @relation("TransferCreatedBy", fields: [createdById], references: [id])
+  approvedBy User?               @relation("TransferApprovedBy", fields: [approvedById], references: [id])
+  items      StockTransferItem[]
+
+  @@index([fromBranchId, status])
+  @@index([toBranchId, status])
+  @@map("stock_transfer")
+}
+
+// Line items for a stock transfer.
+model StockTransferItem {
+  id         String   @id @default(cuid())
+  transferId String
+  itemId     String
+  quantity   Int
+  unitCodes  String[]
+
+  transfer StockTransfer @relation(fields: [transferId], references: [id])
+  item     Item          @relation(fields: [itemId], references: [id])
+
+  @@unique([transferId, itemId])
+  @@index([transferId])
+  @@map("stock_transfer_item")
 }

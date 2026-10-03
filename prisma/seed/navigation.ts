@@ -56,18 +56,45 @@ export const MODULES: ModuleDef[] = [
       { title: "New Case (Intake)", path: "/service/new", icon: "file-plus", roles: [SALES, BM] },
       { title: "Chip-Level Lab", path: "/service/lab", icon: "cpu", roles: [CHIP, BM], approve: [CHIP] },
       { title: "Uncollected Devices", path: "/service/uncollected", icon: "laptop" },
+      {
+        group: "Manage",
+        icon: "boxes",
+        items: [{ title: "Items", path: "/service/items", icon: "package" }],
+      },
     ],
   },
   {
     code: "sales",
-    title: "Sales & Finance",
-    icon: "wallet",
+    title: "Sales",
+    icon: "shopping-bag",
     path: "/sales",
     roles: [SALES, BM],
     entries: [
       { title: "Dashboard", path: "/sales/dashboard", icon: "layout-dashboard" },
-      { title: "Direct Sales", path: "/sales/direct", icon: "shopping-bag" },
+      { title: "Direct Sales", path: "/sales/direct", icon: "tag" },
       { title: "Daybook & Expenses", path: "/sales/daybook", icon: "book-open", roles: [BM], approve: [BM] },
+    ],
+  },
+  {
+    code: "finance",
+    title: "Finance",
+    icon: "wallet",
+    path: "/finance",
+    roles: [BM],
+    entries: [
+      { title: "Invoices", path: "/finance/invoices", icon: "file-text" },
+      { title: "Receipts", path: "/finance/receipts", icon: "receipt" },
+      { title: "Credit Notes", path: "/finance/credit-notes", icon: "file-minus" },
+      { title: "Ledger", path: "/finance/ledger", icon: "book" },
+      { title: "Pending Dues", path: "/finance/pending-dues", icon: "clock" },
+      {
+        group: "Reports",
+        icon: "bar-chart-2",
+        items: [
+          { title: "Income & Expense", path: "/finance/reports/income-expense", icon: "area-chart" },
+          { title: "Profit & Loss", path: "/finance/reports/profit-loss", icon: "trending-up" },
+        ],
+      },
     ],
   },
   {
@@ -120,11 +147,6 @@ export const MODULES: ModuleDef[] = [
       { title: "Privilege", path: "/admin/privileges", icon: "key-round" },
       { title: "Modules", path: "/admin/modules", icon: "layout-grid" },
       { title: "Rules", path: "/admin/rules", icon: "sliders-horizontal" },
-      {
-        group: "Manage",
-        icon: "boxes",
-        items: [{ title: "Items", path: "/admin/manage/items", icon: "package" }],
-      },
       {
         group: "Security",
         icon: "lock",

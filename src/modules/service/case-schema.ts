@@ -202,6 +202,37 @@ export const INTAKE_FIELDS = Object.keys(intakeSchema.shape);
 
 export const INTAKE_LABELS: Record<string, string> = { jobsheetNo: "Jobsheet number", phone: "Phone" };
 
+// ─── Feedback ─────────────────────────────────────────────────────────────────
+
+export const CUSTOMER_BEHAVIOURS = ["COOPERATIVE", "NORMAL", "DIFFICULT", "RUDE", "EXCELLENT"] as const;
+export type CustomerBehaviourValue = (typeof CUSTOMER_BEHAVIOURS)[number];
+
+export const CUSTOMER_BEHAVIOUR_LABELS: Record<CustomerBehaviourValue, string> = {
+  COOPERATIVE: "Cooperative",
+  NORMAL: "Normal",
+  DIFFICULT: "Difficult",
+  RUDE: "Rude",
+  EXCELLENT: "Excellent",
+};
+
+export const CUSTOMER_BEHAVIOUR_TONE: Record<CustomerBehaviourValue, string> = {
+  COOPERATIVE: "success",
+  NORMAL: "neutral",
+  DIFFICULT: "warning",
+  RUDE: "danger",
+  EXCELLENT: "primary",
+} as const;
+
+export const feedbackSchema = z.object({
+  rating: z.coerce
+    .number({ error: "Select a rating" })
+    .int()
+    .min(1, "Rating must be at least 1")
+    .max(5, "Rating must be at most 5"),
+  comment: optionalText.refine((v) => v === null || v.length <= 1000, "Keep the comment under 1000 characters"),
+  customerBehaviour: z.enum(CUSTOMER_BEHAVIOURS, { error: "Select customer behaviour" }),
+});
+
 /** What the phone lookup returns to the intake form. */
 export type CustomerMatch = {
   id: string;

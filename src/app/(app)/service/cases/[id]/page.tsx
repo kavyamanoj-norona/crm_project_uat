@@ -22,13 +22,14 @@ import { formatPhone } from "@/lib/phone";
 import { param } from "@/modules/admin/components/admin-page";
 import { CUSTOMER_PATHS } from "@/modules/customers/paths";
 import { LEAD_SOURCE_LABELS } from "@/modules/customers/schemas";
-import { cancelCase, changeCaseStage, moveCaseToNextStage, revealDevicePassword, saveEstimate, submitDiagnosis } from "@/modules/service/actions/case";
+import { cancelCase, changeCaseStage, moveCaseToNextStage, revealDevicePassword, saveEstimate, saveCaseFeedback, submitDiagnosis } from "@/modules/service/actions/case";
 import { sendWhatsAppTemplate } from "@/modules/service/actions/whatsapp";
 import { quoteWhatsAppLink } from "@/server/notify/customer";
 import { WA_TEMPLATE_MAP } from "@/server/notify/whatsapp-templates";
 import { SendWhatsAppButton } from "@/modules/service/components/send-whatsapp-button";
 import { db } from "@/server/db";
 import { EstimateDialog } from "@/modules/service/components/estimate-dialog";
+import { FeedbackDialog } from "@/modules/service/components/feedback-dialog";
 import { ITEM_TYPE_LABELS, ITEM_TYPE_TONE } from "@/modules/admin/item-schema";
 import { StageActions } from "@/modules/service/components/stage-actions";
 import { STAGE_ICONS } from "@/modules/service/components/stage-icons";
@@ -37,6 +38,9 @@ import {
   CASE_KIND_LABELS,
   CASE_STATUS_LABELS,
   CASE_STATUS_TONE,
+  CUSTOMER_BEHAVIOUR_LABELS,
+  CUSTOMER_BEHAVIOUR_TONE,
+  CUSTOMER_BEHAVIOURS,
   ESTIMATE_EDITABLE,
   INTAKE_TYPE_LABELS,
   PAYMENT_MODE_LABELS,
@@ -462,6 +466,53 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
                   );
                 })}
               </ul>
+            </Card>
+          )}
+
+          {(c.status === "CLOSED" || c.status === "CANCELLED") && (
+            <Card
+              title="Feedback"
+              actions={
+                permission.canEdit && (
+                  <FeedbackDialog
+                    action={saveCaseFeedback.bind(null, c.id)}
+                    initial={c.feedback}
+                  />
+                )
+              }
+            >
+              {c.feedback ? (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-0.5">
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <svg
+                          key={n}
+                          className={`size-5 ${n <= c.feedback!.rating ? "text-yellow-400" : "text-border"}`}
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                          aria-hidden
+                        >
+                          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                        </svg>
+                      ))}
+                    </div>
+                    <span className="font-semibold text-sm">{c.feedback.rating}/5</span>
+                    <Badge tone={CUSTOMER_BEHAVIOUR_TONE[c.feedback.customerBehaviour] as Parameters<typeof Badge>[0]["tone"]}>
+                      {CUSTOMER_BEHAVIOUR_LABELS[c.feedback.customerBehaviour]}
+                    </Badge>
+                  </div>
+                  {c.feedback.comment && (
+                    <p className="text-sm text-text-muted whitespace-pre-wrap">{c.feedback.comment}</p>
+                  )}
+                  <p className="text-xs text-text-muted">
+                    Recorded {formatDateTime(c.feedback.createdAt)}
+                    {c.feedback.createdBy && ` · ${[c.feedback.createdBy.firstName, c.feedback.createdBy.lastName].filter(Boolean).join(" ")}`}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm text-text-muted">No feedback recorded yet.</p>
+              )}
             </Card>
           )}
         </div>
