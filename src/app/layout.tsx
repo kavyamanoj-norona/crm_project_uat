@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { Geist_Mono, Source_Sans_3 } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/feedback/toast";
@@ -20,11 +21,13 @@ export const metadata: Metadata = {
   description: "Laptop Clinic CRM — Norona Tech LLP",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const cookieStore = await cookies();
+  const theme = cookieStore.get("lc_theme")?.value ?? "light";
   return (
     <html
       lang="en"
-      data-theme="light"
+      data-theme={theme === "dark" ? "dark" : "light"}
       className={`${sourceSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full font-sans">

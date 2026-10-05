@@ -11,12 +11,14 @@ import type { LogoutAction, ShellUser } from "./types";
 type IconRailProps = {
   nav: NavModule[];
   activeModule: NavModule | null;
+  /** True when the current route is under /settings */
+  isSettings: boolean;
   user: ShellUser;
   logout: LogoutAction;
   onNavigate: () => void;
 };
 
-export function IconRail({ nav, activeModule, user, logout, onNavigate }: IconRailProps) {
+export function IconRail({ nav, activeModule, isSettings, user, logout, onNavigate }: IconRailProps) {
   return (
     <nav
       aria-label="Modules"
@@ -31,9 +33,10 @@ export function IconRail({ nav, activeModule, user, logout, onNavigate }: IconRa
         <BrandMark size={30} />
       </Link>
 
+      {/* Module icons — DB modules only, Settings is NOT in this list */}
       <ul className="flex flex-1 flex-col items-center gap-1">
         {nav.map((module) => {
-          const active = module.id === activeModule?.id;
+          const active = !isSettings && module.id === activeModule?.id;
           return (
             <li key={module.id} className="group relative">
               <Link
@@ -55,6 +58,25 @@ export function IconRail({ nav, activeModule, user, logout, onNavigate }: IconRa
           );
         })}
       </ul>
+
+      {/* Dedicated Settings button — styled identically to module icons but NOT a module */}
+      <div className="group relative mb-1">
+        <Link
+          href="/settings/profile"
+          onClick={onNavigate}
+          aria-label="Settings"
+          aria-current={isSettings ? "page" : undefined}
+          className={cn(
+            "flex size-10 items-center justify-center rounded-xl text-sidebar-text transition-colors hover:bg-sidebar-hover hover:text-white",
+            isSettings && "bg-primary text-white hover:bg-primary hover:text-white",
+          )}
+        >
+          <NavIcon name="settings" className="size-5" />
+        </Link>
+        <span className="pointer-events-none absolute top-1/2 left-full z-50 ml-2 -translate-y-1/2 rounded-md bg-brand-navy px-2 py-1 text-xs whitespace-nowrap text-white opacity-0 shadow transition-opacity group-hover:opacity-100">
+          Settings
+        </span>
+      </div>
 
       <ProfileMenu user={user} logout={logout} />
     </nav>

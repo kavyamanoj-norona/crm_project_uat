@@ -103,3 +103,84 @@ export const listBusinessAccounts = () =>
     take: 500,
     select: { id: true, name: true, phone: true },
   });
+
+// ─── Dashboard ────────────────────────────────────────────────────────────────
+
+export async function getCustomerDashboardStats() {
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  const [total, newThisMonth, business, atRisk, repeatLast30, bySource, topByVisits, recentCustomers] =
+    await Promise.all([
+      db.customer.count({ where: { isActive: true } }),
+      db.customer.count({ where: { createdAt: { gte: startOfMonth }, isActive: true } }),
+      db.customer.count({ where: { type: "BUSINESS", isActive: true } }),
+      db.customer.count({ where: { isActive: true, lastVisitAt: { lt: ninetyDaysAgo, not: null } } }),
+      db.customer.count({ where: { isActive: true, lastVisitAt: { gte: thirtyDaysAgo }, visitCount: { gt: 1 } } }),
+      db.customer.groupBy({
+        by: ["source"],
+        where: { isActive: true, source: { not: null } },
+        _count: { id: true },
+        orderBy: { _count: { id: "desc" } },
+      }),
+      db.customer.findMany({
+        where: { isActive: true, visitCount: { gt: 1 } },
+        orderBy: { visitCount: "desc" },
+        take: 8,
+        select: { id: true, code: true, name: true, phone: true, visitCount: true, lastVisitAt: true, type: true },
+      }),
+      db.customer.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 6,
+        select: { id: true, code: true, name: true, phone: true, type: true, source: true, createdAt: true },
+      }),
+    ]);
+
+  return { total, newThisMonth, business, atRisk, repeatLast30, bySource, topByVisits, recentCustomers };
+}
+
+// ─── CS Workspace ─────────────────────────────────────────────────────────────
+
+const caseWorkspaceSelect = {
+  id: true,
+  jobsheetNo: true,
+  status: true,
+  productType: true,
+  brand: true,
+  model: true,
+  estimatedCostPaise: true,
+  stageChangedAt: true,
+  updatedAt: true,
+  branch: { select: { code: true, name: true } },
+  customer: { select: { id: true, name: true, phone: true } },
+} satisfies Prisma.CaseSelect;
+
+export async function getCsWorkspaceData(scope: { branchId?: string }) {
+  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+
+  const [feedbackPending, readyForDelivery, lapseRisk] = await Promise.all([
+    db.case.findMany({
+      where: { ...scope, status: "CLOSED", feedback: null },
+      orderBy: { updatedAt: "desc" },
+      take: 20,
+      select: caseWorkspaceSelect,
+    }),
+    db.case.findMany({
+      where: { ...scope, status: "READY_FOR_DELIVERY", stageChangedAt: { lt: twentyFourHoursAgo } },
+      orderBy: { stageChangedAt: "asc" },
+      take: 20,
+      select: caseWorkspaceSelect,
+    }),
+    db.customer.findMany({
+      where: { isActive: true, lastVisitAt: { lt: sixtyDaysAgo, not: null } },
+      orderBy: { lastVisitAt: "asc" },
+      take: 20,
+      select: { id: true, code: true, name: true, phone: true, lastVisitAt: true, visitCount: true },
+    }),
+  ]);
+
+  return { feedbackPending, readyForDelivery, lapseRisk };
+}

@@ -14,9 +14,10 @@ type ModuleSidebarProps = {
   counts: Record<string, number>;
   onNavigate: () => void;
   className?: string;
+  footer?: React.ReactNode;
 };
 
-export function ModuleSidebar({ module, pathname, counts, onNavigate, className }: ModuleSidebarProps) {
+export function ModuleSidebar({ module, pathname, counts, onNavigate, className, footer }: ModuleSidebarProps) {
   const activeId = findActiveItem([module], pathname)?.item.id;
 
   return (
@@ -41,6 +42,9 @@ export function ModuleSidebar({ module, pathname, counts, onNavigate, className 
           ),
         )}
       </div>
+      {footer && (
+        <div className="shrink-0 border-t border-sidebar-line">{footer}</div>
+      )}
     </nav>
   );
 }

@@ -73,6 +73,13 @@ export const MODULES: ModuleDef[] = [
       { title: "Dashboard", path: "/sales/dashboard", icon: "layout-dashboard" },
       { title: "Direct Sales", path: "/sales/direct", icon: "tag" },
       { title: "Daybook & Expenses", path: "/sales/daybook", icon: "book-open", roles: [BM], approve: [BM] },
+      {
+        group: "Manage",
+        icon: "sliders-horizontal",
+        items: [
+          { title: "Sales Target", path: "/sales/target", icon: "target", roles: [] }, // Admin only
+        ],
+      },
     ],
   },
   {

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
 import { findActiveModule, type NavModule } from "@/lib/navigation";
+import { SETTINGS_MODULE } from "@/lib/settings-nav";
 import { IconRail } from "./icon-rail";
 import { ModuleSidebar } from "./module-sidebar";
 import { TopBar } from "./top-bar";
@@ -11,7 +12,6 @@ import type { LogoutAction, ShellBranch, ShellUser } from "./types";
 
 type AppShellProps = {
   nav: NavModule[];
-  /** Badge per menu path, e.g. { "/service/cases": 37 }. */
   counts: Record<string, number>;
   user: ShellUser;
   greeting: string;
@@ -20,10 +20,28 @@ type AppShellProps = {
   children: React.ReactNode;
 };
 
+const SETTINGS_FOOTER = (
+  <div className="px-4 py-3 text-center">
+    <p className="text-[10px] text-sidebar-muted">
+      Powered by{" "}
+      <span className="font-semibold" style={{ color: "rgba(255,255,255,0.72)" }}>
+        Norona Tech
+      </span>
+    </p>
+    <p className="mt-0.5 text-[10px] text-sidebar-muted">V1.0.0</p>
+  </div>
+);
+
 /** Icon rail (48px) + module sidebar (192px) + top bar (64px) + content. */
 export function AppShell({ nav, counts, user, greeting, logout, branch, children }: AppShellProps) {
   const pathname = usePathname();
-  const activeModule = findActiveModule(nav, pathname);
+
+  // Settings is NOT a module — detect the route separately so it never appears
+  // in the module switcher grid or duplicates the gear icon.
+  const isSettings = pathname.startsWith("/settings");
+  const activeDbModule = findActiveModule(nav, pathname);
+  const activeModule = isSettings ? SETTINGS_MODULE : activeDbModule;
+
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -46,7 +64,15 @@ export function AppShell({ nav, counts, user, greeting, logout, branch, children
           mobileOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
-        <IconRail nav={nav} activeModule={activeModule} user={user} logout={logout} onNavigate={closeMobile} />
+        {/* nav = DB modules only; settings button is rendered separately inside IconRail */}
+        <IconRail
+          nav={nav}
+          activeModule={activeDbModule}
+          isSettings={isSettings}
+          user={user}
+          logout={logout}
+          onNavigate={closeMobile}
+        />
         {activeModule && (
           <ModuleSidebar
             module={activeModule}
@@ -54,6 +80,7 @@ export function AppShell({ nav, counts, user, greeting, logout, branch, children
             counts={counts}
             onNavigate={closeMobile}
             className={cn(!showSidebar && "md:hidden")}
+            footer={isSettings ? SETTINGS_FOOTER : undefined}
           />
         )}
       </aside>
@@ -61,7 +88,7 @@ export function AppShell({ nav, counts, user, greeting, logout, branch, children
       <div className={cn("transition-[padding] duration-200", showSidebar ? "md:pl-[240px]" : "md:pl-12")}>
         <TopBar
           nav={nav}
-          activeModule={activeModule}
+          activeModule={activeDbModule}
           greeting={greeting}
           logout={logout}
           branch={branch}

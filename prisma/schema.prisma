@@ -54,6 +54,11 @@ model Branch {
   transfersOut     StockTransfer[]   @relation("TransferFrom")
   transfersIn      StockTransfer[]   @relation("TransferTo")
 
+  directSales    DirectSale[]
+  buybackRecords BuybackRecord[]
+  refurbItems    RefurbItem[]
+  salesTargets   SalesTarget[]
+
   @@index([companyId])
   @@map("branch")
 }
@@ -201,6 +206,10 @@ model User {
   purchaseRequestsReviewed PurchaseRequest[]  @relation("PRReviewedBy")
   transfersCreated         StockTransfer[]    @relation("TransferCreatedBy")
   transfersApproved        StockTransfer[]    @relation("TransferApprovedBy")
+
+  directSalesSold     DirectSale[]    @relation("DirectSaleSoldBy")
+  buybacksRecorded    BuybackRecord[] @relation("BuybackRecordedBy")
+  salesTargetsCreated SalesTarget[]   @relation("SalesTargetCreatedBy")
 
   @@index([companyId])
   @@index([branchId])
@@ -353,6 +362,8 @@ model Item {
   purchaseRequests  PurchaseRequest[]
   transferItems     StockTransferItem[]
 
+  directSaleItems DirectSaleItem[]
+
   @@index([name])
   @@index([type, isActive])
   @@map("item")
@@ -421,6 +432,9 @@ model Customer {
   accountCases     Case[]            @relation("CaseAccount")
   payments         Payment[]
   whatsappMessages WhatsAppMessage[]
+
+  directSales    DirectSale[]
+  buybackRecords BuybackRecord[]
 
   @@index([name])
   @@index([createdAt])
@@ -848,4 +862,140 @@ model StockTransferItem {
   @@unique([transferId, itemId])
   @@index([transferId])
   @@map("stock_transfer_item")
+}
+
+// ─── Direct Sales ─────────────────────────────────────────────────────────────
+
+model DirectSale {
+  id            String      @id @default(cuid())
+  saleNo        String      @unique // "DS-EDP-2610-001"
+  branchId      String
+  customerId    String?
+  customerName  String
+  customerPhone String
+  paymentMode   PaymentMode
+  totalPaise    Int
+  soldById      String
+  soldAt        DateTime    @default(now()) @db.Timestamptz
+  isActive      Boolean     @default(true)
+
+  branch   Branch           @relation(fields: [branchId], references: [id])
+  customer Customer?        @relation(fields: [customerId], references: [id])
+  soldBy   User             @relation("DirectSaleSoldBy", fields: [soldById], references: [id])
+  items    DirectSaleItem[]
+
+  @@index([branchId, soldAt])
+  @@map("direct_sale")
+}
+
+model DirectSaleItem {
+  id             String @id @default(cuid())
+  saleId         String
+  itemId         String
+  itemName       String
+  quantity       Int
+  unitPricePaise Int
+  totalPaise     Int
+
+  sale DirectSale @relation(fields: [saleId], references: [id])
+  item Item       @relation(fields: [itemId], references: [id])
+
+  @@index([saleId])
+  @@map("direct_sale_item")
+}
+
+// ─── Buyback ─────────────────────────────────────────────────────────────────
+
+enum BuybackStatus {
+  PENDING_ASSESSMENT
+  SENT_FOR_REFURBISHMENT
+  ADDED_TO_REFURB_STOCK
+  SOLD
+  SCRAPPED
+}
+
+model BuybackRecord {
+  id               String        @id @default(cuid())
+  branchId         String
+  customerId       String?
+  customerName     String
+  customerPhone    String
+  deviceName       String
+  brand            String?
+  deviceModel      String?
+  condition        String        // e.g. "WORKING", "PARTIAL", "NOT_WORKING"
+  agreedPricePaise Int
+  status           BuybackStatus @default(PENDING_ASSESSMENT)
+  notes            String?
+  recordedById     String
+  recordedAt       DateTime      @default(now()) @db.Timestamptz
+  isActive         Boolean       @default(true)
+
+  branch     Branch     @relation(fields: [branchId], references: [id])
+  customer   Customer?  @relation(fields: [customerId], references: [id])
+  recordedBy User       @relation("BuybackRecordedBy", fields: [recordedById], references: [id])
+  refurbItem RefurbItem?
+
+  @@index([branchId, recordedAt])
+  @@map("buyback_record")
+}
+
+// ─── Refurbished stock ───────────────────────────────────────────────────────
+
+enum RefurbStatus {
+  AVAILABLE
+  RESERVED
+  SOLD
+}
+
+model RefurbItem {
+  id                String       @id @default(cuid())
+  branchId          String
+  buybackId         String?      @unique
+  name              String
+  brand             String
+  specs             String
+  grade             String       // "A" / "B" / "C"
+  costPaise         Int
+  sellingPricePaise Int
+  warrantyMonths    Int          @default(36)
+  serialNo          String?
+  status            RefurbStatus @default(AVAILABLE)
+  addedAt           DateTime     @default(now()) @db.Timestamptz
+  isActive          Boolean      @default(true)
+
+  branch  Branch         @relation(fields: [branchId], references: [id])
+  buyback BuybackRecord? @relation(fields: [buybackId], references: [id])
+
+  @@index([branchId, status])
+  @@map("refurb_item")
+}
+
+// ─── Sales Targets ────────────────────────────────────────────────────────────
+
+enum TargetPeriod {
+  DAILY
+  MONTHLY
+  YEARLY
+}
+
+model SalesTarget {
+  id          String       @id @default(cuid())
+  branchId    String
+  period      TargetPeriod
+  year        Int
+  month       Int?         // 1–12; null for YEARLY
+  day         Int?         // 1–31; null for DAILY and MONTHLY
+  targetPaise Int
+  isActive    Boolean      @default(true)
+  createdById String?
+  createdAt   DateTime     @default(now()) @db.Timestamptz
+  updatedAt   DateTime     @updatedAt @db.Timestamptz
+
+  branch    Branch @relation(fields: [branchId], references: [id])
+  createdBy User?  @relation("SalesTargetCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([branchId, period, year, month, day])
+  @@index([branchId, period, year])
+  @@map("sales_target")
 }
