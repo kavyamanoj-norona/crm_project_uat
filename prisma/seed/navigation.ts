@@ -195,7 +195,7 @@ type DemoUser = {
 };
 
 export const DEMO_USERS: DemoUser[] = [
-  { username: "admin", firstName: "Arun", lastName: "Owner", mobile: "9000000001", privilege: "ADMIN", branch: null, domain: "MANAGEMENT", department: "Management", defaultModule: "company" },
+  { username: "admin", firstName: "Admin", lastName: "Owner", mobile: "9000000001", privilege: "ADMIN", branch: null, domain: "MANAGEMENT", department: "Management", defaultModule: "company" },
   { username: "bm.edp", firstName: "Bindu", lastName: "Manager", mobile: "9000000002", privilege: BM, branch: "EDP", domain: "MANAGEMENT", department: "Management", defaultModule: "service" },
   { username: "sales.edp", firstName: "Sanjay", lastName: "Sales", mobile: "9000000003", privilege: SALES, branch: "EDP", domain: "SALES", department: "Sales Team", defaultModule: "service" },
   { username: "purchase", firstName: "Priya", lastName: "Purchase", mobile: "9000000004", privilege: PM, branch: null, domain: "OPERATIONS", department: "Purchase", defaultModule: "inventory" },

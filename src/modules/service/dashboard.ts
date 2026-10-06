@@ -91,3 +91,24 @@ export async function reportYears(scope: { branchId?: string }, currentYear: num
   const start = Math.min(first ? first.createdAt.getUTCFullYear() : currentYear, currentYear - 1);
   return Array.from({ length: currentYear - start + 1 }, (_, i) => currentYear - i);
 }
+
+/** Monthly sales target vs actual direct-sale revenue for the dashboard. */
+export async function getSalesTargetData(scope: { branchId?: string }, year: number, month: number) {
+  const monthStart = new Date(Date.UTC(year, month - 1, 1));
+  const monthEnd = new Date(Date.UTC(year, month, 1));
+
+  const [target, actual] = await Promise.all([
+    db.salesTarget.findFirst({
+      where: { isActive: true, period: "MONTHLY", year, month, ...scope },
+    }),
+    db.directSale.aggregate({
+      where: { isActive: true, ...scope, soldAt: { gte: monthStart, lt: monthEnd } },
+      _sum: { totalPaise: true },
+    }),
+  ]);
+
+  return {
+    targetPaise: target?.targetPaise ?? 0,
+    achievedPaise: actual._sum.totalPaise ?? 0,
+  };
+}

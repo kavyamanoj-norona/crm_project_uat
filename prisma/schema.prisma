@@ -999,3 +999,23 @@ model SalesTarget {
   @@index([branchId, period, year])
   @@map("sales_target")
 }
+
+// ─── AI Agents ────────────────────────────────────────────────────────────────
+
+// Append-only log of every Kiran conversation turn.
+model AiAgentRun {
+  id         String   @id @default(cuid())
+  agentName  String   // "kiran"
+  userId     String
+  branchId   String?  // null = all-branch scope
+  question   String
+  answer     String
+  tokensUsed Int?
+  durationMs Int?
+  error      String?
+  createdAt  DateTime @default(now()) @db.Timestamptz
+
+  @@index([userId, createdAt])
+  @@index([agentName, createdAt])
+  @@map("ai_agent_run")
+}

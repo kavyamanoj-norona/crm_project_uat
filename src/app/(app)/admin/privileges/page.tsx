@@ -1,5 +1,3 @@
-import Link from "next/link";
-import { KeyRound } from "lucide-react";
 import { db } from "@/server/db";
 import { ActiveBadge, Badge } from "@/components/ui/badge";
 import { ListView } from "@/components/data/list-view";
@@ -8,10 +6,11 @@ import { savePrivilege } from "@/modules/admin/actions/save";
 import { toggleActive } from "@/modules/admin/actions/toggle";
 import { AdminPage, param } from "@/modules/admin/components/admin-page";
 import { EntityForm, type FieldConfig } from "@/modules/admin/components/entity-form";
-import { RowActions } from "@/modules/admin/components/row-actions";
+import { PrivilegeActionsCell } from "@/modules/admin/components/privilege-actions-cell";
 import { ADMIN_PATHS } from "@/modules/admin/paths";
 import { PRIVILEGE_SORTS, listPrivileges } from "@/modules/admin/queries";
 import { requirePageAccess } from "@/server/rbac/guard";
+import { formatDate } from "@/lib/dates";
 
 export const metadata = { title: "Privilege" };
 
@@ -28,7 +27,7 @@ const FIELDS: FieldConfig[] = [
 export default async function PrivilegesPage({ searchParams }: PageProps<"/admin/privileges">) {
   const { permission } = await requirePageAccess(ADMIN_PATHS.privileges);
   const sp = await searchParams;
-  const list = listState(ADMIN_PATHS.privileges, sp, { sorts: PRIVILEGE_SORTS, defaultSort: "name", defaultDir: "asc" });
+  const list = listState(ADMIN_PATHS.privileges, sp, { sorts: PRIVILEGE_SORTS, defaultSort: "createdAt", defaultDir: "desc" });
   const editId = param(sp, "edit");
   const [{ rows, total, tabs }, editing] = await Promise.all([
     listPrivileges(list),
@@ -38,18 +37,19 @@ export default async function PrivilegesPage({ searchParams }: PageProps<"/admin
   return (
     <AdminPage
       title="Privilege"
-      subtitle="A privilege is a role. Open Permissions to choose which menus it can see and use."
+      subtitle="A privilege is a role. Click the key icon to manage which modules it can access."
       saved={param(sp, "saved")}
       form={
         (editing ? permission.canEdit : permission.canCreate)
           ? {
-              label: "Add Privilege",
+              label: "New Privilege",
               editingTitle: editing?.name,
               cancelHref: ADMIN_PATHS.privileges,
               content: (
                 <EntityForm
                   fields={FIELDS}
-                  schema="privilege" action={savePrivilege}
+                  schema="privilege"
+                  action={savePrivilege}
                   id={editing?.id}
                   initial={editing ?? { isActive: true, isBranchBound: true }}
                 />
@@ -68,37 +68,43 @@ export default async function PrivilegesPage({ searchParams }: PageProps<"/admin
         searchPlaceholder="Search privilege…"
         columns={[
           { header: "#", cell: (_, i) => i + 1 },
-          { header: "Code", sort: "code", cell: (r) => <span className="font-medium">{r.code}</span> },
+          {
+            header: "Date",
+            sort: "createdAt",
+            cell: (r) => <span className="text-xs text-text-muted">{formatDate(r.createdAt)}</span>,
+          },
           {
             header: "Name",
             sort: "name",
             cell: (r) => (
               <span className="flex items-center gap-2">
-                {r.name}
+                <span className="font-medium">{r.name}</span>
                 {r.isSuperAdmin && <Badge tone="primary">Super admin</Badge>}
               </span>
             ),
           },
-          { header: "Scope", cell: (r) => (r.isBranchBound ? "Own branch" : "All branches") },
-          { header: "Home", cell: (r) => (r.homePath ? <code className="text-xs">{r.homePath}</code> : "—") },
-          { header: "Menus", align: "center", cell: (r) => (r.isSuperAdmin ? "All" : r._count.permissions) },
-          { header: "Users", align: "center", cell: (r) => r._count.users },
-          { header: "Status", cell: (r) => <ActiveBadge active={r.isActive} /> },
           {
-            header: "Action",
+            header: "Code",
+            sort: "code",
             cell: (r) => (
-              <RowActions
+              <span className="inline-flex items-center rounded border border-border px-2 py-0.5 font-mono text-[11px] font-semibold text-text">
+                {r.code}
+              </span>
+            ),
+          },
+          {
+            header: "Actions",
+            cell: (r) => (
+              <PrivilegeActionsCell
+                privilegeId={r.id}
+                privilegeName={r.name}
+                isSuperAdmin={r.isSuperAdmin}
                 editHref={permission.canEdit ? `${ADMIN_PATHS.privileges}?edit=${r.id}` : undefined}
                 toggle={permission.canEdit ? toggleActive.bind(null, "privilege", r.id) : undefined}
                 active={r.isActive}
-              >
-                <Link
-                  href={`${ADMIN_PATHS.privileges}/${r.id}`}
-                  className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-xs font-medium text-primary hover:bg-primary-soft"
-                >
-                  <KeyRound className="size-3.5" /> Permissions
-                </Link>
-              </RowActions>
+                canEdit={permission.canEdit}
+                permissionsHref={`${ADMIN_PATHS.privileges}/${r.id}`}
+              />
             ),
           },
         ]}

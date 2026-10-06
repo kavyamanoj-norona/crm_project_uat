@@ -11,11 +11,11 @@ import { ADMIN_PATHS } from "../paths";
 
 const FLAGS = ["canView", "canCreate", "canEdit", "canDelete", "canApprove"] as const;
 
-/**
- * Saves the whole permission matrix of one privilege.
- * Checkbox names are `p.<menuId>.<flag>`; `menuIds` lists every row shown.
- */
-export async function savePermissions(privilegeId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+export async function savePermissionsFromRules(
+  privilegeId: string,
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
   try {
     const user = await requireActionPermission(ADMIN_PATHS.privileges, "canEdit");
     const menuIds = formData.getAll("menuIds").map(String);
@@ -31,7 +31,6 @@ export async function savePermissions(privilegeId: string, _prev: FormState, for
             (typeof FLAGS)[number],
             boolean
           >;
-          // Any action implies the user can see the page.
           if (FLAGS.some((f) => flags[f])) flags.canView = true;
           return db.privilegePermission.upsert({
             where: { privilegeId_menuId: { privilegeId, menuId } },
@@ -47,38 +46,5 @@ export async function savePermissions(privilegeId: string, _prev: FormState, for
   }
 
   revalidatePath("/", "layout");
-  redirect(`${ADMIN_PATHS.privileges}/${privilegeId}?saved=${Date.now()}`);
-}
-
-type FlagKey = "canView" | "canCreate" | "canEdit" | "canDelete" | "canApprove";
-
-/** Updates a single permission flag for one menu without a form submit. */
-export async function updateSinglePermission(
-  privilegeId: string,
-  menuId: string,
-  flag: FlagKey,
-  value: boolean,
-): Promise<void> {
-  await requireActionPermission(ADMIN_PATHS.privileges, "canEdit");
-
-  const patch: Partial<Record<FlagKey, boolean>> = {};
-  patch[flag] = value;
-
-  await db.privilegePermission.upsert({
-    where: { privilegeId_menuId: { privilegeId, menuId } },
-    update: patch,
-    create: {
-      privilegeId,
-      menuId,
-      canView: false,
-      canCreate: false,
-      canEdit: false,
-      canDelete: false,
-      canApprove: false,
-      ...patch,
-    },
-  });
-
-  revalidatePath(`/admin/privileges/${privilegeId}`);
-  revalidatePath("/admin/rules");
+  redirect(`${ADMIN_PATHS.rules}?privilege=${privilegeId}&saved=${Date.now()}`);
 }

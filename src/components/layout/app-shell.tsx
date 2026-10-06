@@ -7,6 +7,7 @@ import { findActiveModule, type NavModule } from "@/lib/navigation";
 import { SETTINGS_MODULE } from "@/lib/settings-nav";
 import { IconRail } from "./icon-rail";
 import { ModuleSidebar } from "./module-sidebar";
+import { SettingsFooter } from "./settings-footer";
 import { TopBar } from "./top-bar";
 import type { LogoutAction, ShellBranch, ShellUser } from "./types";
 
@@ -19,18 +20,6 @@ type AppShellProps = {
   branch: ShellBranch;
   children: React.ReactNode;
 };
-
-const SETTINGS_FOOTER = (
-  <div className="px-4 py-3 text-center">
-    <p className="text-[10px] text-sidebar-muted">
-      Powered by{" "}
-      <span className="font-semibold" style={{ color: "rgba(255,255,255,0.72)" }}>
-        Norona Tech
-      </span>
-    </p>
-    <p className="mt-0.5 text-[10px] text-sidebar-muted">V1.0.0</p>
-  </div>
-);
 
 /** Icon rail (48px) + module sidebar (192px) + top bar (64px) + content. */
 export function AppShell({ nav, counts, user, greeting, logout, branch, children }: AppShellProps) {
@@ -80,7 +69,7 @@ export function AppShell({ nav, counts, user, greeting, logout, branch, children
             counts={counts}
             onNavigate={closeMobile}
             className={cn(!showSidebar && "md:hidden")}
-            footer={isSettings ? SETTINGS_FOOTER : undefined}
+            footer={isSettings ? <SettingsFooter /> : undefined}
           />
         )}
       </aside>

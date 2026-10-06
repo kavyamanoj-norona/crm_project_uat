@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, LogOut, Maximize, Menu, PanelLeft, Search, Settings, Sun, Moon } from "lucide-react";
+import { Bell, LogOut, Maximize, Menu, PanelLeft, Settings, Sun, Moon } from "lucide-react";
 import type { NavModule } from "@/lib/navigation";
 import { useDismiss } from "@/hooks/use-dismiss";
 import { AppSwitcher } from "./app-switcher";
 import { BranchSwitcher } from "./branch-switcher";
+import { AskKiran } from "./ask-kiran-modal";
 import type { LogoutAction, ShellBranch } from "./types";
 
 type TopBarProps = {
@@ -64,18 +65,7 @@ export function TopBar({
         <div className="mr-1 sm:mr-2">
           <BranchSwitcher {...branch} />
         </div>
-        <label className="relative mr-2 hidden md:block">
-          <span className="sr-only">Search</span>
-          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-text-muted" />
-          <input
-            type="search"
-            placeholder="Search or ask Kiran…"
-            className="h-9 w-48 rounded-full border border-border bg-surface-muted pr-12 pl-9 text-sm outline-none placeholder:text-text-muted focus:border-primary xl:w-80"
-          />
-          <kbd className="absolute top-1/2 right-2 -translate-y-1/2 rounded border border-border px-1.5 text-[10px] text-text-muted">
-            ⌘K
-          </kbd>
-        </label>
+        <AskKiran />
 
         <AppSwitcher nav={nav} activeModule={activeModule} />
 

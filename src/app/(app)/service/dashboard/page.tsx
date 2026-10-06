@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { AlarmClock, ClipboardPlus, Truck, Wrench } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { ColumnChart } from "@/components/data/column-chart";
@@ -8,15 +7,22 @@ import { ReportPeriodFilter } from "@/components/filters/report-period-filter";
 import { todayIst } from "@/lib/dates";
 import { formatPaise } from "@/lib/money";
 import { parsePeriodSelection, resolvePeriod } from "@/lib/report-period";
-import { CASE_STATUS_LABELS } from "@/modules/service/case-schema";
 import { STAGE_ICONS } from "@/modules/service/components/stage-icons";
-import { getServiceDashboard, reportYears } from "@/modules/service/dashboard";
+import { getServiceDashboard, getSalesTargetData, reportYears } from "@/modules/service/dashboard";
 import { SERVICE_PATHS } from "@/modules/service/paths";
 import { getTatLimits } from "@/modules/service/queries";
 import { branchWhere, getBranchScope } from "@/server/branch-scope";
 import { requirePageAccess } from "@/server/rbac/guard";
 
 export const metadata = { title: "Service Dashboard" };
+
+function fmtL(paise: number): string {
+  const r = paise / 100;
+  if (r >= 1_00_00_000) return `₹${(r / 1_00_00_000).toFixed(2)} Cr`;
+  if (r >= 1_00_000) return `₹${(r / 1_00_000).toFixed(2)} L`;
+  if (r >= 1_000) return `₹${(r / 1_000).toFixed(1)}K`;
+  return `₹${r.toLocaleString("en-IN")}`;
+}
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 const stageHref = (status: string) => `${SERVICE_PATHS.cases}?tab=${status}`;
@@ -30,9 +36,14 @@ export default async function ServiceDashboardPage({ searchParams }: PageProps<"
   const branch = await getBranchScope(user);
   const scope = branchWhere(branch);
 
-  const [d, years] = await Promise.all([
+  const year = Number(today.slice(0, 4));
+  const month = Number(today.slice(5, 7));
+  const day = Number(today.slice(8, 10));
+
+  const [d, years, salesTarget] = await Promise.all([
     getTatLimits().then((tat) => getServiceDashboard(period, scope, tat)),
-    reportYears(scope, Number(today.slice(0, 4))),
+    reportYears(scope, year),
+    getSalesTargetData(scope, year, month),
   ]);
 
   const periodWord = period.isToday ? "today" : "in period";
@@ -41,7 +52,14 @@ export default async function ServiceDashboardPage({ searchParams }: PageProps<"
   const Stock = STAGE_ICONS.AWAITING_STOCK;
   const Quality = STAGE_ICONS.QUALITY_CHECK;
   const Closed = STAGE_ICONS.CLOSED;
-  const maxStage = Math.max(1, ...d.pipeline.map((p) => p.count));
+
+  const monthName = new Date(year, month - 1, 1).toLocaleString("en-IN", { month: "long" });
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const expectedPct = Math.round((day / daysInMonth) * 100);
+  const achievedPct = salesTarget.targetPaise > 0
+    ? Math.min(100, (salesTarget.achievedPaise / salesTarget.targetPaise) * 100)
+    : 0;
+  const paceGap = Math.round(achievedPct - expectedPct);
 
   return (
     <>
@@ -108,31 +126,30 @@ export default async function ServiceDashboardPage({ searchParams }: PageProps<"
             </p>
           </Card>
 
-          <Card
-            title="Open cases by stage"
-            actions={<span className="text-xs font-medium text-text-muted">{plural(d.openTotal, "open case", "open cases")} · now</span>}
-          >
-            <ul className="space-y-3">
-              {d.pipeline.map((p) => {
-                const Icon = STAGE_ICONS[p.status];
-                return (
-                  <li key={p.status}>
-                    <Link href={stageHref(p.status)} className="group grid grid-cols-[10rem_1fr_2.5rem] items-center gap-3 text-sm">
-                      <span className="flex items-center gap-2 text-text group-hover:text-primary">
-                        <Icon className="size-4 text-text-muted" /> {CASE_STATUS_LABELS[p.status]}
-                      </span>
-                      <span className="h-2.5 rounded-full bg-surface-muted">
-                        <span
-                          className="block h-full rounded-full bg-primary/70 group-hover:bg-primary"
-                          style={{ width: `${(p.count / maxStage) * 100}%`, minWidth: p.count ? 6 : 0 }}
-                        />
-                      </span>
-                      <span className="text-right font-semibold tabular-nums">{p.count}</span>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
+          <Card title={`Sales target — ${monthName}`}>
+            {salesTarget.targetPaise === 0 ? (
+              <p className="text-sm text-text-muted">No monthly target set for this branch.</p>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-2xl font-bold text-text">{fmtL(salesTarget.achievedPaise)} achieved</span>
+                  <span className="text-sm text-text-muted">target {fmtL(salesTarget.targetPaise)}</span>
+                </div>
+                <div className="h-2.5 w-full rounded-full bg-surface-muted">
+                  <div
+                    className="h-2.5 rounded-full bg-primary transition-all"
+                    style={{ width: `${achievedPct}%` }}
+                  />
+                </div>
+                <p className="text-xs text-text-muted">
+                  Expected pace by day {day}: {expectedPct}%
+                  {" · "}
+                  <span className={paceGap >= 0 ? "font-semibold text-green-600" : "font-semibold text-red-600"}>
+                    {paceGap >= 0 ? `+${paceGap}%` : `${paceGap}%`} {paceGap >= 0 ? "ahead of pace" : "behind pace"}
+                  </span>
+                </p>
+              </div>
+            )}
           </Card>
         </div>
 

@@ -3,7 +3,6 @@ import { ArrowLeft } from "lucide-react";
 import { db } from "@/server/db";
 import { Card } from "@/components/ui/card";
 import { LinkButton } from "@/components/ui/button";
-import { savePermissions } from "@/modules/admin/actions/permissions";
 import { AdminPage, param } from "@/modules/admin/components/admin-page";
 import { PermissionMatrix, type MatrixModule } from "@/modules/admin/components/permission-matrix";
 import { ADMIN_PATHS } from "@/modules/admin/paths";
@@ -15,6 +14,7 @@ export const metadata = { title: "Permissions" };
 export default async function PrivilegePermissionsPage({ params, searchParams }: PageProps<"/admin/privileges/[id]">) {
   const { permission } = await requirePageAccess(ADMIN_PATHS.privileges);
   const [{ id }, sp] = await Promise.all([params, searchParams]);
+  const selectedModuleId = sp.module as string | undefined;
 
   const privilege = await db.privilege.findUnique({ where: { id }, include: { permissions: true } });
   if (!privilege) notFound();
@@ -73,11 +73,13 @@ export default async function PrivilegePermissionsPage({ params, searchParams }:
           </p>
         ) : (
           <PermissionMatrix
-            // remount after a save so checkboxes reflect what was stored
-            key={Math.max(0, ...privilege.permissions.map((p) => p.updatedAt.getTime()))}
+            key={privilege.id}
             modules={matrix}
-            action={savePermissions.bind(null, privilege.id)}
+            privilegeId={privilege.id}
             readOnly={!permission.canEdit}
+            privilegeName={privilege.name}
+            allModules={modules.map((m) => ({ id: m.id, title: m.title }))}
+            selectedModuleId={selectedModuleId}
           />
         )}
       </Card>
