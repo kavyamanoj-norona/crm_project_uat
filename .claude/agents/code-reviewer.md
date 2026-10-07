@@ -79,6 +79,9 @@ Every action must follow this exact pipeline — flag any deviation:
 - **No `.parse()` in actions** — only `.safeParse()`
 - **No unscoped queries** on models with `branchId` — every where must spread `branchWhere(scope)`
 - **No `403` for out-of-scope records** — return `404` via `notFound()`
+- **No raw `<table>` HTML** — all tables must use `<ListView>` (paginated lists) or `<DataTable>` (fixed/config tables). Flag any raw `<table>`, `<tr>`, `<th>`, or `<td>` as a hard violation. Legitimate exceptions (do NOT flag these): `estimate-dialog.tsx` (editable form table with inline inputs — DataTable doesn't support inline editing), `permission-matrix.tsx` (specialised grouped matrix with colgroup/checkbox — incompatible with DataTable's column model).
+- **No dummy placeholders** — `placeholder` values must be `"Enter [field name]"` (inputs/textareas) or `"Select [field name]"` (selects). Flag `"e.g. …"`, sample phone numbers, example codes, names, IDs, or `"Optional"` as violations.
+- **No double-bordered table containers** — `ListView` is already inside `TableCard` (the single outer border). Flag any additional `Card`, bordered `div`, or `rounded-xl border` wrapping a `ListView`. Also flag `bordered={true}` (or the default) on a `DataTable` that is rendered inside a `TableCard`/`ListView`.
 
 ## How to review
 

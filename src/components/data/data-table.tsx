@@ -21,34 +21,44 @@ type DataTableProps<T> = {
   highlight?: (row: T) => boolean;
   /** List state for sortable headers and row numbering across pages. */
   list?: ListState;
+  /**
+   * Render with its own rounded border — use when DataTable is standalone
+   * (not inside a TableCard/ListView). Default: true.
+   * Pass false when inside TableCard so the unified container provides the border.
+   */
+  bordered?: boolean;
 };
 
 const alignCls = { left: "text-left", center: "text-center", right: "text-right" };
 
 /**
- * Server-rendered table with sortable headers. Density follows the nearest
- * `data-density="compact"` ancestor (see TableCard).
+ * Server-rendered table matching the unified container design:
+ * - Header row: muted bg + full-width column separators (divide-x)
+ * - Data rows: subtle column separators + row dividers
+ * - Density follows the nearest `data-density="compact"` ancestor (see TableCard)
  */
-export function DataTable<T>({ columns, rows, rowKey, empty = "No records found.", highlight, list }: DataTableProps<T>) {
+export function DataTable<T>({ columns, rows, rowKey, empty = "No records found.", highlight, list, bordered = true }: DataTableProps<T>) {
   const offset = list ? (list.page - 1) * list.pageSize : 0;
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-border">
+    <div className={cn("overflow-x-auto", bordered && "rounded-xl border border-border")}>
       <table className="w-full min-w-max text-sm">
         <thead className="border-b border-border bg-surface-muted text-xs font-semibold text-text">
-          <tr>
-            {columns.map((c, idx) => (
+          {/* divide-x gives every header cell a right border, auto-skipping the last */}
+          <tr className="divide-x divide-border">
+            {columns.map((c) => (
               <th
                 key={c.header}
                 scope="col"
                 className={cn(
                   "px-3 py-3 whitespace-nowrap",
                   alignCls[c.align ?? (c.header === "#" ? "center" : "left")],
-                  idx < columns.length - 1 && "border-r border-border",
                   c.className,
                 )}
                 aria-sort={
-                  list && c.sort && list.sort === c.sort ? (list.dir === "asc" ? "ascending" : "descending") : undefined
+                  list && c.sort && list.sort === c.sort
+                    ? list.dir === "asc" ? "ascending" : "descending"
+                    : undefined
                 }
               >
                 {list && c.sort ? <SortHeader column={c} list={list} /> : c.header}
@@ -56,7 +66,7 @@ export function DataTable<T>({ columns, rows, rowKey, empty = "No records found.
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-border/70">
+        <tbody className="divide-y divide-border/60">
           {rows.length === 0 ? (
             <tr>
               <td colSpan={columns.length} className="px-4 py-12 text-center text-text-muted">
@@ -67,7 +77,10 @@ export function DataTable<T>({ columns, rows, rowKey, empty = "No records found.
             rows.map((row, i) => (
               <tr
                 key={rowKey(row)}
-                className={cn("transition-colors hover:bg-primary-soft", highlight?.(row) && "bg-primary-soft")}
+                className={cn(
+                  "divide-x divide-border/40 transition-colors hover:bg-primary-soft",
+                  highlight?.(row) && "bg-primary-soft",
+                )}
               >
                 {columns.map((c) => (
                   <td

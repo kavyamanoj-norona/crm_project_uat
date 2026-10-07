@@ -52,19 +52,58 @@ You are the UI design specialist for this CRM project. You build consistent, acc
 </div>
 ```
 
-### ListView
-Always use `<ListView>` for tabular data — never raw `<table>` or `<ul>`.
+### Table components — ALWAYS use these, never raw HTML
+
+**`<ListView>`** — paginated lists with URL-driven search, filter chips, sort, and pagination:
 ```tsx
 <ListView
-  columns={[
-    { key: "name", label: "Name" },
-    { key: "status", label: "Status", render: (row) => <Badge tone={STATUS_TONE[row.status]}>{row.status}</Badge> },
-  ]}
-  rows={rows}
-  total={total}
   list={list}
+  total={total}
+  rows={rows}
+  rowKey={(r) => r.id}
+  searchPlaceholder="Search…"
+  toolbar={<MyFilterBar list={list} />}
+  columns={[
+    { header: "#", cell: (_, i) => i + 1 },
+    { header: "Name", sort: "name", cell: (r) => r.name },
+    { header: "Status", cell: (r) => <Badge tone={STATUS_TONE[r.status]}>{r.status}</Badge> },
+  ]}
 />
 ```
+
+**`<DataTable>`** — fixed/config tables (few rows, no pagination needed). Renders with its own border by default (`bordered={true}`). When used inside `TableCard`/`ListView`, pass `bordered={false}` — the card provides the border:
+```tsx
+<DataTable
+  rows={rows}
+  rowKey={(r) => r.id}
+  columns={[
+    { header: "#", cell: (_, i) => i + 1 },
+    { header: "Stage", cell: (r) => <Badge tone={...}>{r.name}</Badge> },
+    { header: "Action", align: "right", cell: (r) => <Button>Edit</Button> },
+  ]}
+/>
+```
+
+### Unified table container (the standard design)
+
+`TableCard` is the single outer bordered container. It holds the toolbar, DataTable, and Pagination together — **one border, not three**:
+
+```
+┌─ TableCard ─────────────────────────────────────────┐
+│ [Search…]  [Filter chips]          [⛶ fullscreen]   │  ← border-b
+├─────────────────────────────────────────────────────┤
+│ #  │ Column A │ Column B │ Column C │ Action         │  ← DataTable (no own border)
+│ ───┼──────────┼──────────┼──────────┼─────────────  │
+│  1 │   …      │   …      │   …      │   [View]       │
+│  2 │   …      │   …      │   …      │   [View]       │
+├─────────────────────────────────────────────────────┤  ← border-t
+│ Show [25] ▼        ‹ 1 2 3 ›        1–25 of 120     │  ← Pagination (no own border)
+└─────────────────────────────────────────────────────┘
+```
+
+This is automatically achieved by using `ListView` — it passes `bordered={false}` to DataTable and the Pagination uses `border-t`. Do NOT add extra Card/border wrappers around a ListView.
+
+**NEVER** write raw `<table>`, `<tr>`, `<th>`, or `<td>` HTML. Every table in the project must go through `ListView` or `DataTable`. This is a hard consistency rule.
 
 ### AdminPage + CreatePanel (for list + create pages)
 ```tsx
@@ -140,13 +179,26 @@ export const STATUS_TONE: Record<StatusValue, string> = {
 - Large+: `xl:grid-cols-[1.65fr_1fr]` for detail page two-column layout
 - Never fixed pixel widths — use grid/flex with proportional columns
 
+## Placeholder standard (apply to every input you create or touch)
+
+| Field type | Placeholder format | Example |
+|------------|--------------------|---------|
+| Text input | `"Enter [field name]"` | `"Enter full name"`, `"Enter branch code"` |
+| Select / dropdown | `"Select [field name]"` | `"Select status"`, `"Select department"` |
+| Textarea | `"Enter [field name]"` | `"Enter remarks"`, `"Enter description"` |
+| Search input | `"Search by [field]"` or `"Search…"` | `"Search by name"`, `"Search by ID"` |
+| Date picker | `"Select date"` | |
+
+**Never use**: sample names, dummy phone numbers (`"98470 12345"`), example codes (`"NTL"`, `"SV-CLN"`), `"e.g. …"` strings, `"Optional"`, `"—"` dashes, or realistic-looking fake data of any kind as placeholders. The field label says what the field is; the placeholder says what action to take.
+
 ## What NOT to do
 - No inline `style={}` — Tailwind only
 - No hardcoded hex colors — use semantic tone tokens
-- No raw `<table>` for data — use `<ListView>`
+- No raw `<table>` for data — use `<ListView>` or `<DataTable>`
 - No custom icons — use `lucide-react`
 - No `"use client"` on page files — only on interactive island components
 - No `className` values with raw colors like `text-blue-500` for semantic meaning — use tone tokens
+- No sample/dummy data in placeholders — follow the placeholder standard above
 
 ## What you produce
 When designing a page or component:

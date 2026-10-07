@@ -16,8 +16,8 @@ import { requirePageAccess } from "@/server/rbac/guard";
 export const metadata = { title: "Domains" };
 
 const FIELDS: FieldConfig[] = [
-  { name: "code", label: "Code", required: true, placeholder: "SALES" },
-  { name: "name", label: "Domain name", required: true, placeholder: "Sales" },
+  { name: "code", label: "Code", required: true, placeholder: "Enter domain code" },
+  { name: "name", label: "Domain name", required: true, placeholder: "Enter domain name" },
   { name: "isActive", label: "Active", type: "switch" },
 ];
 

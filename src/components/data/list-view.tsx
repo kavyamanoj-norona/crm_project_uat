@@ -63,6 +63,7 @@ export function ListView<T>({
         rowKey={rowKey}
         highlight={highlight}
         empty={list.q ? `Nothing matches “${list.q}”.` : empty}
+        bordered={false}
       />
       <Pagination list={list} total={total} />
     </TableCard>

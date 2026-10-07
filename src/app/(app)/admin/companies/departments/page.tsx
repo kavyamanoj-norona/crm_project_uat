@@ -33,7 +33,7 @@ export default async function DepartmentsPage({ searchParams }: PageProps<"/admi
       required: true,
       options: domains.map((d) => ({ value: d.id, label: d.name })),
     },
-    { name: "name", label: "Department name", required: true, placeholder: "Sales Team" },
+    { name: "name", label: "Department name", required: true, placeholder: "Enter department name" },
     { name: "isActive", label: "Active", type: "switch" },
   ];
 

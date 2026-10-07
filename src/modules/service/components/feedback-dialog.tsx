@@ -64,7 +64,7 @@ export function FeedbackDialog({ action, initial }: FeedbackDialogProps) {
               rows={3}
               defaultValue={initial?.comment ?? ""}
               aria-invalid={errors.comment ? true : undefined}
-              placeholder="Repair went smoothly, customer was happy with turnaround time…"
+              placeholder="Enter feedback"
             />
           </Field>
         </>

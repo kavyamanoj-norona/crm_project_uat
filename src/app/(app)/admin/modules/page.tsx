@@ -17,10 +17,10 @@ import { requirePageAccess } from "@/server/rbac/guard";
 export const metadata = { title: "Modules" };
 
 const FIELDS: FieldConfig[] = [
-  { name: "code", label: "Code", required: true, placeholder: "service" },
-  { name: "title", label: "Title", required: true, placeholder: "Service" },
-  { name: "path", label: "Route prefix", required: true, placeholder: "/service" },
-  { name: "icon", label: "Icon", required: true, placeholder: "wrench", hint: "Any lucide.dev icon name, kebab-case" },
+  { name: "code", label: "Code", required: true, placeholder: "Enter module code" },
+  { name: "title", label: "Title", required: true, placeholder: "Enter module name" },
+  { name: "path", label: "Route prefix", required: true, placeholder: "Enter route path" },
+  { name: "icon", label: "Icon", required: true, placeholder: "Enter icon name", hint: "Any lucide.dev icon name, kebab-case" },
   { name: "sortOrder", label: "Order on rail", type: "number" },
   { name: "isActive", label: "Active", type: "switch" },
 ];

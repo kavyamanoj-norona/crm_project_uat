@@ -70,7 +70,7 @@ export function RefurbPanel({ rows, sellAction, addAction }: Props) {
                 name="name"
                 required
                 className="w-full rounded-md border border-border bg-surface px-2.5 py-1.5 text-sm text-text focus:border-primary focus:outline-none"
-                placeholder="e.g. ThinkPad T480"
+                placeholder="Enter model"
               />
             </div>
             <div>
@@ -79,7 +79,7 @@ export function RefurbPanel({ rows, sellAction, addAction }: Props) {
                 name="brand"
                 required
                 className="w-full rounded-md border border-border bg-surface px-2.5 py-1.5 text-sm text-text focus:border-primary focus:outline-none"
-                placeholder="e.g. Lenovo"
+                placeholder="Enter brand"
               />
             </div>
           </div>
@@ -90,7 +90,7 @@ export function RefurbPanel({ rows, sellAction, addAction }: Props) {
               name="specs"
               required
               className="w-full rounded-md border border-border bg-surface px-2.5 py-1.5 text-sm text-text focus:border-primary focus:outline-none"
-              placeholder="e.g. i5-8th Gen, 8GB RAM, 256GB SSD"
+              placeholder="Enter specifications"
             />
           </div>
 
@@ -115,7 +115,7 @@ export function RefurbPanel({ rows, sellAction, addAction }: Props) {
                 type="number"
                 min={1}
                 required
-                placeholder="0"
+                placeholder="Enter amount"
                 className="w-full rounded-md border border-border bg-surface px-2.5 py-1.5 text-sm text-text focus:border-primary focus:outline-none"
                 onChange={(e) => setCostPaise(Math.round(Number(e.target.value) * 100))}
               />
@@ -129,7 +129,7 @@ export function RefurbPanel({ rows, sellAction, addAction }: Props) {
                 type="number"
                 min={1}
                 required
-                placeholder="0"
+                placeholder="Enter amount"
                 className="w-full rounded-md border border-border bg-surface px-2.5 py-1.5 text-sm text-text focus:border-primary focus:outline-none"
                 onChange={(e) => setSellPaise(Math.round(Number(e.target.value) * 100))}
               />
@@ -157,7 +157,7 @@ export function RefurbPanel({ rows, sellAction, addAction }: Props) {
               <input
                 name="serialNo"
                 className="w-full rounded-md border border-border bg-surface px-2.5 py-1.5 text-sm text-text focus:border-primary focus:outline-none"
-                placeholder="Optional"
+                placeholder="Enter remarks"
               />
             </div>
           </div>

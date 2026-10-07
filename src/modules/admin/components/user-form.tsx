@@ -108,19 +108,19 @@ function UserFields({
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-5">
       <Field label="First name" htmlFor="firstName" required error={errors.firstName}>
-        <Input {...f("firstName")} placeholder="First name" />
+        <Input {...f("firstName")} placeholder="Enter first name" />
       </Field>
       <Field label="Last name" htmlFor="lastName" error={errors.lastName}>
-        <Input {...f("lastName")} placeholder="Last name" />
+        <Input {...f("lastName")} placeholder="Enter last name" />
       </Field>
       <Field label="Mobile" htmlFor="mobile" required error={errors.mobile}>
-        <Input {...f("mobile")} type="tel" inputMode="numeric" placeholder="Mobile" />
+        <Input {...f("mobile")} type="tel" inputMode="numeric" placeholder="Enter mobile number" />
       </Field>
       <Field label="Email" htmlFor="email" required error={errors.email}>
-        <Input {...f("email")} type="email" autoComplete="off" placeholder="Email" />
+        <Input {...f("email")} type="email" autoComplete="off" placeholder="Enter email" />
       </Field>
       <Field label="Username" htmlFor="username" required error={errors.username}>
-        <Input {...f("username")} autoComplete="off" placeholder="Username" />
+        <Input {...f("username")} autoComplete="off" placeholder="Enter username" />
       </Field>
 
       {/* Editing changes the password from the key button in the Users table. */}
@@ -141,7 +141,7 @@ function UserFields({
       <StateDistrictFields state={v.state} district={v.district} errors={errors} />
 
       <Field label="Address" htmlFor="address" error={errors.address} className="lg:col-span-2">
-        <Textarea {...f("address")} placeholder="Address" />
+        <Textarea {...f("address")} placeholder="Enter address" />
       </Field>
       <Field label="Image" htmlFor="image" error={errors.image} hint="JPG, PNG or WebP, up to 2 MB">
         <Input

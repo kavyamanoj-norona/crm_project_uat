@@ -57,7 +57,7 @@ export default async function ModuleMenusPage({ params, searchParams }: PageProp
         { value: "GROUP", label: "Group (heading)" },
       ],
     },
-    { name: "title", label: "Title", required: true, placeholder: "All cases" },
+    { name: "title", label: "Title", required: true, placeholder: "Enter title" },
     {
       name: "parentId",
       label: "Inside group",
@@ -66,7 +66,7 @@ export default async function ModuleMenusPage({ params, searchParams }: PageProp
       hint: "Leave empty for a top-level item. Groups ignore this.",
     },
     { name: "path", label: "Path", placeholder: `${mod.path}/…`, hint: `Items only. Must start with ${mod.path}/` },
-    { name: "icon", label: "Icon", placeholder: "list", hint: "lucide.dev name, optional" },
+    { name: "icon", label: "Icon", placeholder: "Enter icon name", hint: "lucide.dev name, optional" },
     { name: "sortOrder", label: "Order", type: "number" },
     { name: "isActive", label: "Active", type: "switch" },
   ];

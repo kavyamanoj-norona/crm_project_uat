@@ -50,24 +50,24 @@ export function CustomerForm({ action, initial, id, cancelHref }: CustomerFormPr
           <Select {...f("type")} value={type} defaultValue={undefined} onChange={(e) => setType(e.target.value)} options={customerTypeOptions} />
         </Field>
         <Field label={type === "BUSINESS" ? "Business name" : "Name"} htmlFor="name" required error={errors.name}>
-          <Input {...f("name")} placeholder={type === "BUSINESS" ? "Grand Hotel Kochi" : "Full name"} />
+          <Input {...f("name")} placeholder={type === "BUSINESS" ? "Enter business name" : "Enter full name"} />
         </Field>
         <Field label="Phone" htmlFor="phone" required error={errors.phone} hint="Mobile, or landline with STD code">
-          <Input {...f("phone")} type="tel" inputMode="tel" placeholder="98470 12345" />
+          <Input {...f("phone")} type="tel" inputMode="tel" placeholder="Enter phone number" />
         </Field>
         <Field label="Alt phone" htmlFor="altPhone" error={errors.altPhone}>
           <Input {...f("altPhone")} type="tel" inputMode="tel" />
         </Field>
 
         <Field label="Email" htmlFor="email" error={errors.email}>
-          <Input {...f("email")} type="email" autoComplete="off" placeholder="name@example.com" />
+          <Input {...f("email")} type="email" autoComplete="off" placeholder="Enter email" />
         </Field>
         <Field label="How did they hear about us?" htmlFor="source" error={errors.source}>
           <Select {...f("source")} options={leadSourceOptions} />
         </Field>
         {type === "BUSINESS" && (
           <Field label="GSTIN" htmlFor="gstin" error={errors.gstin}>
-            <Input {...f("gstin")} className="uppercase" maxLength={15} placeholder="32ABCDE1234F1Z5" />
+            <Input {...f("gstin")} className="uppercase" maxLength={15} placeholder="Enter GSTIN" />
           </Field>
         )}
         <Field label="PIN code" htmlFor="pincode" error={errors.pincode}>
@@ -79,7 +79,7 @@ export function CustomerForm({ action, initial, id, cancelHref }: CustomerFormPr
           <Textarea {...f("address")} />
         </Field>
         <Field label="Notes" htmlFor="notes" error={errors.notes} className="sm:col-span-2 lg:col-span-4">
-          <Textarea {...f("notes")} placeholder="Anything the next person at the counter should know" />
+          <Textarea {...f("notes")} placeholder="Enter notes" />
         </Field>
       </div>
 

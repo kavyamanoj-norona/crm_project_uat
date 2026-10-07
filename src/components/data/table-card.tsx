@@ -15,8 +15,9 @@ const toolBtn =
   "inline-flex size-7 items-center justify-center rounded-sm text-text-muted transition-colors hover:bg-surface hover:text-text";
 
 /**
- * Card around a list: toolbar (tabs + search) on the left, fullscreen and
- * row-density toggles on the right. Children: DataTable + Pagination.
+ * Single unified container for a list: toolbar at the top (with border-b
+ * separator), DataTable flush to the edges, and Pagination at the bottom
+ * (with border-t separator). All inside one rounded bordered card.
  */
 export function TableCard({ toolbar, children, className }: TableCardProps) {
   const [fullscreen, setFullscreen] = useState(false);
@@ -37,13 +38,13 @@ export function TableCard({ toolbar, children, className }: TableCardProps) {
     <section
       data-density={compact ? "compact" : "comfortable"}
       className={cn(
-        "group/table rounded-xl border border-border bg-surface p-4 shadow-sm",
-        fullscreen && "fixed inset-0 z-50 overflow-auto rounded-none border-0 p-6",
+        "group/table overflow-hidden rounded-xl border border-border bg-surface shadow-sm",
+        fullscreen && "fixed inset-0 z-50 overflow-auto rounded-none border-0 p-0",
         className,
       )}
     >
-      <div className="mb-3 flex flex-wrap items-center gap-3">
-        {/* tabs shrink and scroll; search keeps its width; icons stay right */}
+      {/* Toolbar — padded, separated from table by a border-b */}
+      <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
         <div className="flex min-w-0 flex-1 basis-full flex-col gap-3 sm:basis-0 sm:flex-row sm:items-center [&>label]:sm:shrink-0">
           {toolbar}
         </div>
@@ -69,6 +70,8 @@ export function TableCard({ toolbar, children, className }: TableCardProps) {
           </button>
         </div>
       </div>
+
+      {/* DataTable + Pagination — flush to card edges; overflow-hidden on section clips rounded corners */}
       {children}
     </section>
   );

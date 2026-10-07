@@ -15,9 +15,9 @@ import { requirePageAccess } from "@/server/rbac/guard";
 export const metadata = { title: "Company" };
 
 const FIELDS: FieldConfig[] = [
-  { name: "code", label: "Code", required: true, placeholder: "NTL" },
+  { name: "code", label: "Code", required: true, placeholder: "Enter company code" },
   { name: "name", label: "Company name", required: true, span: 2 },
-  { name: "gstin", label: "GSTIN", placeholder: "32ABCDE1234F1Z5" },
+  { name: "gstin", label: "GSTIN", placeholder: "Enter GSTIN" },
   { name: "email", label: "Email", type: "email" },
   { name: "phone", label: "Phone" },
   { name: "address", label: "Address", type: "textarea", span: 2 },

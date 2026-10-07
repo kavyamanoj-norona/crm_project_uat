@@ -249,14 +249,14 @@ function EstimateForm({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Advance payment" htmlFor="advanceAmount" error={errors.advanceAmount} hint="Leave blank if not collecting now">
-          <Input id="advanceAmount" name="advanceAmount" placeholder="0.00" inputMode="decimal" defaultValue={v?.advanceAmount ?? ""} />
+          <Input id="advanceAmount" name="advanceAmount" placeholder="Enter amount" inputMode="decimal" defaultValue={v?.advanceAmount ?? ""} />
         </Field>
         <Field label="Payment mode" htmlFor="advanceMode" error={errors.advanceMode}>
           <Select
             id="advanceMode"
             name="advanceMode"
             defaultValue={v?.advanceMode ?? ""}
-            placeholder="— select mode —"
+            placeholder="Select payment mode"
             options={paymentModeOptions}
           />
         </Field>

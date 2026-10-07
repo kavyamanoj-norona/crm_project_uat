@@ -56,7 +56,8 @@ const boundSave = saveRecord.bind(null, record.id);
 - Two-column detail pages: `xl:grid-cols-[1.65fr_1fr]` with `space-y-6`
 - Use `Card`, `PageHeader`, `Badge` from `@/components/ui/*`
 - `PageHeader` receives: `title`, `breadcrumbs`, `badge`, and an `actions` slot
-- Lists rendered with `<ListView>` — never raw `<table>` or `<ul>`
+- **Table rule (hard)**: use `<ListView>` for paginated lists (search + filter + sort + pagination); use `<DataTable>` for fixed/config tables (few rows, no pagination). NEVER write raw `<table>`, `<tr>`, `<th>`, or `<td>` HTML directly. This applies everywhere, including client components.
+- **Unified container rule**: `TableCard` is the single bordered container — toolbar + table + pagination share one border. Never wrap a `ListView` in an additional `Card` or bordered div. `DataTable` inside `ListView` gets `bordered={false}`; standalone `DataTable` keeps the default `bordered={true}`.
 - Create/edit forms go inside `AdminPage`'s `form` slot as a collapsible `<CreatePanel>`
 - Tab counts via `db.X.groupBy(...)` run in the same `Promise.all` as the list query
 
@@ -78,3 +79,13 @@ When building a page:
 6. No `console.log`, no inline styles, no hardcoded strings
 
 Always read the module's `queries.ts`, `paths.ts`, and `schemas.ts` before writing a page to use correct types and path constants.
+
+## Placeholder standard
+
+Every input, select, and textarea you write must follow this:
+- Text input → `placeholder="Enter [field name]"` (e.g. `"Enter branch name"`, `"Enter serial number"`)
+- Select → `placeholder="Select [field name]"` (e.g. `"Select status"`, `"Select department"`)
+- Textarea → `placeholder="Enter [field name]"` (e.g. `"Enter remarks"`)
+- Search → `placeholder="Search by [field]"` or `"Search…"`
+
+**Banned**: sample names, dummy phone numbers, example codes, `"e.g. …"` strings, `"Optional"`, dash placeholders like `"— none —"`, or any realistic fake data as placeholder text.

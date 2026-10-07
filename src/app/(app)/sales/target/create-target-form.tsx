@@ -269,7 +269,7 @@ export function CreateTargetForm({ branches }: { branches: Branch[] }) {
               type="number"
               min="1"
               step="1"
-              placeholder="e.g. 500000"
+              placeholder="Enter target amount"
               value={targetRupees}
               onChange={(e) => setTargetRupees(e.target.value)}
               className="w-full rounded-lg border border-border bg-surface px-3 py-2.5 text-sm text-text placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-primary"

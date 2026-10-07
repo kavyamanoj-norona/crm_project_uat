@@ -28,7 +28,7 @@ export function Pagination({ list, total }: { list: ListState; total: number }) 
   const to = Math.min(total, page * list.pageSize);
 
   return (
-    <div className="mt-3 flex flex-col items-center justify-between gap-3 rounded-lg border border-border px-4 py-3 text-sm sm:flex-row">
+    <div className="flex flex-col items-center justify-between gap-3 border-t border-border px-4 py-3 text-sm sm:flex-row">
       <PageSizeSelect path={list.path} query={list.query} prefix={list.prefix} value={list.pageSize} />
 
       <nav aria-label="Pagination" className="flex items-center gap-1 rounded-lg bg-surface-muted p-1">

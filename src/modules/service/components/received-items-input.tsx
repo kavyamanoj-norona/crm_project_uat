@@ -40,7 +40,7 @@ export function ReceivedItemsInput({ name, initial, invalid }: ReceivedItemsInpu
           <Input
             value={r.name}
             onChange={(e) => set(i, { name: e.target.value })}
-            placeholder="Item, e.g. Charger"
+            placeholder="Enter item name"
             aria-label={`Item ${i + 1}`}
             aria-invalid={invalid && !r.name.trim() ? true : undefined}
             className="max-sm:col-span-1"

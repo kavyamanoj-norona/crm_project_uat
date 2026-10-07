@@ -15,9 +15,9 @@ import { formatDate } from "@/lib/dates";
 export const metadata = { title: "Privilege" };
 
 const FIELDS: FieldConfig[] = [
-  { name: "code", label: "Code", required: true, placeholder: "CAMPAIGN_MANAGER" },
-  { name: "name", label: "Privilege name", required: true, placeholder: "Campaign Manager" },
-  { name: "homePath", label: "Home page", placeholder: "/service/dashboard", hint: "Where users land after login" },
+  { name: "code", label: "Code", required: true, placeholder: "Enter privilege code" },
+  { name: "name", label: "Privilege name", required: true, placeholder: "Enter privilege name" },
+  { name: "homePath", label: "Home page", placeholder: "Enter home path", hint: "Where users land after login" },
   { name: "description", label: "Description" },
   { name: "isBranchBound", label: "Own branch only", type: "switch" },
   { name: "isSuperAdmin", label: "Super admin (sees everything)", type: "switch", span: 2 },

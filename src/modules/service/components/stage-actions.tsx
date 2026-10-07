@@ -41,7 +41,7 @@ export function StageActions({ jobsheetNo, status, next, moveNext, changeStage, 
       >
         {(errors) => (
           <Field label="Reason" htmlFor="reason" required error={errors.reason}>
-            <Textarea id="reason" name="reason" rows={3} autoFocus aria-invalid={errors.reason ? true : undefined} placeholder="Customer declined the repair quote" />
+            <Textarea id="reason" name="reason" rows={3} autoFocus aria-invalid={errors.reason ? true : undefined} placeholder="Enter reason" />
           </Field>
         )}
       </ActionDialog>

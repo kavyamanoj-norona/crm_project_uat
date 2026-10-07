@@ -57,9 +57,19 @@ export const MODULES: ModuleDef[] = [
       { title: "Chip-Level Lab", path: "/service/lab", icon: "cpu", roles: [CHIP, BM], approve: [CHIP] },
       { title: "Uncollected Devices", path: "/service/uncollected", icon: "laptop" },
       {
+        group: "Analytics",
+        icon: "bar-chart-2",
+        items: [
+          { title: "Ageing Analysis", path: "/service/ageing", icon: "clock-alert", roles: [SALES, BM] },
+        ],
+      },
+      {
         group: "Manage",
         icon: "boxes",
-        items: [{ title: "Items", path: "/service/items", icon: "package" }],
+        items: [
+          { title: "Items", path: "/service/items", icon: "package" },
+          { title: "TAT Configuration", path: "/service/tat-config", icon: "timer", roles: [] }, // Admin only
+        ],
       },
     ],
   },

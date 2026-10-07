@@ -8,4 +8,6 @@ export const SERVICE_PATHS = {
   uncollected: "/service/uncollected",
   lab: "/service/lab",
   items: "/service/items",
+  tatConfig: "/service/tat-config",
+  ageing: "/service/ageing",
 } as const;

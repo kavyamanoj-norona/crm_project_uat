@@ -100,7 +100,7 @@ export function IntakeForm({ action, lookup, options }: IntakeFormProps) {
               defaultValue={undefined}
               onChange={(e) => setIntakeType(e.target.value)}
               options={intakeTypeOptions}
-              placeholder="Select…"
+              placeholder="Select intake type"
             />
           </Field>
           <SaveButton pending={pending} />
@@ -117,10 +117,10 @@ export function IntakeForm({ action, lookup, options }: IntakeFormProps) {
             <Select {...f("productType")} options={productTypeOptions} />
           </Field>
           <Field label="Brand" htmlFor="brand" required error={errors.brand}>
-            <Input {...f("brand")} placeholder="Dell" />
+            <Input {...f("brand")} placeholder="Enter brand" />
           </Field>
           <Field label="Model" htmlFor="model" error={errors.model}>
-            <Input {...f("model")} placeholder="Inspiron 5518" />
+            <Input {...f("model")} placeholder="Enter model" />
           </Field>
           <Field label="Serial / IMEI" htmlFor="serialNo" error={errors.serialNo}>
             <Input {...f("serialNo")} autoComplete="off" />
@@ -137,7 +137,7 @@ export function IntakeForm({ action, lookup, options }: IntakeFormProps) {
             <Input id="devicePassword" name="devicePassword" type="password" autoComplete="off" />
           </Field>
           <Field label="Problem reported" htmlFor="problemReported" required error={errors.problemReported} className="lg:col-span-2">
-            <Input {...f("problemReported")} placeholder="No power; intermittent charging" />
+            <Input {...f("problemReported")} placeholder="Enter problem reported" />
           </Field>
           <Field label="Intake photos" htmlFor="photos" error={errors.photos} hint="Up to 8; re-add them if the save fails">
             <PhotoInput name="photos" invalid={Boolean(errors.photos)} />
@@ -155,11 +155,11 @@ export function IntakeForm({ action, lookup, options }: IntakeFormProps) {
       </FormSection>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Field label="Advance payment)" htmlFor="advanceAmount" error={errors.advanceAmount} hint="Leave blank if not collecting now">
-          <Input {...f("advanceAmount")} placeholder="0.00" inputMode="decimal" />
+        <Field label="Advance payment" htmlFor="advanceAmount" error={errors.advanceAmount} hint="Leave blank if not collecting now">
+          <Input {...f("advanceAmount")} placeholder="Enter amount" inputMode="decimal" />
         </Field>
         <Field label="Payment mode" htmlFor="advanceMode" error={errors.advanceMode}>
-          <Select {...f("advanceMode")} placeholder="— select mode —" options={paymentModeOptions} />
+          <Select {...f("advanceMode")} placeholder="Select payment mode" options={paymentModeOptions} />
         </Field>
       </div>
 
@@ -256,7 +256,7 @@ function CustomerFields({
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       <div>
         <Field label="Phone" htmlFor="phone" required error={errors.phone}>
-          <Input {...f("phone")} type="tel" inputMode="tel" autoComplete="off" placeholder="98470 12345" onChange={onPhone} autoFocus />
+          <Input {...f("phone")} type="tel" inputMode="tel" autoComplete="off" placeholder="Enter phone number" onChange={onPhone} autoFocus />
         </Field>
         {!errors.phone && (
           <p className="mt-1 flex items-center gap-1 text-xs" aria-live="polite">
@@ -288,7 +288,7 @@ function CustomerFields({
         <Input {...f("altPhone")} type="tel" inputMode="tel" autoComplete="off" />
       </Field>
       <Field label="Company account (B2B)" htmlFor="accountId" error={errors.accountId}>
-        <Select {...f("accountId")} placeholder="— none —" options={accounts.map((a) => ({ value: a.id, label: a.label }))} />
+        <Select {...f("accountId")} placeholder="Select account" options={accounts.map((a) => ({ value: a.id, label: a.label }))} />
       </Field>
       <Field label="How did you hear about us?" htmlFor="source" required error={errors.source}>
         <Select {...f("source")} options={leadSourceOptions} />

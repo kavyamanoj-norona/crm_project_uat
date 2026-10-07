@@ -114,7 +114,7 @@ export function DaybookFormPanel({ crmBalancePaise }: DaybookFormPanelProps) {
             </label>
             <input
               type="text"
-              placeholder="e.g. Water bill, stationery..."
+              placeholder="Enter description"
               value={desc}
               onChange={(e) => setDesc(e.target.value)}
               className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text outline-none placeholder:text-text-muted focus:border-primary"
@@ -143,7 +143,7 @@ export function DaybookFormPanel({ crmBalancePaise }: DaybookFormPanelProps) {
               </label>
               <input
                 type="number"
-                placeholder="0"
+                placeholder="Enter amount"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 min="1"

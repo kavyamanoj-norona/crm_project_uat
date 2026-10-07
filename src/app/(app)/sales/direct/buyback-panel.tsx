@@ -92,7 +92,7 @@ export function BuybackPanel({ rows, recordAction }: Props) {
                 name="deviceName"
                 required
                 className="w-full rounded-md border border-border bg-surface px-2.5 py-1.5 text-sm text-text focus:border-primary focus:outline-none"
-                placeholder="e.g. Dell Latitude 7490"
+                placeholder="Enter model"
               />
             </div>
             <div>
@@ -100,7 +100,7 @@ export function BuybackPanel({ rows, recordAction }: Props) {
               <input
                 name="brand"
                 className="w-full rounded-md border border-border bg-surface px-2.5 py-1.5 text-sm text-text focus:border-primary focus:outline-none"
-                placeholder="e.g. Dell"
+                placeholder="Enter brand"
               />
             </div>
           </div>
@@ -111,7 +111,7 @@ export function BuybackPanel({ rows, recordAction }: Props) {
               <input
                 name="deviceModel"
                 className="w-full rounded-md border border-border bg-surface px-2.5 py-1.5 text-sm text-text focus:border-primary focus:outline-none"
-                placeholder="Optional"
+                placeholder="Enter remarks"
               />
             </div>
             <div>
@@ -138,7 +138,7 @@ export function BuybackPanel({ rows, recordAction }: Props) {
               type="number"
               required
               min={1}
-              placeholder="Amount in rupees"
+              placeholder="Enter amount"
               className="w-full rounded-md border border-border bg-surface px-2.5 py-1.5 text-sm text-text focus:border-primary focus:outline-none"
               onChange={(e) => setAgreedPricePaise(Math.round(Number(e.target.value) * 100))}
             />
@@ -151,7 +151,7 @@ export function BuybackPanel({ rows, recordAction }: Props) {
               name="notes"
               rows={2}
               className="w-full resize-none rounded-md border border-border bg-surface px-2.5 py-1.5 text-sm text-text focus:border-primary focus:outline-none"
-              placeholder="Any remarks"
+              placeholder="Enter remarks"
             />
           </div>
 

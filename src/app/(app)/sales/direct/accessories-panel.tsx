@@ -92,7 +92,7 @@ function AccessoryRow({
                 name="customerName"
                 required
                 className="w-full rounded-md border border-border bg-surface px-2.5 py-1.5 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none"
-                placeholder="Full name"
+                placeholder="Enter name"
               />
             </div>
             <div>
@@ -102,7 +102,7 @@ function AccessoryRow({
                 type="tel"
                 required
                 className="w-full rounded-md border border-border bg-surface px-2.5 py-1.5 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none"
-                placeholder="10-digit number"
+                placeholder="Enter phone number"
               />
             </div>
           </div>

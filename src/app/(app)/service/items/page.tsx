@@ -33,17 +33,17 @@ export default async function ItemsPage({ searchParams }: PageProps<"/service/it
   ]);
 
   const fields: FieldConfig[] = [
-    { name: "code", label: "Item code", required: true, placeholder: "SV-CLN", hint: "Unique; printed on estimates" },
-    { name: "name", label: "Name", required: true, placeholder: "Thermal service + cleaning", span: 2 },
+    { name: "code", label: "Item code", required: true, placeholder: "Enter item code", hint: "Unique; printed on estimates" },
+    { name: "name", label: "Name", required: true, placeholder: "Enter item name", span: 2 },
     { name: "type", label: "Type", type: "select", required: true, options: itemTypeOptions },
-    { name: "category", label: "Category", placeholder: "Keyboard, Display, Cleaning…", suggestions: categories },
-    { name: "brand", label: "Brand", placeholder: "Any / Dell / HP…" },
+    { name: "category", label: "Category", placeholder: "Enter categories", suggestions: categories },
+    { name: "brand", label: "Brand", placeholder: "Enter applicable brands" },
     { name: "unit", label: "Unit", type: "select", required: true, options: unitOptions },
-    { name: "hsnSac", label: "HSN / SAC", placeholder: "998716", hint: "For GST invoices" },
-    { name: "price", label: "Selling price ₹", required: true, placeholder: "650", hint: "Per unit, as billed" },
+    { name: "hsnSac", label: "HSN / SAC", placeholder: "Enter HSN code", hint: "For GST invoices" },
+    { name: "price", label: "Selling price ₹", required: true, placeholder: "Enter price", hint: "Per unit, as billed" },
     { name: "maxDiscountPercent", label: "Max discount %", type: "number", required: true, hint: "Staff can't bill below this" },
     { name: "gstPercent", label: "GST rate", type: "select", required: true, options: gstOptions },
-    { name: "warrantyDays", label: "Warranty (days)", type: "number", placeholder: "90" },
+    { name: "warrantyDays", label: "Warranty (days)", type: "number", placeholder: "Enter value" },
     { name: "description", label: "Description", type: "textarea", span: 3 },
     { name: "isActive", label: "Active (can be picked on cases)", type: "switch" },
   ];

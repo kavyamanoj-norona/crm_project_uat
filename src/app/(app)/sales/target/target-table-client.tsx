@@ -1,9 +1,12 @@
 "use client";
 
 import { useActionState, useState, useMemo } from "react";
-import { Search, Trash2 } from "lucide-react";
+import { Building2, CalendarDays, Search, Trash2 } from "lucide-react";
+import { SelectChip, type ChipOption } from "@/components/data/filter-chip";
 import type { SalesTargetRow } from "@/server/sales/target-queries";
 import type { FormState } from "@/lib/form";
+import { DataTable } from "@/components/data/data-table";
+import type { Column } from "@/components/data/data-table";
 
 type Branch = { id: string; code: string; name: string; isVirtual: boolean };
 type DeleteAction = (_prev: FormState, formData: FormData) => Promise<FormState>;
@@ -87,8 +90,80 @@ export function TargetTableClient({
     });
   }, [targets, search, periodFilter, branchFilter]);
 
+  const emptyMessage =
+    targets.length === 0
+      ? "No sales targets set yet. Use the form above to add one."
+      : "No records match your search.";
+
+  const columns: Column<SalesTargetRow>[] = [
+    {
+      header: "#",
+      cell: (_r, i) => i + 1,
+    },
+    {
+      header: "Branch",
+      cell: (r) => (
+        <>
+          <div className="font-medium text-text">{r.branch.name}</div>
+          <div className="text-xs font-mono text-text-muted">{r.branch.code}</div>
+        </>
+      ),
+    },
+    {
+      header: "Period",
+      cell: (r) => (
+        <span
+          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+            r.period === "DAILY"
+              ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+              : r.period === "MONTHLY"
+                ? "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400"
+                : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+          }`}
+        >
+          {PERIOD_LABELS[r.period]}
+        </span>
+      ),
+    },
+    {
+      header: "Date",
+      cell: (r) => (
+        <span className="text-text-muted">
+          {targetDateLabel(r.period, r.year, r.month, r.day)}
+        </span>
+      ),
+    },
+    {
+      header: "Target Amount",
+      align: "right",
+      cell: (r) => (
+        <span className="font-semibold text-text">{fmtRupees(r.targetPaise)}</span>
+      ),
+    },
+    {
+      header: "Set By",
+      cell: (r) => (
+        <span className="text-text-muted text-sm">
+          {r.createdBy ? `${r.createdBy.firstName} ${r.createdBy.lastName}` : "—"}
+        </span>
+      ),
+    },
+    ...(canDelete
+      ? [
+          {
+            header: "",
+            cell: (r: SalesTargetRow) => (
+              <div className="flex justify-end">
+                <DeleteButton id={r.id} deleteAction={deleteAction} />
+              </div>
+            ),
+          } satisfies Column<SalesTargetRow>,
+        ]
+      : []),
+  ];
+
   return (
-    <div className="rounded-xl border border-border bg-surface shadow-sm">
+    <div className="overflow-hidden rounded-xl border border-border bg-surface">
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
         <div className="relative flex-1 min-w-[200px]">
@@ -102,27 +177,30 @@ export function TargetTableClient({
           />
         </div>
 
-        <select
+        <SelectChip
+          label="Branch"
+          icon={Building2}
+          options={[
+            { value: "", label: "All Branches" },
+            ...branches.map((b): ChipOption => ({ value: b.id, label: b.name })),
+          ]}
           value={branchFilter}
-          onChange={(e) => setBranchFilter(e.target.value)}
-          className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus:outline-none focus:ring-1 focus:ring-primary"
-        >
-          <option value="">All Branches</option>
-          {branches.map((b) => (
-            <option key={b.id} value={b.id}>{b.name}</option>
-          ))}
-        </select>
+          onChange={setBranchFilter}
+        />
 
-        <select
+        <SelectChip
+          label="Period"
+          icon={CalendarDays}
+          options={[
+            { value: "", label: "All Periods" },
+            { value: "DAILY", label: "Daily" },
+            { value: "MONTHLY", label: "Monthly" },
+            { value: "YEARLY", label: "Yearly" },
+          ]}
           value={periodFilter}
-          onChange={(e) => setPeriodFilter(e.target.value)}
-          className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus:outline-none focus:ring-1 focus:ring-primary"
-        >
-          <option value="">All Periods</option>
-          <option value="DAILY">Daily</option>
-          <option value="MONTHLY">Monthly</option>
-          <option value="YEARLY">Yearly</option>
-        </select>
+          onChange={setPeriodFilter}
+          searchable={false}
+        />
 
         <span className="ml-auto text-xs text-text-muted">
           {filtered.length} record{filtered.length !== 1 ? "s" : ""}
@@ -130,67 +208,13 @@ export function TargetTableClient({
       </div>
 
       {/* Table */}
-      {filtered.length === 0 ? (
-        <div className="px-4 py-16 text-center text-sm text-text-muted">
-          {targets.length === 0
-            ? "No sales targets set yet. Use the form above to add one."
-            : "No records match your search."}
-        </div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-surface-muted text-left text-xs font-semibold text-text-muted uppercase tracking-wide">
-                <th className="px-4 py-3 w-10">#</th>
-                <th className="px-4 py-3">Branch</th>
-                <th className="px-4 py-3">Period</th>
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3 text-right">Target Amount</th>
-                <th className="px-4 py-3">Set By</th>
-                {canDelete && <th className="px-4 py-3 w-12" />}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {filtered.map((t, i) => (
-                <tr key={t.id} className="hover:bg-surface-muted/40 transition-colors">
-                  <td className="px-4 py-3 text-text-muted text-xs">{i + 1}</td>
-                  <td className="px-4 py-3">
-                    <div className="font-medium text-text">{t.branch.name}</div>
-                    <div className="text-xs font-mono text-text-muted">{t.branch.code}</div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                      t.period === "DAILY"
-                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-                        : t.period === "MONTHLY"
-                          ? "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400"
-                          : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                    }`}>
-                      {PERIOD_LABELS[t.period]}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-text-muted">
-                    {targetDateLabel(t.period, t.year, t.month, t.day)}
-                  </td>
-                  <td className="px-4 py-3 text-right font-semibold text-text">
-                    {fmtRupees(t.targetPaise)}
-                  </td>
-                  <td className="px-4 py-3 text-text-muted text-sm">
-                    {t.createdBy
-                      ? `${t.createdBy.firstName} ${t.createdBy.lastName}`
-                      : "—"}
-                  </td>
-                  {canDelete && (
-                    <td className="px-4 py-3 text-right">
-                      <DeleteButton id={t.id} deleteAction={deleteAction} />
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable
+        rows={filtered}
+        rowKey={(r) => r.id}
+        columns={columns}
+        empty={emptyMessage}
+        bordered={false}
+      />
     </div>
   );
 }

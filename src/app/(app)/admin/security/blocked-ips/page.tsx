@@ -16,7 +16,7 @@ import { requestMeta } from "@/server/security/activity";
 export const metadata = { title: "Block List" };
 
 const FIELDS: FieldConfig[] = [
-  { name: "ip", label: "IP address", required: true, placeholder: "203.0.113.10" },
+  { name: "ip", label: "IP address", required: true, placeholder: "Enter IP address" },
   { name: "reason", label: "Reason", span: 2 },
   { name: "isActive", label: "Blocked", type: "switch" },
 ];

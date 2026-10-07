@@ -200,6 +200,8 @@ model User {
   whatsappMessages WhatsAppMessage[]
 
   caseFeedbacks            CaseFeedback[]
+  tatConfigsCreated        TatConfig[]    @relation("TatConfigCreatedBy")
+  tatConfigsUpdated        TatConfig[]    @relation("TatConfigUpdatedBy")
 
   stockItemsUpdated        StockItem[]        @relation("StockItemUpdatedBy")
   purchaseRequestsRaised   PurchaseRequest[]  @relation("PRRequestedBy")
@@ -664,6 +666,12 @@ enum PaymentKind {
   OTHER
 }
 
+enum TatUnit {
+  MINUTES
+  HOURS
+  DAYS
+}
+
 // Money received. Immutable: corrections go through refunds / adjustments.
 model Payment {
   id           String      @id @default(cuid())
@@ -686,6 +694,27 @@ model Payment {
   @@index([caseId])
   @@index([customerId])
   @@map("payment")
+}
+
+// TAT (Turnaround Time) targets per workflow stage. Global config — no branchId.
+model TatConfig {
+  id                  String     @id @default(cuid())
+  status              CaseStatus @unique
+  targetValue         Int        // the numeric TAT (e.g. 4 for 4 hours)
+  targetUnit          TatUnit    @default(HOURS)
+  warningThreshold    Int        @default(80)  // % of TAT elapsed at which to show warning
+  escalationThreshold Int        @default(100) // % of TAT at which it becomes overdue
+  isActive            Boolean    @default(true)
+  remarks             String?
+  createdById         String?
+  updatedById         String?
+  createdAt           DateTime   @default(now()) @db.Timestamptz
+  updatedAt           DateTime   @updatedAt @db.Timestamptz
+
+  createdBy User? @relation("TatConfigCreatedBy", fields: [createdById], references: [id])
+  updatedBy User? @relation("TatConfigUpdatedBy", fields: [updatedById], references: [id])
+
+  @@map("tat_config")
 }
 
 // ─── Security ────────────────────────────────────────────────────────────────
