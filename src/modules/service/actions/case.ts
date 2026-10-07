@@ -25,6 +25,7 @@ import {
   type CaseStatusValue,
 } from "../case-schema";
 import { SERVICE_PATHS } from "../paths";
+import { listBranchStaff } from "../queries";
 
 const STALE = "Someone else changed this case just now. Refresh to see its current stage.";
 
@@ -197,7 +198,52 @@ export async function saveCaseFeedback(caseId: string, _prev: FormState, formDat
   }
 }
 
-const ESTIMATE_FIELDS = ["engineerId", "expectedDeliveryDate", "gstInvoiceRequired", "note", "items"];
+/** Quick-assign (or reassign) the engineer on any open case. */
+export async function assignEngineer(caseId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const engineerId = String(formData.get("engineerId") ?? "").trim();
+  if (!engineerId) return { message: "Select an engineer.", fieldErrors: { engineerId: ["Select an engineer"] } };
+  try {
+    const user = await requireActionPermission(SERVICE_PATHS.cases, "canEdit");
+    const scope = branchWhere(await getBranchScope(user));
+    const c = await db.case.findFirst({
+      where: { id: caseId, ...scope },
+      select: { status: true, branchId: true },
+    });
+    if (!c) return { message: "Case not found." };
+    if (!isOpenStatus(c.status)) return { message: "Cannot reassign engineer on a closed or cancelled case." };
+    const engineer = await db.user.findUnique({
+      where: { id: engineerId },
+      select: { branchId: true, isActive: true, status: true, firstName: true, lastName: true },
+    });
+    if (!engineer?.isActive || engineer.status !== "WORKING" || engineer.branchId !== c.branchId)
+      return { message: "Pick someone working in this branch.", fieldErrors: { engineerId: ["Must be an active staff member in this branch"] } };
+    await db.case.update({ where: { id: caseId }, data: { engineerId, updatedById: user.id } });
+    await logActivity({
+      action: "case.engineer",
+      userId: user.id,
+      entity: "Case",
+      entityId: caseId,
+      detail: `Assigned to ${[engineer.firstName, engineer.lastName].filter(Boolean).join(" ")}`,
+    });
+    revalidatePath(SERVICE_PATHS.cases, "layout");
+    return { ok: true, message: "Engineer assigned." };
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { message: e.message };
+    throw e;
+  }
+}
+
+/** Returns working branch staff for the assign-engineer dialog (lazy-load from the client). */
+export async function getBranchStaffOptions(branchId: string): Promise<{ value: string; label: string }[]> {
+  try {
+    await requireActionPermission(SERVICE_PATHS.cases, "canView");
+    return listBranchStaff(branchId);
+  } catch {
+    return [];
+  }
+}
+
+const ESTIMATE_FIELDS = ["engineerId", "expectedDeliveryDate", "gstInvoiceRequired", "note", "items", "advanceAmount", "advanceMode"];
 
 /**
  * "Start diagnosis" (mode start: Intake → Diagnosis) and "Edit items" (mode
@@ -215,7 +261,7 @@ export async function saveEstimate(caseId: string, mode: "start" | "edit", _prev
     const scope = branchWhere(await getBranchScope(user));
     const c = await db.case.findFirst({
       where: { id: caseId, ...scope },
-      select: { status: true, branchId: true, items: { where: { removedAt: null }, select: { itemId: true } } },
+      select: { status: true, branchId: true, customerId: true, items: { where: { removedAt: null }, select: { itemId: true } } },
     });
     if (!c) return { message: "Case not found." };
     if (mode === "start" && c.status !== "INTAKE") return { message: "Diagnosis has already started for this case." };
@@ -282,6 +328,20 @@ export async function saveEstimate(caseId: string, mode: "start" | "edit", _prev
       return true;
     });
     if (!saved) return { message: STALE };
+
+    if (data.advanceAmount && data.advanceMode) {
+      await db.payment.create({
+        data: {
+          branchId: c.branchId,
+          caseId,
+          customerId: c.customerId,
+          kind: "ADVANCE",
+          mode: data.advanceMode,
+          amountPaise: data.advanceAmount,
+          receivedById: user.id,
+        },
+      });
+    }
 
     const summary = `${lines.length} ${lines.length === 1 ? "item" : "items"}, ${formatPaise(total)}`;
     await logActivity({

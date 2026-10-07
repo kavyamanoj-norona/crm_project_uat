@@ -138,6 +138,19 @@ export async function createCase(_prev: FormState, formData: FormData): Promise<
           },
           select: { id: true, jobsheetNo: true },
         });
+        if (data.advanceAmount && data.advanceMode) {
+          await tx.payment.create({
+            data: {
+              branchId: branch.id,
+              caseId: created.id,
+              customerId: customer.customer.id,
+              kind: "ADVANCE",
+              mode: data.advanceMode,
+              amountPaise: data.advanceAmount,
+              receivedById: actor.id,
+            },
+          });
+        }
         return { ...created, customer };
       }),
     );

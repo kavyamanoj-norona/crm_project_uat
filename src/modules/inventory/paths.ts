@@ -3,5 +3,6 @@
 export const INVENTORY_PATHS = {
   dashboard: "/inventory/dashboard",
   stock: "/inventory/stock",
+  purchasing: "/inventory/purchasing",
   catalog: "/inventory/catalog",
 } as const;

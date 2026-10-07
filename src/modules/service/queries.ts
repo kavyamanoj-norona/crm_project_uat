@@ -3,9 +3,8 @@ import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/server/db";
 import type { BranchScope } from "@/server/branch-scope";
 import { pageArgs, type ListState } from "@/lib/list";
-import type { FilterTab } from "@/components/data/filter-tabs";
 import { listBusinessAccounts } from "@/modules/customers/queries";
-import { CASE_STATUSES, CASE_STATUS_LABELS } from "./case-schema";
+import { CASE_STATUSES } from "./case-schema";
 import { peekJobsheetNo } from "./jobsheet";
 import type { TatLimits } from "./case-age";
 import { RULES, getBooleanRule, getNumberRule } from "@/server/rules";
@@ -107,33 +106,51 @@ export async function listUncollectedCases(list: ListState, scope: { branchId?: 
   return { rows, total, days };
 }
 
-/** Tabs are the case stages; `type` narrows by warranty status. */
-export async function listCases(list: ListState, scope: { branchId?: string }, type?: CaseTypeFilter) {
+export type CaseFilters = {
+  type?: CaseTypeFilter;
+  status?: string;
+  engineerId?: string;
+  from?: string;
+  to?: string;
+};
+
+export async function listCases(list: ListState, scope: { branchId?: string }, filters: CaseFilters = {}) {
+  const { type, status, engineerId, from, to } = filters;
   const digits = list.q.replace(/\D/g, "");
-  const search: Prisma.CaseWhereInput = {
+  const fromDate = from ? new Date(`${from}T00:00:00+05:30`) : null;
+  const toDate = to ? new Date(`${to}T23:59:59+05:30`) : null;
+  const validStatus = status && (CASE_STATUSES as readonly string[]).includes(status)
+    ? (status as (typeof CASE_STATUSES)[number])
+    : null;
+  const dateFilter: Prisma.CaseWhereInput = (fromDate || toDate)
+    ? { createdAt: { ...(fromDate ? { gte: fromDate } : {}), ...(toDate ? { lte: toDate } : {}) } }
+    : {};
+  const searchFilter: Prisma.CaseWhereInput = list.q
+    ? {
+        OR: [
+          { jobsheetNo: contains(list.q) },
+          { serialNo: contains(list.q) },
+          { brand: contains(list.q) },
+          { model: contains(list.q) },
+          { customer: { name: contains(list.q) } },
+          ...(digits.length >= 3 ? [{ customer: { phone: { contains: digits } } }] : []),
+        ],
+      }
+    : {};
+  const where: Prisma.CaseWhereInput = {
     ...scope,
     ...(type ? CASE_TYPE_FILTERS[type].where : {}),
-    ...(list.q
-      ? {
-          OR: [
-            { jobsheetNo: contains(list.q) },
-            { serialNo: contains(list.q) },
-            { brand: contains(list.q) },
-            { model: contains(list.q) },
-            { customer: { name: contains(list.q) } },
-            ...(digits.length >= 3 ? [{ customer: { phone: { contains: digits } } }] : []),
-          ],
-        }
-      : {}),
+    ...(validStatus ? { status: validStatus } : {}),
+    ...(engineerId ? { engineerId } : {}),
+    ...dateFilter,
+    ...searchFilter,
   };
-  const status = (CASE_STATUSES as readonly string[]).includes(list.tab) ? (list.tab as (typeof CASE_STATUSES)[number]) : null;
-  const where = { ...search, ...(status ? { status } : {}) };
   const orderBy: Prisma.CaseOrderByWithRelationInput =
     list.sort === "estimatedCostPaise"
       ? { [list.sort]: { sort: list.dir, nulls: "last" } }
       : { [list.sort]: list.dir };
 
-  const [rows, total, all, byStatus] = await Promise.all([
+  const [rows, total] = await Promise.all([
     db.case.findMany({
       where,
       orderBy: [orderBy, { createdAt: "desc" }],
@@ -147,15 +164,17 @@ export async function listCases(list: ListState, scope: { branchId?: string }, t
       ...pageArgs(list),
     }),
     db.case.count({ where }),
-    db.case.count({ where: search }),
-    db.case.groupBy({ by: ["status"], where: search, _count: { _all: true } }),
   ]);
-  const counts = new Map(byStatus.map((s) => [s.status, s._count._all]));
-  const tabs: FilterTab[] = [
-    { key: "", label: "All", count: all },
-    ...CASE_STATUSES.map((s) => ({ key: s, label: CASE_STATUS_LABELS[s], count: counts.get(s) ?? 0 })),
-  ];
-  return { rows, total, tabs };
+  return { rows, total };
+}
+
+export async function listActiveStaff(branchId?: string | null) {
+  const users = await db.user.findMany({
+    where: { isActive: true, status: "WORKING", ...(branchId ? { branchId } : {}) },
+    orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+    select: { id: true, firstName: true, lastName: true },
+  });
+  return users.map((u) => ({ value: u.id, label: [u.firstName, u.lastName].filter(Boolean).join(" ") }));
 }
 
 /** One case with everything the details page shows; null when missing or outside the branch scope. */

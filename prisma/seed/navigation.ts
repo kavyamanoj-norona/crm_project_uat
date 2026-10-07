@@ -112,7 +112,8 @@ export const MODULES: ModuleDef[] = [
     roles: [PM, BM],
     entries: [
       { title: "Dashboard", path: "/inventory/dashboard", icon: "layout-dashboard" },
-      { title: "Stock & Purchasing", path: "/inventory/stock", icon: "boxes", approve: [PM] },
+      { title: "Stock", path: "/inventory/stock", icon: "boxes", approve: [PM] },
+      { title: "Purchasing", path: "/inventory/purchasing", icon: "shopping-cart", approve: [PM] },
       { title: "Catalog", path: "/inventory/catalog", icon: "tags", roles: EVERYONE },
     ],
   },

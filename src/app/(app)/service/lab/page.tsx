@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { AlarmClock, Cpu, Inbox, RotateCcw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/data/stat-card";
@@ -42,7 +43,15 @@ const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
 
 async function fetchLabCases(scope: Record<string, unknown>) {
   return db.case.findMany({
-    where: { ...scope, status: { notIn: ["CLOSED", "CANCELLED"] } },
+    where: {
+      ...scope,
+      status: { notIn: ["CLOSED", "CANCELLED"] },
+      // Only show cases assigned to a chip-level coordinator, or unassigned (incoming queue)
+      OR: [
+        { engineerId: null },
+        { engineer: { privilege: { code: "CHIP_COORDINATOR" } } },
+      ],
+    },
     orderBy: { stageChangedAt: "asc" }, // oldest first so aging cases rise to the top
     select: {
       id: true,
@@ -63,6 +72,12 @@ type LabCase = Awaited<ReturnType<typeof fetchLabCases>>[number];
 
 export default async function ChipLabPage() {
   const { user } = await requirePageAccess(SERVICE_PATHS.lab);
+
+  // Only CHIP_COORDINATOR may view this page (super-admins are always allowed)
+  if (!user.privilege.isSuperAdmin && user.privilege.code !== "CHIP_COORDINATOR") {
+    redirect("/forbidden");
+  }
+
   const scope = branchWhere(await getBranchScope(user));
   const cases = await fetchLabCases(scope);
 

@@ -31,3 +31,34 @@ export async function adjustStock(_prev: FormState, formData: FormData): Promise
   revalidatePath(INVENTORY_PATHS.stock);
   redirect(`${INVENTORY_PATHS.stock}?saved=${Date.now()}`);
 }
+
+export async function consumeStockItem(id: string): Promise<void> {
+  const user = await requireActionPermission(INVENTORY_PATHS.stock, "canEdit");
+  const item = await db.stockItem.findUniqueOrThrow({ where: { id }, select: { quantity: true } });
+  if (item.quantity <= 0) return;
+  await db.stockItem.update({
+    where: { id },
+    data: { quantity: { decrement: 1 }, updatedById: user.id },
+  });
+  revalidatePath(INVENTORY_PATHS.stock);
+}
+
+export async function consumeItemFromCase(caseItemId: string): Promise<void> {
+  const user = await requireActionPermission(INVENTORY_PATHS.stock, "canEdit");
+  const line = await db.caseItem.findUniqueOrThrow({
+    where: { id: caseItemId },
+    select: { itemId: true, quantity: true, case: { select: { id: true, branchId: true } } },
+  });
+  const { itemId, quantity, case: { id: caseId, branchId } } = line;
+  const existing = await db.stockItem.findUnique({
+    where: { branchId_itemId: { branchId, itemId } },
+    select: { quantity: true },
+  });
+  if (!existing || existing.quantity <= 0) return;
+  await db.stockItem.update({
+    where: { branchId_itemId: { branchId, itemId } },
+    data: { quantity: { decrement: Math.min(quantity, existing.quantity) }, updatedById: user.id },
+  });
+  revalidatePath(`/service/cases/${caseId}`);
+  revalidatePath(INVENTORY_PATHS.stock);
+}

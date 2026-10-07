@@ -1,8 +1,7 @@
 import Link from "next/link";
-import { Clock, Eye, Plus } from "lucide-react";
+import { Clock, Eye, Plus, UserCog } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { LinkButton } from "@/components/ui/button";
-import { FilterSelect } from "@/components/data/filter-select";
 import { ListView } from "@/components/data/list-view";
 import { WhoWhen, personName } from "@/components/data/who-when";
 import { listState } from "@/lib/list";
@@ -11,9 +10,12 @@ import { formatPhone } from "@/lib/phone";
 import { enumLabel } from "@/lib/enum";
 import { AdminPage, param } from "@/modules/admin/components/admin-page";
 import { caseAge } from "@/modules/service/case-age";
-import { CASE_KIND_LABELS, CASE_STATUS_LABELS, CASE_STATUS_TONE } from "@/modules/service/case-schema";
+import { CASE_KIND_LABELS, CASE_STATUS_LABELS, CASE_STATUS_TONE, isOpenStatus } from "@/modules/service/case-schema";
 import { SERVICE_PATHS } from "@/modules/service/paths";
-import { CASE_SORTS, CASE_TYPE_FILTERS, getTatLimits, isCaseTypeFilter, listCases } from "@/modules/service/queries";
+import { CASE_SORTS, CASE_TYPE_FILTERS, getTatLimits, isCaseTypeFilter, listActiveStaff, listCases } from "@/modules/service/queries";
+import { assignEngineer, getBranchStaffOptions } from "@/modules/service/actions/case";
+import { AssignEngineerDialog } from "@/modules/service/components/assign-engineer-dialog";
+import { CaseFilterBar } from "@/modules/service/components/case-filter-bar";
 import { branchWhere, getBranchScope } from "@/server/branch-scope";
 import { getMenuPermission, requirePageAccess } from "@/server/rbac/guard";
 
@@ -23,13 +25,24 @@ const iconLink =
   "inline-flex size-8 items-center justify-center rounded-lg text-text-muted hover:bg-surface-muted hover:text-text";
 
 export default async function CasesPage({ searchParams }: PageProps<"/service/cases">) {
-  const { user } = await requirePageAccess(SERVICE_PATHS.cases);
+  const { user, permission } = await requirePageAccess(SERVICE_PATHS.cases);
   const sp = await searchParams;
   const list = listState(SERVICE_PATHS.cases, sp, { sorts: CASE_SORTS, defaultSort: "createdAt", defaultPageSize: 25 });
-  const type = param(sp, "type");
+  const status = param(sp, "status") ?? "";
+  const engineer = param(sp, "engineer") ?? "";
+  const type = param(sp, "type") ?? "";
+  const from = param(sp, "from") ?? "";
+  const to = param(sp, "to") ?? "";
   const scope = await getBranchScope(user);
-  const [{ rows, total, tabs }, intake, tat] = await Promise.all([
-    listCases(list, branchWhere(scope), isCaseTypeFilter(type) ? type : undefined),
+  const [{ rows, total }, staffOptions, intake, tat] = await Promise.all([
+    listCases(list, branchWhere(scope), {
+      type: isCaseTypeFilter(type) ? type : undefined,
+      status: status || undefined,
+      engineerId: engineer || undefined,
+      from: from || undefined,
+      to: to || undefined,
+    }),
+    listActiveStaff(scope.branchId),
     getMenuPermission(user, SERVICE_PATHS.newCase),
     getTatLimits(),
   ]);
@@ -56,25 +69,21 @@ export default async function CasesPage({ searchParams }: PageProps<"/service/ca
       <ListView
         list={list}
         total={total}
-        tabs={tabs}
         rows={rows}
         rowKey={(c) => c.id}
         highlight={(c) => c.id === highlight}
         searchPlaceholder="Search jobsheet / customer / phone / serial…"
         empty="No cases yet."
         toolbar={
-          <FilterSelect
-            className="sm:w-48"
-            param="type"
-            label="Type"
-            path={list.path}
-            query={list.query}
-            prefix={list.prefix}
-            value={isCaseTypeFilter(type) ? type : ""}
-            options={[
-              { value: "", label: "Type: All" },
-              ...Object.entries(CASE_TYPE_FILTERS).map(([value, f]) => ({ value, label: `Type: ${f.label}` })),
-            ]}
+          <CaseFilterBar
+            list={list}
+            staffOptions={staffOptions}
+            typeOptions={Object.entries(CASE_TYPE_FILTERS).map(([v, f]) => ({ value: v, label: f.label }))}
+            activeStatus={status}
+            activeStaff={engineer}
+            activeType={type}
+            activeFrom={from}
+            activeTo={to}
           />
         }
         columns={[
@@ -115,7 +124,25 @@ export default async function CasesPage({ searchParams }: PageProps<"/service/ca
             sort: "status",
             cell: (c) => <Badge tone={CASE_STATUS_TONE[c.status]}>{CASE_STATUS_LABELS[c.status]}</Badge>,
           },
-          { header: "Engineer", cell: (c) => personName(c.engineer) ?? <span className="text-text-muted">Unassigned</span> },
+          {
+            header: "Engineer",
+            cell: (c) => (
+              <span className="flex items-center gap-1.5">
+                {personName(c.engineer) ?? <span className="text-text-muted">Unassigned</span>}
+                {permission.canEdit && isOpenStatus(c.status) && (
+                  <AssignEngineerDialog
+                    jobsheetNo={c.jobsheetNo}
+                    currentEngineerId={c.engineerId ?? ""}
+                    action={assignEngineer.bind(null, c.id)}
+                    loadStaff={getBranchStaffOptions.bind(null, c.branchId)}
+                    trigger={<UserCog className="size-3.5" />}
+                    triggerVariant="ghost"
+                    triggerClassName={iconLink}
+                  />
+                )}
+              </span>
+            ),
+          },
           {
             header: "Due ₹",
             align: "right",

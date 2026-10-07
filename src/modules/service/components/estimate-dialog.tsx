@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { ModalButton } from "@/components/ui/modal-button";
-import { estimateSchema } from "../case-schema";
+import { estimateSchema, paymentModeOptions } from "../case-schema";
 import type { CatalogItem } from "../queries";
 import { ItemPicker } from "./item-picker";
 
@@ -246,6 +246,21 @@ function EstimateForm({
           <Textarea id="note" name="note" rows={2} defaultValue={v?.note ?? ""} />
         </Field>
       )}
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Advance payment" htmlFor="advanceAmount" error={errors.advanceAmount} hint="Leave blank if not collecting now">
+          <Input id="advanceAmount" name="advanceAmount" placeholder="0.00" inputMode="decimal" defaultValue={v?.advanceAmount ?? ""} />
+        </Field>
+        <Field label="Payment mode" htmlFor="advanceMode" error={errors.advanceMode}>
+          <Select
+            id="advanceMode"
+            name="advanceMode"
+            defaultValue={v?.advanceMode ?? ""}
+            placeholder="— select mode —"
+            options={paymentModeOptions}
+          />
+        </Field>
+      </div>
 
       <div className="flex justify-end gap-2">
         <Button variant="secondary" onClick={onDone}>

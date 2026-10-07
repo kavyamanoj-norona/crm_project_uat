@@ -108,6 +108,13 @@ const coordinate = (limit: number) =>
 
 const CROSS_FIELDS = ["intakeType", "siteAddress"];
 
+const advanceModeField = z
+  .string()
+  .optional()
+  .default("")
+  .transform((v) => (v === "" ? null : v))
+  .pipe(z.enum(PAYMENT_MODES).nullable());
+
 export const intakeSchema = z
   .object({
     branchId: requiredText("Branch"),
@@ -135,10 +142,15 @@ export const intakeSchema = z
     siteAddress: optionalText,
     siteLatitude: coordinate(90),
     siteLongitude: coordinate(180),
+    // Advance payment (optional)
+    advanceAmount: optionalRupees("Advance payment"),
+    advanceMode: advanceModeField,
   })
   .superRefine((v, ctx) => {
     if (v.intakeType !== "WALK_IN" && !v.siteAddress)
       ctx.addIssue({ code: "custom", path: ["siteAddress"], message: "Address is required for pickup and on-site cases" });
+    if (v.advanceAmount && !v.advanceMode)
+      ctx.addIssue({ code: "custom", path: ["advanceMode"], message: "Select a payment mode for the advance" });
   }, {
     // Run alongside other field errors (so everything shows in one pass), as
     // long as the fields these rules read parsed cleanly.
@@ -172,16 +184,24 @@ const estimateLines = z
   .refine((lines) => new Set(lines.map((l) => l.itemId)).size === lines.length, "Each item can be added once — change its quantity instead");
 
 /** "Start diagnosis" and "Edit items": engineer, items and delivery promise. */
-export const estimateSchema = z.object({
-  engineerId: requiredText("Engineer"),
-  expectedDeliveryDate: optionalDate.refine(
-    (d) => d === null || d.toISOString().slice(0, 10) >= todayIst(),
-    "Expected delivery can't be in the past",
-  ),
-  gstInvoiceRequired: z.enum(["no", "yes"]).transform((v) => v === "yes"),
-  note: optionalText.refine((v) => v === null || v.length <= 500, "Keep the note under 500 characters"),
-  items: estimateLines,
-});
+export const estimateSchema = z
+  .object({
+    engineerId: requiredText("Engineer"),
+    expectedDeliveryDate: optionalDate.refine(
+      (d) => d === null || d.toISOString().slice(0, 10) >= todayIst(),
+      "Expected delivery can't be in the past",
+    ),
+    gstInvoiceRequired: z.enum(["no", "yes"]).transform((v) => v === "yes"),
+    note: optionalText.refine((v) => v === null || v.length <= 500, "Keep the note under 500 characters"),
+    items: estimateLines,
+    // Advance payment (optional)
+    advanceAmount: optionalRupees("Advance payment"),
+    advanceMode: advanceModeField,
+  })
+  .superRefine((v, ctx) => {
+    if (v.advanceAmount && !v.advanceMode)
+      ctx.addIssue({ code: "custom", path: ["advanceMode"], message: "Select a payment mode for the advance" });
+  });
 export type EstimateInput = z.output<typeof estimateSchema>;
 
 /** Stages in which the items can still be changed (before the customer approves). */

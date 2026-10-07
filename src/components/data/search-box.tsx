@@ -35,13 +35,13 @@ export function SearchBox({ path, query, prefix = "", value, placeholder = "Sear
   return (
     <label className="relative block w-full sm:w-64">
       <span className="sr-only">Search</span>
-      <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-text-muted" />
+      <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-text-muted" />
       <input
         type="search"
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder={placeholder}
-        className="h-10 w-full rounded-lg border border-border bg-surface pr-8 pl-9 text-sm outline-none placeholder:text-text-muted focus:border-primary [&::-webkit-search-cancel-button]:hidden"
+        className="h-9 w-full rounded-lg border border-border bg-surface pr-8 pl-9 text-sm outline-none placeholder:text-text-muted focus:border-primary focus:ring-1 focus:ring-primary/20 [&::-webkit-search-cancel-button]:hidden"
       />
       {text && (
         <button

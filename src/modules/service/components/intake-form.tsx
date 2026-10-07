@@ -14,6 +14,7 @@ import {
   INTAKE_FIELDS,
   intakeSchema,
   intakeTypeOptions,
+  paymentModeOptions,
   productTypeOptions,
   warrantyOptions,
   type CustomerMatch,
@@ -85,11 +86,11 @@ export function IntakeForm({ action, lookup, options }: IntakeFormProps) {
           ) : (
             <input type="hidden" name="branchId" value={branchId} />
           )}
-          <p className="pb-2 text-sm text-text-muted">
+          {/* <p className="pb-2 text-sm text-text-muted">
             Jobsheet{" "}
             <span className="font-semibold text-text">{preview ?? "— pick a branch"}</span>
             {preview && <span className="text-xs"> · confirmed on save</span>}
-          </p>
+          </p> */}
         </div>
         <div className="flex items-end gap-2">
           <Field label="Intake type" htmlFor="intakeType" required error={errors.intakeType} className="w-40">
@@ -152,6 +153,15 @@ export function IntakeForm({ action, lookup, options }: IntakeFormProps) {
           </Field>
         </div>
       </FormSection>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Field label="Advance payment)" htmlFor="advanceAmount" error={errors.advanceAmount} hint="Leave blank if not collecting now">
+          <Input {...f("advanceAmount")} placeholder="0.00" inputMode="decimal" />
+        </Field>
+        <Field label="Payment mode" htmlFor="advanceMode" error={errors.advanceMode}>
+          <Select {...f("advanceMode")} placeholder="— select mode —" options={paymentModeOptions} />
+        </Field>
+      </div>
 
       <div className="flex justify-end">
         <SaveButton pending={pending} />

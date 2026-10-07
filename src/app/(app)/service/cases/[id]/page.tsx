@@ -22,12 +22,15 @@ import { formatPhone } from "@/lib/phone";
 import { param } from "@/modules/admin/components/admin-page";
 import { CUSTOMER_PATHS } from "@/modules/customers/paths";
 import { LEAD_SOURCE_LABELS } from "@/modules/customers/schemas";
-import { cancelCase, changeCaseStage, moveCaseToNextStage, revealDevicePassword, saveEstimate, saveCaseFeedback, submitDiagnosis } from "@/modules/service/actions/case";
+import { assignEngineer, cancelCase, changeCaseStage, moveCaseToNextStage, revealDevicePassword, saveEstimate, saveCaseFeedback, submitDiagnosis } from "@/modules/service/actions/case";
+import { consumeItemFromCase } from "@/modules/inventory/actions/stock";
+import { requestPartForCase } from "@/modules/inventory/actions/purchase";
 import { sendWhatsAppTemplate } from "@/modules/service/actions/whatsapp";
 import { quoteWhatsAppLink } from "@/server/notify/customer";
 import { WA_TEMPLATE_MAP } from "@/server/notify/whatsapp-templates";
 import { SendWhatsAppButton } from "@/modules/service/components/send-whatsapp-button";
 import { db } from "@/server/db";
+import { AssignEngineerDialog } from "@/modules/service/components/assign-engineer-dialog";
 import { EstimateDialog } from "@/modules/service/components/estimate-dialog";
 import { FeedbackDialog } from "@/modules/service/components/feedback-dialog";
 import { ITEM_TYPE_LABELS, ITEM_TYPE_TONE } from "@/modules/admin/item-schema";
@@ -155,7 +158,31 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
 
   // Start diagnosis (at Intake) / Edit items (Diagnosis, Pending approval)
   const estimateMode = !permission.canEdit ? null : c.status === "INTAKE" ? "start" : ESTIMATE_EDITABLE.includes(c.status) ? "edit" : null;
-  const [catalog, staff] = estimateMode ? await Promise.all([listCatalogForPicker(), listBranchStaff(c.branchId)]) : [[], []];
+  const canAssignEngineer = permission.canEdit && isOpenStatus(c.status);
+  const [catalog, staff] = await Promise.all([
+    estimateMode ? listCatalogForPicker() : Promise.resolve([] as Awaited<ReturnType<typeof listCatalogForPicker>>),
+    canAssignEngineer ? listBranchStaff(c.branchId) : Promise.resolve([] as { value: string; label: string }[]),
+  ]);
+  // Stock + active purchase-request lookup for billable items (PART + ACCESSORY only)
+  const physicalItemIds = c.items
+    .filter((l) => l.type === "PART" || l.type === "ACCESSORY")
+    .map((l) => l.itemId);
+  const [stockItems, activePRs] = physicalItemIds.length > 0
+    ? await Promise.all([
+        db.stockItem.findMany({
+          where: { branchId: c.branchId, itemId: { in: physicalItemIds } },
+          select: { itemId: true, quantity: true },
+        }),
+        db.purchaseRequest.findMany({
+          where: { caseId: c.id, itemId: { in: physicalItemIds }, status: { notIn: ["FULFILLED", "REJECTED"] } },
+          select: { itemId: true, status: true },
+        }),
+      ])
+    : [[], []];
+  const stockMap = new Map(stockItems.map((s) => [s.itemId, s.quantity]));
+  // Items that already have an active (non-fulfilled, non-rejected) PR on this case
+  const requestedItemIds = new Set(activePRs.map((pr) => pr.itemId));
+
   const estimate = estimateMode && (
     <EstimateDialog
       mode={estimateMode}
@@ -304,11 +331,52 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
                 { header: "Min ₹", align: "right", cell: (l) => formatPaise(l.minPricePaise, { symbol: false }) },
                 { header: "Billed ₹", align: "right", cell: (l) => <span className="font-semibold">{formatPaise(l.unitPricePaise, { symbol: false })}</span> },
                 { header: "Total ₹", align: "right", cell: (l) => <span className="font-semibold">{formatPaise(l.lineTotalPaise, { symbol: false })}</span> },
+                // {
+                //   header: "Status",
+                //   cell: (l) => {
+                //     const off = discountPercent(l.listPricePaise, l.unitPricePaise);
+                //     return off > 0 ? <Badge tone="warning">{off}% discount</Badge> : <Badge tone="success">OK</Badge>;
+                //   },
+                // },
                 {
-                  header: "Status",
+                  header: "Stock",
+                  align: "center",
                   cell: (l) => {
-                    const off = discountPercent(l.listPricePaise, l.unitPricePaise);
-                    return off > 0 ? <Badge tone="warning">{off}% discount</Badge> : <Badge tone="success">OK</Badge>;
+                    if (l.type !== "PART" && l.type !== "ACCESSORY") return <span className="text-text-disabled">—</span>;
+                    const qty = stockMap.get(l.itemId) ?? 0;
+                    return qty === 0
+                      ? <Badge tone="danger">No Stock</Badge>
+                      : <span className="tabular-nums">{qty}</span>;
+                  },
+                },
+                {
+                  header: "Action",
+                  cell: (l) => {
+                    if (l.type !== "PART" && l.type !== "ACCESSORY") return null;
+                    const qty = stockMap.get(l.itemId) ?? 0;
+                    if (qty > 0) {
+                      return (
+                        <form action={consumeItemFromCase.bind(null, l.id)}>
+                          <button type="submit" className="rounded-lg border border-border px-3 py-1 text-xs font-medium bg-green-700 text-green-50">
+                            Consume
+                          </button>
+                        </form>
+                      );
+                    }
+                    if (requestedItemIds.has(l.itemId)) {
+                      return (
+                        <span className="inline-flex items-center rounded-lg border border-border bg-surface-muted px-3 py-1 text-xs font-medium text-text-muted">
+                          Requested
+                        </span>
+                      );
+                    }
+                    return (
+                      <form action={requestPartForCase.bind(null, l.id)}>
+                        <button type="submit" className="inline-flex items-center rounded-lg border border-primary/30 px-3 py-1 text-xs font-medium text-red-50 bg-red-700">
+                          Request
+                        </button>
+                      </form>
+                    );
                   },
                 },
               ]}
@@ -328,7 +396,23 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
               </div>
               <KvList
                 items={[
-                  ["Engineer", personName(c.engineer) ?? "Unassigned"],
+                  [
+                    "Engineer",
+                    <span key="engineer" className="flex items-center gap-2">
+                      {personName(c.engineer) ?? "Unassigned"}
+                      {canAssignEngineer && (
+                        <AssignEngineerDialog
+                          jobsheetNo={c.jobsheetNo}
+                          currentEngineerId={c.engineerId ?? ""}
+                          action={assignEngineer.bind(null, c.id)}
+                          staff={staff}
+                          trigger={<Pencil className="size-3" />}
+                          triggerVariant="ghost"
+                          triggerClassName="h-6 w-6 p-0 text-text-muted hover:text-text"
+                        />
+                      )}
+                    </span>,
+                  ],
                   ["Expected", c.expectedDeliveryDate && formatDate(c.expectedDeliveryDate)],
                   [
                     "Payments",

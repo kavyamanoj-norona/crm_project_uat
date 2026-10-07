@@ -27,7 +27,7 @@ export function FilterTabs({ list, tabs }: { list: ListState; tabs: FilterTab[] 
       />
       <nav
         aria-label="Filter"
-        className="hidden min-w-0 max-w-full overflow-x-auto rounded-lg bg-primary-soft/70 p-1 [scrollbar-width:none] sm:flex [&::-webkit-scrollbar]:hidden"
+        className="hidden min-w-0 max-w-full overflow-x-auto rounded-lg bg-surface-muted p-1 [scrollbar-width:none] sm:flex [&::-webkit-scrollbar]:hidden"
       >
         <div className="flex gap-1">
           {tabs.map((t, i) => (

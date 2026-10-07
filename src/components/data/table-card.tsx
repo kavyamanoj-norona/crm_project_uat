@@ -12,7 +12,7 @@ type TableCardProps = {
 };
 
 const toolBtn =
-  "inline-flex size-8 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface hover:text-text";
+  "inline-flex size-7 items-center justify-center rounded-sm text-text-muted transition-colors hover:bg-surface hover:text-text";
 
 /**
  * Card around a list: toolbar (tabs + search) on the left, fullscreen and

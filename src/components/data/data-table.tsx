@@ -35,15 +35,16 @@ export function DataTable<T>({ columns, rows, rowKey, empty = "No records found.
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
       <table className="w-full min-w-max text-sm">
-        <thead className="border-b border-border bg-surface text-[11px] font-bold tracking-[1px] text-text-muted uppercase">
+        <thead className="border-b border-border bg-surface-muted text-xs font-semibold text-text">
           <tr>
-            {columns.map((c) => (
+            {columns.map((c, idx) => (
               <th
                 key={c.header}
                 scope="col"
                 className={cn(
-                  "px-3 py-2.5 whitespace-nowrap",
+                  "px-3 py-3 whitespace-nowrap",
                   alignCls[c.align ?? (c.header === "#" ? "center" : "left")],
+                  idx < columns.length - 1 && "border-r border-border",
                   c.className,
                 )}
                 aria-sort={

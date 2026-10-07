@@ -43,7 +43,51 @@ export async function raisePurchaseRequest(_prev: FormState, formData: FormData)
   });
 
   revalidatePath(INVENTORY_PATHS.stock);
-  redirect(`${INVENTORY_PATHS.stock}?saved=${Date.now()}`);
+  revalidatePath(INVENTORY_PATHS.purchasing);
+  redirect(`${INVENTORY_PATHS.purchasing}?saved=${Date.now()}`);
+}
+
+export async function requestPartForCase(caseItemId: string): Promise<void> {
+  const user = await requireActionPermission(INVENTORY_PATHS.stock, "canCreate");
+  const line = await db.caseItem.findUniqueOrThrow({
+    where: { id: caseItemId },
+    select: { itemId: true, quantity: true, caseId: true, case: { select: { branchId: true } } },
+  });
+  const { itemId, quantity, caseId, case: { branchId } } = line;
+  const branch = await db.branch.findUniqueOrThrow({ where: { id: branchId }, select: { code: true } });
+
+  await db.$transaction(async (tx) => {
+    const seq = await nextSequence(tx, `PR:${branch.code}:${period()}`);
+    const code = `PR-${branch.code.toUpperCase()}-${period()}-${String(seq).padStart(3, "0")}`;
+    await tx.purchaseRequest.create({
+      data: { code, branchId, itemId, quantity, caseId, requestedById: user.id },
+    });
+  });
+
+  revalidatePath(INVENTORY_PATHS.stock);
+  revalidatePath(INVENTORY_PATHS.purchasing);
+  revalidatePath(`/service/cases/${caseId}`);
+}
+
+export async function receiveStock(purchaseRequestId: string): Promise<void> {
+  const user = await requireActionPermission(INVENTORY_PATHS.stock, "canEdit");
+  const pr = await db.purchaseRequest.findUniqueOrThrow({
+    where: { id: purchaseRequestId },
+    select: { branchId: true, itemId: true, quantity: true, status: true },
+  });
+  if (pr.status !== "APPROVED") return;
+
+  await db.$transaction(async (tx) => {
+    await tx.purchaseRequest.update({ where: { id: purchaseRequestId }, data: { status: "FULFILLED" } });
+    await tx.stockItem.upsert({
+      where: { branchId_itemId: { branchId: pr.branchId, itemId: pr.itemId } },
+      create: { branchId: pr.branchId, itemId: pr.itemId, quantity: pr.quantity, unitCodes: [], updatedById: user.id },
+      update: { quantity: { increment: pr.quantity }, updatedById: user.id },
+    });
+  });
+
+  revalidatePath(INVENTORY_PATHS.stock);
+  revalidatePath(INVENTORY_PATHS.purchasing);
 }
 
 export async function updatePurchaseRequestStatus(
@@ -60,4 +104,5 @@ export async function updatePurchaseRequestStatus(
     },
   });
   revalidatePath(INVENTORY_PATHS.stock);
+  revalidatePath(INVENTORY_PATHS.purchasing);
 }

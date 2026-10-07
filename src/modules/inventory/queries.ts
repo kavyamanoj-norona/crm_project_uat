@@ -66,6 +66,41 @@ export async function listAllActiveItems() {
   });
 }
 
+export async function listActivePurchaseRequests(branchId: string | null) {
+  return db.purchaseRequest.findMany({
+    where: {
+      ...(branchId ? { branchId } : {}),
+      status: { not: "FULFILLED" },
+    },
+    include: {
+      item: { select: { id: true, code: true, name: true } },
+      branch: { select: { id: true, code: true, name: true } },
+      case: { select: { id: true, jobsheetNo: true } },
+      requestedBy: { select: { firstName: true, lastName: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
+}
+
+export async function listReceivedRequests(branchId: string | null) {
+  return db.purchaseRequest.findMany({
+    where: {
+      ...(branchId ? { branchId } : {}),
+      status: "FULFILLED",
+    },
+    include: {
+      item: { select: { id: true, code: true, name: true } },
+      branch: { select: { id: true, code: true, name: true } },
+      requestedBy: { select: { firstName: true, lastName: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
+}
+
 export type StockRow = Awaited<ReturnType<typeof listStock>>[number];
 export type PurchaseRequestRow = Awaited<ReturnType<typeof listPurchaseRequests>>[number];
 export type TransferRow = Awaited<ReturnType<typeof listTransfers>>[number];
+export type ActivePurchaseRequestRow = Awaited<ReturnType<typeof listActivePurchaseRequests>>[number];
+export type ReceivedRequestRow = Awaited<ReturnType<typeof listReceivedRequests>>[number];
