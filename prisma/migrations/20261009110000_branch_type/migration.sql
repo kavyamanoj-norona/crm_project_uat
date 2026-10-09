@@ -1,0 +1,8 @@
+-- CreateEnum
+CREATE TYPE "BranchType" AS ENUM ('COMPANY_OWNED', 'FRANCHISE');
+
+-- AlterTable
+ALTER TABLE "branch" ADD COLUMN     "branchType" "BranchType" NOT NULL DEFAULT 'COMPANY_OWNED',
+ADD COLUMN     "companyShareBp" INTEGER NOT NULL DEFAULT 10000,
+ADD COLUMN     "franchiseShareBp" INTEGER NOT NULL DEFAULT 0;
+

@@ -41,14 +41,14 @@ export function TopBar({
   };
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 items-center gap-2 border-b border-border bg-surface/90 px-3 backdrop-blur md:px-5">
-      <button type="button" className={`${iconBtn} md:hidden`} aria-label="Open menu" onClick={onOpenMobile}>
+    <header className="sticky top-0 z-20 flex h-16 items-center gap-2 border-b border-border bg-surface/90 px-2 backdrop-blur sm:px-3 md:px-5">
+      <button type="button" className={`${iconBtn} lg:hidden`} aria-label="Open menu" onClick={onOpenMobile}>
         <Menu className="size-5" />
       </button>
       {activeModule && (
         <button
           type="button"
-          className={`${iconBtn} hidden md:inline-flex`}
+          className={`${iconBtn} hidden lg:inline-flex`}
           aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           onClick={onToggleSidebar}
         >
@@ -75,7 +75,7 @@ export function TopBar({
 
         <NotificationButton />
 
-        <Link href="/settings/profile" className={iconBtn} aria-label="Settings">
+        <Link href="/settings/profile" className={`${iconBtn} hidden sm:inline-flex`} aria-label="Settings">
           <Settings className="size-5" />
         </Link>
 
@@ -104,7 +104,7 @@ function NotificationButton() {
         <Bell className="size-5" />
       </button>
       {open && (
-        <div className="absolute right-0 mt-2 w-80 rounded-xl border border-border bg-surface p-4 shadow-lg">
+        <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-1.5rem)] rounded-xl border border-border bg-surface p-4 shadow-lg">
           <p className="text-sm font-semibold">Notifications</p>
           <p className="mt-6 mb-4 text-center text-sm text-text-muted">You&apos;re all caught up.</p>
         </div>

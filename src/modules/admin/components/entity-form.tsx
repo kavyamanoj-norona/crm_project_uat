@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { initialFormState, validateForm, type FormState } from "@/lib/form";
@@ -21,6 +21,8 @@ export type FieldConfig = {
   suggestions?: string[];
   /** Grid columns to span on large screens (of 4). */
   span?: 1 | 2 | 3 | 4;
+  /** Only show (and submit) this field while another field has the given value. */
+  showWhen?: { field: string; value: string };
 };
 
 type EntityFormProps = {
@@ -47,13 +49,20 @@ export function EntityForm({ fields, schema, action, initial = {}, id, cancelHre
     state,
     validate: (fd) => validateForm(FORM_SCHEMAS[schema], fd),
   });
+  // Values of fields that other fields depend on (showWhen), as the user changes them.
+  const [watched, setWatched] = useState<Record<string, string>>({});
+  const current = (name: string) => watched[name] ?? String(state.values?.[name] ?? initial[name] ?? "");
 
   return (
     // Remount when switching records or after a failed submit so inputs show
     // the right defaults (React resets uncontrolled forms after an action).
     <form key={`${id ?? "new"}-${JSON.stringify(state.values ?? {})}`} action={formAction}
       onSubmit={onSubmit}
-      onChange={onChange}
+      onChange={(e) => {
+        onChange(e);
+        const t = e.target as unknown as HTMLInputElement;
+        if (t.name) setWatched((w) => ({ ...w, [t.name]: t.value }));
+      }}
       className="space-y-4"
       noValidate
     >
@@ -62,7 +71,7 @@ export function EntityForm({ fields, schema, action, initial = {}, id, cancelHre
         Object.entries(hidden).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {fields.map((f) => {
+        {fields.filter((f) => !f.showWhen || current(f.showWhen.field) === f.showWhen.value).map((f) => {
           const error = errors[f.name];
           const echoed = state.values;
           const value: unknown = echoed

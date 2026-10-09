@@ -16,7 +16,7 @@ import { formatPhone } from "@/lib/phone";
 import { AdminPage } from "@/modules/admin/components/admin-page";
 import { CUSTOMER_PATHS } from "@/modules/customers/paths";
 import { HISTORY_SORTS, getCustomer, listCustomerCases, listRecordHistory } from "@/modules/customers/queries";
-import { CUSTOMER_TYPE_LABELS, LEAD_SOURCE_LABELS } from "@/modules/customers/schemas";
+import { CUSTOMER_TYPE_LABELS, LEAD_SOURCE_LABELS, VIP_MIN_VISITS } from "@/modules/customers/schemas";
 import { CASE_STATUS_LABELS, CASE_STATUS_TONE } from "@/modules/service/case-schema";
 import { SERVICE_PATHS } from "@/modules/service/paths";
 import { branchWhere, getBranchScope } from "@/server/branch-scope";
@@ -49,7 +49,7 @@ export default async function CustomerDetailsPage({ params, searchParams }: Page
     <AdminPage
       title={customer.name}
       group="Customers & Support"
-      subtitle={`${customer.code} · ${formatPhone(customer.phone)}`}
+      subtitle={`${customer.code} · ${formatPhone(customer.phone)}${customer.visitCount >= VIP_MIN_VISITS ? ` · VIP (${customer.visitCount} visits)` : ""}`}
       actions={
         <>
           <LinkButton href={CUSTOMER_PATHS.database} variant="secondary">
@@ -74,6 +74,7 @@ export default async function CustomerDetailsPage({ params, searchParams }: Page
             <DetailItem term="Alt phone">{customer.altPhone && formatPhone(customer.altPhone)}</DetailItem>
             <DetailItem term="Email">{customer.email}</DetailItem>
             {customer.type === "BUSINESS" && <DetailItem term="GSTIN">{customer.gstin}</DetailItem>}
+            {customer.type === "BUSINESS" && <DetailItem term="Contact person">{customer.contactPerson}</DetailItem>}
             <DetailItem term="Source">{customer.source && LEAD_SOURCE_LABELS[customer.source]}</DetailItem>
             <DetailItem term="Visits">{customer.visitCount}</DetailItem>
             <DetailItem term="Last visit">{customer.lastVisitAt && formatDate(customer.lastVisitAt)}</DetailItem>

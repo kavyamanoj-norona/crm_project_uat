@@ -21,8 +21,8 @@ type ActionDialogProps = {
   validate?: (formData: FormData) => Errors | null;
   submitLabel: string;
   submitVariant?: "primary" | "danger";
-  /** The fields; receives the current field errors. */
-  children: (errors: Errors) => React.ReactNode;
+  /** The fields: a function receiving the current field errors (client components only), or plain content when no field needs them. */
+  children: React.ReactNode | ((errors: Errors) => React.ReactNode);
 };
 
 /** A button that opens a small form in a modal — for actions that need a note or a choice. */
@@ -51,7 +51,7 @@ function DialogForm({
 
   return (
     <form action={formAction} onSubmit={onSubmit} onChange={onChange} noValidate className="space-y-4">
-      {children(errors)}
+      {typeof children === "function" ? children(errors) : children}
       <div className="flex justify-end gap-2 pt-1">
         <Button variant="secondary" onClick={onDone}>
           Close

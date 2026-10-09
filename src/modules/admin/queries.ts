@@ -49,7 +49,7 @@ export async function listCompanies(list: ListState): Promise<Page<Prisma.Compan
 
 // ─── Branch ──────────────────────────────────────────────────────────────────
 
-export const BRANCH_SORTS = ["code", "name", "company", "createdAt"] as const;
+export const BRANCH_SORTS = ["code", "name", "company", "branchType", "createdAt"] as const;
 
 export async function listBranches(list: ListState) {
   const search: Prisma.BranchWhereInput = list.q

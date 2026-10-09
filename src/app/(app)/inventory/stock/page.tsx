@@ -1,101 +1,163 @@
-import { Package } from "lucide-react";
-import { LinkButton } from "@/components/ui/button";
-import { FlashToast } from "@/components/feedback/flash-toast";
-import { PageHeader } from "@/components/layout/page-header";
-import { EntityForm, type FieldConfig } from "@/modules/admin/components/entity-form";
-import { param } from "@/modules/admin/components/admin-page";
+import Link from "next/link";
+import { Pencil, ShoppingCart } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { ListView } from "@/components/data/list-view";
+import { listState } from "@/lib/list";
+import { formatDate } from "@/lib/dates";
 import { formatPaise } from "@/lib/money";
+import { minPricePaise } from "@/lib/pricing";
+import { EntityForm, type FieldConfig } from "@/modules/admin/components/entity-form";
+import { AdminPage, param } from "@/modules/admin/components/admin-page";
 import { getBranchScope, listBranchOptions } from "@/server/branch-scope";
 import { requirePageAccess } from "@/server/rbac/guard";
-import { adjustStock } from "@/modules/inventory/actions/stock";
+import { db } from "@/server/db";
+import { adjustStock, consumeStockItem } from "@/modules/inventory/actions/stock";
 import { INVENTORY_PATHS } from "@/modules/inventory/paths";
-import { listPhysicalItems, listStock } from "@/modules/inventory/queries";
-import { StockTableClient } from "./stock-table-client";
+import { STOCK_SORTS, listPhysicalItems, listStockPage } from "@/modules/inventory/queries";
 
 export const metadata = { title: "Stock" };
+
+const iconLink =
+  "inline-flex size-8 items-center justify-center rounded-lg text-text-muted hover:bg-surface-muted hover:text-text";
 
 export default async function StockPage({ searchParams }: PageProps<"/inventory/stock">) {
   const { permission, user } = await requirePageAccess(INVENTORY_PATHS.stock);
   const sp = await searchParams;
-  const action = param(sp, "action");
-  const saved = param(sp, "saved");
+  const list = listState(INVENTORY_PATHS.stock, sp, { sorts: STOCK_SORTS, defaultSort: "updatedAt" });
+  const editId = param(sp, "edit");
+  const highlight = param(sp, "highlight") ?? editId;
 
   const scope = await getBranchScope(user);
   const canEdit = permission.canEdit;
 
-  const [stock, physicalItems, branchOptions] = await Promise.all([
-    listStock(scope.branchId),
+  const [{ rows, total, tabs, valuePaise }, physicalItems, branchOptions, editing] = await Promise.all([
+    listStockPage(list, scope.branchId),
     listPhysicalItems(),
     listBranchOptions(),
+    editId && canEdit
+      ? db.stockItem.findFirst({ where: { id: editId, ...(scope.branchId ? { branchId: scope.branchId } : {}) } })
+      : null,
   ]);
-
-  const totalValuePaise = stock.reduce((sum, s) => sum + s.quantity * s.item.pricePaise, 0);
 
   const branchField: FieldConfig[] = scope.branchId
     ? []
-    : [{ name: "branchId", label: "Branch", type: "select" as const, required: true, options: branchOptions.map((b) => ({ value: b.id, label: `${b.code} — ${b.name}` })) }];
-
-  const physicalItemOptions = physicalItems.map((i) => ({ value: i.id, label: `${i.code} — ${i.name}` }));
+    : [{ name: "branchId", label: "Branch", type: "select", required: true, placeholder: "Select branch", options: branchOptions.map((b) => ({ value: b.id, label: `${b.code} — ${b.name}` })) }];
 
   const stockAdjustFields: FieldConfig[] = [
     ...branchField,
-    { name: "itemId", label: "Item (part / accessory)", type: "select", required: true, options: physicalItemOptions },
+    { name: "itemId", label: "Item (part / accessory)", type: "select", required: true, placeholder: "Select item", options: physicalItems.map((i) => ({ value: i.id, label: `${i.code} — ${i.name}` })) },
     { name: "quantity", label: "Quantity", type: "number", required: true, placeholder: "Enter quantity" },
-    {
-      name: "unitCodes",
-      label: "Unit codes",
-      placeholder: "Enter serial numbers (comma-separated)",
-      hint: "Sticker IDs on physical units",
-      span: 2,
-    },
+    { name: "unitCodes", label: "Unit codes", placeholder: "Enter unit codes (comma-separated)", hint: "Sticker IDs on physical units", span: 2 },
   ];
 
+  const initial = editing
+    ? { branchId: editing.branchId, itemId: editing.itemId, quantity: editing.quantity, unitCodes: editing.unitCodes.join(", ") }
+    : undefined;
+  const editingRow = editing ? rows.find((r) => r.id === editing.id) : undefined;
+
+  const where = scope.branch ? `Branch: ${scope.branch.name}` : scope.canSwitch ? "All branches" : "";
+  const subtitle = [where, `Stock value ${formatPaise(valuePaise)}`].filter(Boolean).join(" · ");
+
   return (
-    <>
-      <FlashToast flag={saved} message="Saved successfully." />
-      <PageHeader
-        title="Stock"
-        subtitle={scope.branch ? `Branch: ${scope.branch.name}` : scope.canSwitch ? "Select a branch in the header to filter" : undefined}
-        breadcrumbs={["Inventory", "Stock"]}
-        actions={
-          canEdit && (
-            <LinkButton href={`${INVENTORY_PATHS.stock}?action=stock-adjust`}>
-              <Package className="size-4" /> Adjust stock
-            </LinkButton>
-          )
-        }
+    <AdminPage
+      title="Stock"
+      group="Inventory"
+      subtitle={subtitle}
+      saved={param(sp, "saved")}
+      form={
+        canEdit
+          ? {
+              label: "Adjust stock",
+              editingTitle: editing ? (editingRow?.item.name ?? "stock") : undefined,
+              cancelHref: INVENTORY_PATHS.stock,
+              content: (
+                <EntityForm fields={stockAdjustFields} schema="stockAdjust" action={adjustStock} initial={initial} submitLabel="Save stock" />
+              ),
+            }
+          : undefined
+      }
+    >
+      <ListView
+        list={list}
+        total={total}
+        tabs={tabs}
+        rows={rows}
+        rowKey={(s) => s.id}
+        highlight={(s) => s.id === highlight}
+        searchPlaceholder="Search by part, code or branch"
+        empty={`No stock recorded${scope.branch ? ` for ${scope.branch.name}` : ""} yet.`}
+        columns={[
+          { header: "#", cell: (_, i) => i + 1 },
+          { header: "Updated", sort: "updatedAt", cell: (s) => formatDate(s.updatedAt) },
+          {
+            header: "Part",
+            sort: "name",
+            cell: (s) => (
+              <>
+                <p className="font-medium">{s.item.name}</p>
+                <p className="text-xs text-text-muted">{s.item.code}</p>
+              </>
+            ),
+          },
+          { header: "Branch", sort: "branch", cell: (s) => `${s.branch.name} (${s.branch.code})` },
+          {
+            header: "Unit codes",
+            cell: (s) =>
+              s.unitCodes.length > 0 ? (
+                <span className="text-xs text-text-muted">{s.unitCodes.join(", ")}</span>
+              ) : (
+                <span className="text-text-disabled">—</span>
+              ),
+          },
+          {
+            header: "Stock",
+            sort: "quantity",
+            align: "right",
+            cell: (s) => (
+              <span className="inline-flex items-center justify-end gap-2 tabular-nums">
+                {s.quantity}
+                {s.quantity > 0 && s.quantity <= 2 && <Badge tone="warning">Low</Badge>}
+                {s.quantity === 0 && <Badge tone="danger">No Stock</Badge>}
+              </span>
+            ),
+          },
+          {
+            header: "Min ₹",
+            align: "right",
+            cell: (s) => (
+              <span className="font-semibold tabular-nums">
+                {formatPaise(minPricePaise(s.item.pricePaise, s.item.maxDiscountPercent))}
+              </span>
+            ),
+          },
+          {
+            header: "Action",
+            cell: (s) => (
+              <span className="flex items-center gap-1">
+                {canEdit && (
+                  <Link href={`${INVENTORY_PATHS.stock}?edit=${s.id}`} className={iconLink} aria-label="Edit" title="Edit">
+                    <Pencil className="size-4" />
+                  </Link>
+                )}
+                {s.quantity === 0 ? (
+                  <Link
+                    href={`${INVENTORY_PATHS.purchasing}?action=purchase-request&itemId=${s.item.id}`}
+                    className="inline-flex items-center gap-1 rounded-lg border border-primary/30 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/5"
+                  >
+                    <ShoppingCart className="size-3" /> Request
+                  </Link>
+                ) : canEdit ? (
+                  <form action={consumeStockItem.bind(null, s.id)}>
+                    <button type="submit" className="rounded-lg border border-border px-3 py-1 text-xs font-medium hover:bg-surface-muted">
+                      Consume
+                    </button>
+                  </form>
+                ) : null}
+              </span>
+            ),
+          },
+        ]}
       />
-
-      {action === "stock-adjust" && canEdit && (
-        <div className="mb-6 rounded-xl border border-border bg-surface p-6">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-semibold">Adjust stock</h2>
-            <LinkButton href={INVENTORY_PATHS.stock} variant="secondary">Cancel</LinkButton>
-          </div>
-          <EntityForm fields={stockAdjustFields} schema="stockAdjust" action={adjustStock} submitLabel="Save stock" />
-        </div>
-      )}
-
-      <div className="overflow-hidden rounded-xl border border-border bg-surface">
-        <div className="flex items-center justify-between border-b border-border px-6 py-4">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-text-muted">Branch inventory</p>
-            <p className="mt-0.5 font-bold">
-              {scope.branch ? `— ${scope.branch.name}` : scope.canSwitch ? "— all branches" : ""}
-            </p>
-          </div>
-          <div className="text-right">
-            <p className="text-xs text-text-muted">value</p>
-            <p className="font-semibold tabular-nums">{formatPaise(totalValuePaise)}</p>
-          </div>
-        </div>
-
-        <StockTableClient
-          stock={stock}
-          canEdit={canEdit}
-          branchName={scope.branch?.name}
-        />
-      </div>
-    </>
+    </AdminPage>
   );
 }

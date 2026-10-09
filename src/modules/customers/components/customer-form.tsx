@@ -7,7 +7,7 @@ import { useFormFeedback } from "@/hooks/use-form-feedback";
 import { Button, LinkButton } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { StateDistrictFields } from "@/components/forms/state-district-fields";
-import { CUSTOMER_FIELDS, customerSchema, customerTypeOptions, leadSourceOptions } from "../schemas";
+import { CUSTOMER_FIELDS, customerSchema, customerTypeOptions, leadEntrySourceOptions } from "../schemas";
 
 export type CustomerFormValues = Record<string, string>;
 
@@ -63,7 +63,7 @@ export function CustomerForm({ action, initial, id, cancelHref }: CustomerFormPr
           <Input {...f("email")} type="email" autoComplete="off" placeholder="Enter email" />
         </Field>
         <Field label="How did they hear about us?" htmlFor="source" error={errors.source}>
-          <Select {...f("source")} options={leadSourceOptions} />
+          <Select {...f("source")} options={leadEntrySourceOptions} />
         </Field>
         {type === "BUSINESS" && (
           <Field label="GSTIN" htmlFor="gstin" error={errors.gstin}>

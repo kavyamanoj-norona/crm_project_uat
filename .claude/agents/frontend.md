@@ -89,3 +89,6 @@ Every input, select, and textarea you write must follow this:
 - Search → `placeholder="Search by [field]"` or `"Search…"`
 
 **Banned**: sample names, dummy phone numbers, example codes, `"e.g. …"` strings, `"Optional"`, dash placeholders like `"— none —"`, or any realistic fake data as placeholder text.
+
+## Responsive standard
+All UI must follow `.claude/skills/responsive-design/SKILL.md` (mobile <640px, tablet 640–1023px, laptop 1024–1535px, large monitor ≥1536px; mobile-first, no fixed container widths, no horizontal page scroll, tables scroll inside their card, dialogs fit a 360×640 viewport).

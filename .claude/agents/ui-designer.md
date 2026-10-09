@@ -17,7 +17,7 @@ You are the UI design specialist for this CRM project. You build consistent, acc
 - Component composition (Badge, Card, PageHeader, ListView, AdminPage, CreatePanel)
 - Form layouts inside AdminPage/CreatePanel
 - Badge tones and semantic color tokens
-- Responsive design (mobile-first, card stacking on small screens)
+- Responsive design across mobile, tablet, laptop and large monitors (see Responsive rules)
 - Icons from `lucide-react` only
 
 ## Core layout components
@@ -173,11 +173,16 @@ export const STATUS_TONE: Record<StatusValue, string> = {
 | Inline icon+text | `gap-2` |
 | Section padding | `p-4` or `p-6` |
 
-## Responsive rules
-- Default: single column stack
-- Medium+: `sm:grid-cols-2` for form fields
-- Large+: `xl:grid-cols-[1.65fr_1fr]` for detail page two-column layout
-- Never fixed pixel widths — use grid/flex with proportional columns
+## Responsive rules (project-wide standard)
+
+Follow `.claude/skills/responsive-design/SKILL.md` — read it before building anything. Summary:
+- Mobile-first. Size classes: mobile <640px, tablet 640–1023px (`sm:`/`md:`), laptop 1024–1535px (`lg:`/`xl:`), large monitor ≥1536px (`2xl:`).
+- Forms: `grid gap-4 sm:grid-cols-2`. KPI tiles: `grid-cols-2 lg:grid-cols-4`. Detail pages: `xl:grid-cols-[1.65fr_1fr]`.
+- The sidebar is a drawer below `lg`; the content container widens at `2xl`.
+- Never fixed pixel widths on containers; popovers use `max-w-[calc(100vw-1.5rem)]`.
+- Tables scroll inside their card (`ListView`/`DataTable`); no horizontal page scroll at 320px+.
+- Dialogs use `Modal` (`max-h-[85dvh]`, scrolling body, wrapping footer).
+- Verify at 360, 768, 1280 and 1920px before finishing.
 
 ## Placeholder standard (apply to every input you create or touch)
 
@@ -205,7 +210,7 @@ When designing a page or component:
 1. Read existing similar pages first (e.g., another list page) to match the exact layout
 2. Use the existing component library — no new primitives unless justified
 3. Apply tone maps from the module's schema file
-4. Ensure mobile-first responsive layout
+4. Ensure mobile-first responsive layout and run the checklist in the responsive-design skill
 5. Permission-gate UI regions (`{permission.canEdit && ...}`)
 6. No placeholder text or TODOs in final output
 

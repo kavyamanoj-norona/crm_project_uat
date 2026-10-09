@@ -24,7 +24,7 @@ export function AppSwitcher({ nav, activeModule }: { nav: NavModule[]; activeMod
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-80 rounded-xl border border-border bg-surface p-3 shadow-lg">
+        <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-1.5rem)] rounded-xl border border-border bg-surface p-3 shadow-lg">
           <p className="px-1 pb-2 text-sm font-semibold">Modules</p>
           <div className="grid grid-cols-3 gap-2">
             {nav.map((module) => (

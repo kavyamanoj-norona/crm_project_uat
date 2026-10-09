@@ -137,10 +137,17 @@ export const MODULES: ModuleDef[] = [
     roles: [SALES, BM, CS],
     entries: [
       { title: "Dashboard", path: "/customers/dashboard", icon: "layout-dashboard" },
+      { title: "Leads", path: "/customers/leads", icon: "user-plus" },
+      { title: "Lead Reports", path: "/customers/lead-reports", icon: "trending-up" },
       { title: "Customer Database", path: "/customers/database", icon: "contact" },
       { title: "CS Workspace", path: "/customers/cs-workspace", icon: "inbox", roles: [CS] },
       { title: "Announcements", path: "/customers/announcements", icon: "megaphone", roles: EVERYONE },
       { title: "Portal Preview", path: "/customers/portal-preview", icon: "smartphone", roles: [CS] },
+      {
+        group: "Manage",
+        icon: "boxes",
+        items: [{ title: "B2B Accounts", path: "/customers/b2b", icon: "building-2" }],
+      },
     ],
   },
   {

@@ -41,7 +41,7 @@ export function DataTable<T>({ columns, rows, rowKey, empty = "No records found.
   const offset = list ? (list.page - 1) * list.pageSize : 0;
 
   return (
-    <div className={cn("overflow-x-auto", bordered && "rounded-xl border border-border")}>
+    <div className={cn("max-w-full overflow-x-auto overscroll-x-contain", bordered && "rounded-xl border border-border")}>
       <table className="w-full min-w-max text-sm">
         <thead className="border-b border-border bg-surface-muted text-xs font-semibold text-text">
           {/* divide-x gives every header cell a right border, auto-skipping the last */}

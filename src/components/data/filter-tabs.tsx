@@ -32,7 +32,7 @@ export function FilterTabs({ list, tabs }: { list: ListState; tabs: FilterTab[] 
         <div className="flex gap-1">
           {tabs.map((t, i) => (
             <Link
-              key={t.key || "all"}
+              key={t.key || "__default"}
               href={listHref(list, { tab: i === 0 ? null : t.key })}
               scroll={false}
               aria-current={t.key === active ? "page" : undefined}

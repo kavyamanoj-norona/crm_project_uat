@@ -4,6 +4,7 @@ import { db } from "@/server/db";
 import { pageArgs, type ListState } from "@/lib/list";
 import type { FilterTab } from "@/components/data/filter-tabs";
 import { customerWhere, type BranchScope } from "@/server/branch-scope";
+import { VISIT_FILTERS } from "./schemas";
 
 // One customer record per phone number. Branch users only see their branch's
 // customers (see customerWhere); all-branch users see everyone.
@@ -33,7 +34,9 @@ export async function listCustomers(list: ListState, scope: BranchScope) {
         ],
       }
     : {};
-  const search: Prisma.CustomerWhereInput = { AND: [customerWhere(scope), textSearch] };
+  const minVisits = VISIT_FILTERS.find((f) => f.value === (list.query[list.prefix + "visits"] ?? ""))?.min ?? 0;
+  const visitFilter: Prisma.CustomerWhereInput = minVisits > 0 ? { visitCount: { gte: minVisits } } : {};
+  const search: Prisma.CustomerWhereInput = { AND: [customerWhere(scope), textSearch, visitFilter] };
   const where: Prisma.CustomerWhereInput = { AND: [search, TAB_WHERE[list.tab] ?? {}] };
   const orderBy: Prisma.CustomerOrderByWithRelationInput =
     list.sort === "lastVisitAt" ? { lastVisitAt: { sort: list.dir, nulls: "last" } } : { [list.sort]: list.dir };
@@ -104,7 +107,7 @@ export async function listRecordHistory(list: ListState, entityId: string) {
 /** Active B2B accounts for the "Company account" picker. */
 export const listBusinessAccounts = () =>
   db.customer.findMany({
-    where: { type: "BUSINESS", isActive: true },
+    where: { kind: "CUSTOMER", type: "BUSINESS", isActive: true },
     orderBy: { name: "asc" },
     take: 500,
     select: { id: true, name: true, phone: true },

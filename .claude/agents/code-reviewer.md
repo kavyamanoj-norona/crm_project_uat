@@ -99,3 +99,6 @@ Better naming, redundant code, missing derived types, opportunities to use share
 For each finding: state the file and line, quote the bad code, explain why it's wrong, and show the corrected version.
 
 If asked to fix rather than just review, apply the changes directly using Edit.
+
+## Responsive standard
+All UI must follow `.claude/skills/responsive-design/SKILL.md` (mobile <640px, tablet 640–1023px, laptop 1024–1535px, large monitor ≥1536px; mobile-first, no fixed container widths, no horizontal page scroll, tables scroll inside their card, dialogs fit a 360×640 viewport). Flag any deviation as a review finding.

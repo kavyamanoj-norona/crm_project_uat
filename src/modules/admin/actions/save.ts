@@ -78,7 +78,17 @@ export async function saveBranch(_prev: FormState, formData: FormData) {
     path: ADMIN_PATHS.branches,
     schema: branchSchema,
     labels: { code: "Code" },
-    write: (data, id) => (id ? db.branch.update({ where: { id }, data }) : db.branch.create({ data })),
+    write: (data, id) => {
+      const { companyShare, franchiseShare, ...rest } = data;
+      const franchise = rest.branchType === "FRANCHISE";
+      const d = {
+        ...rest,
+        // company-owned branches keep the whole revenue
+        companyShareBp: franchise ? companyShare! : 10000,
+        franchiseShareBp: franchise ? franchiseShare! : 0,
+      };
+      return id ? db.branch.update({ where: { id }, data: d }) : db.branch.create({ data: d });
+    },
   });
 }
 

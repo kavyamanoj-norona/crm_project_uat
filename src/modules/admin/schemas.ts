@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { checkbox, optionalText, requiredText } from "@/lib/form";
+import { optionalPercent } from "@/lib/percent";
 
 const upperCode = (label: string, max = 12) =>
   z
@@ -36,15 +37,45 @@ export const companySchema = z.object({
   isActive: checkbox,
 });
 
-export const branchSchema = z.object({
-  companyId: requiredText("Company"),
-  code: upperCode("Code", 6),
-  name: requiredText("Name"),
-  phone: optionalPhone,
-  address: optionalText,
-  isVirtual: checkbox,
-  isActive: checkbox,
-});
+export const BRANCH_TYPES = ["COMPANY_OWNED", "FRANCHISE"] as const;
+export type BranchTypeValue = (typeof BRANCH_TYPES)[number];
+export const BRANCH_TYPE_LABELS: Record<BranchTypeValue, string> = {
+  COMPANY_OWNED: "Company-owned",
+  FRANCHISE: "Franchise",
+};
+export const branchTypeOptions = BRANCH_TYPES.map((v) => ({ value: v, label: BRANCH_TYPE_LABELS[v] }));
+
+/**
+ * companyShare / franchiseShare are percentages typed in the form and parsed to
+ * basis points here. They only apply to a franchise, where they must add up to
+ * 100%; saveBranch fixes a company-owned branch at 100% / 0%.
+ */
+export const branchSchema = z
+  .object({
+    companyId: requiredText("Company"),
+    code: upperCode("Code", 6),
+    name: requiredText("Name"),
+    branchType: z.enum(BRANCH_TYPES, { error: "Select branch type" }),
+    companyShare: optionalPercent("Company share"),
+    franchiseShare: optionalPercent("Franchise owner share"),
+    phone: optionalPhone,
+    address: optionalText,
+    isVirtual: checkbox,
+    isActive: checkbox,
+  })
+  .superRefine((v, ctx) => {
+    if (v.branchType !== "FRANCHISE") return;
+    if (v.companyShare === null)
+      ctx.addIssue({ code: "custom", path: ["companyShare"], message: "Enter the company share" });
+    if (v.franchiseShare === null)
+      ctx.addIssue({ code: "custom", path: ["franchiseShare"], message: "Enter the franchise owner share" });
+    if (v.companyShare !== null && v.franchiseShare !== null && v.companyShare + v.franchiseShare !== 10000)
+      ctx.addIssue({
+        code: "custom",
+        path: ["franchiseShare"],
+        message: "Company and franchise owner shares must add up to 100%",
+      });
+  });
 
 export const domainSchema = z.object({
   code: upperCode("Code", 20),

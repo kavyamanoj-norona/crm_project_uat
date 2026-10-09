@@ -31,20 +31,30 @@ model Company {
   @@map("company")
 }
 
-model Branch {
-  id        String   @id @default(cuid())
-  companyId String
-  code      String   @unique // "EDP" — used in jobsheet numbers
-  name      String // "Edappally"
-  phone     String?
-  address   String?
-  // Virtual branches (e.g. the chip-level lab) hold stock/jobs but no counter.
-  isVirtual Boolean  @default(false)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now()) @db.Timestamptz
-  updatedAt DateTime @updatedAt @db.Timestamptz
+enum BranchType {
+  COMPANY_OWNED
+  FRANCHISE
+}
 
-  company  Company   @relation(fields: [companyId], references: [id])
+model Branch {
+  id               String     @id @default(cuid())
+  companyId        String
+  code             String     @unique // "EDP" — used in jobsheet numbers
+  name             String // "Edappally"
+  phone            String?
+  address          String?
+  // Virtual branches (e.g. the chip-level lab) hold stock/jobs but no counter.
+  isVirtual        Boolean    @default(false)
+  // Company-owned branches keep 100% (10000 bp); a franchise splits revenue and
+  // settlements between the company and the franchise owner. Basis points: 6000 = 60%.
+  branchType       BranchType @default(COMPANY_OWNED)
+  companyShareBp   Int        @default(10000)
+  franchiseShareBp Int        @default(0)
+  isActive         Boolean    @default(true)
+  createdAt        DateTime   @default(now()) @db.Timestamptz
+  updatedAt        DateTime   @updatedAt @db.Timestamptz
+
+  company   Company    @relation(fields: [companyId], references: [id])
   users     User[]
   cases     Case[]
   payments  Payment[]
@@ -186,42 +196,44 @@ model User {
   blockedIps    BlockedIp[]
   rulesUpdated  Rule[]
 
-  customersCreated Customer[]          @relation("CustomerCreatedBy")
-  customersUpdated Customer[]          @relation("CustomerUpdatedBy")
-  casesCreated     Case[]              @relation("CaseCreatedBy")
-  casesUpdated     Case[]              @relation("CaseUpdatedBy")
-  casesAssigned    Case[]              @relation("CaseEngineer")
-  caseStatusMoves  CaseStatusHistory[]
-  caseAttachments  CaseAttachment[]
-  paymentsReceived Payment[]
-  itemsCreated     Item[]              @relation("ItemCreatedBy")
-  itemsUpdated     Item[]              @relation("ItemUpdatedBy")
-  caseItemsAdded   CaseItem[]          @relation("CaseItemAddedBy")
-  caseItemsRemoved CaseItem[]          @relation("CaseItemRemovedBy")
-  whatsappMessages WhatsAppMessage[]
+  customersCreated   Customer[]          @relation("CustomerCreatedBy")
+  customersUpdated   Customer[]          @relation("CustomerUpdatedBy")
+  customersConverted Customer[]          @relation("CustomerConvertedBy")
+  casesCreated       Case[]              @relation("CaseCreatedBy")
+  casesUpdated       Case[]              @relation("CaseUpdatedBy")
+  casesAssigned      Case[]              @relation("CaseEngineer")
+  caseStatusMoves    CaseStatusHistory[]
+  caseAttachments    CaseAttachment[]
+  paymentsReceived   Payment[]
+  itemsCreated       Item[]              @relation("ItemCreatedBy")
+  itemsUpdated       Item[]              @relation("ItemUpdatedBy")
+  caseItemsAdded     CaseItem[]          @relation("CaseItemAddedBy")
+  caseItemsRemoved   CaseItem[]          @relation("CaseItemRemovedBy")
+  whatsappMessages   WhatsAppMessage[]
 
-  caseFeedbacks            CaseFeedback[]
-  tatConfigsCreated        TatConfig[]    @relation("TatConfigCreatedBy")
-  tatConfigsUpdated        TatConfig[]    @relation("TatConfigUpdatedBy")
+  caseFeedbacks     CaseFeedback[]
+  tatConfigsCreated TatConfig[]    @relation("TatConfigCreatedBy")
+  tatConfigsUpdated TatConfig[]    @relation("TatConfigUpdatedBy")
 
-  stockItemsUpdated        StockItem[]        @relation("StockItemUpdatedBy")
-  purchaseRequestsRaised   PurchaseRequest[]  @relation("PRRequestedBy")
-  purchaseRequestsReviewed PurchaseRequest[]  @relation("PRReviewedBy")
-  transfersCreated         StockTransfer[]    @relation("TransferCreatedBy")
-  transfersApproved        StockTransfer[]    @relation("TransferApprovedBy")
+  stockItemsUpdated        StockItem[]       @relation("StockItemUpdatedBy")
+  purchaseRequestsRaised   PurchaseRequest[] @relation("PRRequestedBy")
+  purchaseRequestsReviewed PurchaseRequest[] @relation("PRReviewedBy")
+  transfersCreated         StockTransfer[]   @relation("TransferCreatedBy")
+  transfersApproved        StockTransfer[]   @relation("TransferApprovedBy")
 
   directSalesSold     DirectSale[]    @relation("DirectSaleSoldBy")
   buybacksRecorded    BuybackRecord[] @relation("BuybackRecordedBy")
   salesTargetsCreated SalesTarget[]   @relation("SalesTargetCreatedBy")
 
-  labVendorsCreated    ChipLabVendor[]    @relation("VendorCreatedBy")
-  labVendorsUpdated    ChipLabVendor[]    @relation("VendorUpdatedBy")
-  labOutsourcesCreated ChipLabOutsource[] @relation("OutsourceCreatedBy")
-  labCases             Case[]             @relation("CaseLabEngineer")
-  qcChecklistCreated   QcChecklistItem[]  @relation("QcChecklistCreatedBy")
-  qcChecklistUpdated   QcChecklistItem[]  @relation("QcChecklistUpdatedBy")
-  qcResponsesAnswered  CaseQcResponse[]   @relation("QcResponseAnsweredBy")
-  labTransfersCompleted Case[]            @relation("CaseLabTransferBy")
+  labVendorsCreated     ChipLabVendor[]        @relation("VendorCreatedBy")
+  labVendorsUpdated     ChipLabVendor[]        @relation("VendorUpdatedBy")
+  labOutsourcesCreated  ChipLabOutsource[]     @relation("OutsourceCreatedBy")
+  labVendorPayments     ChipLabVendorPayment[] @relation("VendorPaymentBy")
+  labCases              Case[]                 @relation("CaseLabEngineer")
+  qcChecklistCreated    QcChecklistItem[]      @relation("QcChecklistCreatedBy")
+  qcChecklistUpdated    QcChecklistItem[]      @relation("QcChecklistUpdatedBy")
+  qcResponsesAnswered   CaseQcResponse[]       @relation("QcResponseAnsweredBy")
+  labTransfersCompleted Case[]                 @relation("CaseLabTransferBy")
 
   @@index([companyId])
   @@index([branchId])
@@ -370,9 +382,9 @@ model Item {
   updatedBy User?      @relation("ItemUpdatedBy", fields: [updatedById], references: [id])
   caseItems CaseItem[]
 
-  stockItems        StockItem[]
-  purchaseRequests  PurchaseRequest[]
-  transferItems     StockTransferItem[]
+  stockItems       StockItem[]
+  purchaseRequests PurchaseRequest[]
+  transferItems    StockTransferItem[]
 
   directSaleItems DirectSaleItem[]
 
@@ -410,39 +422,57 @@ enum LeadSource {
   SOCIAL_MEDIA
   GOOGLE_SEARCH
   OTHER
+  WEBSITE // website enquiry (leads only)
+}
+
+// One table holds both: a LEAD is an enquiry that has not become a customer yet.
+// Converting flips kind to CUSTOMER on the same row, so nothing is duplicated.
+enum CustomerKind {
+  CUSTOMER
+  LEAD
 }
 
 // Shared by every branch; the phone number is the dedupe key.
 model Customer {
-  id          String       @id @default(cuid())
-  code        String       @unique // "CU000001"
-  type        CustomerType @default(INDIVIDUAL)
-  name        String
-  phone       String       @unique // digits only: 9847012345 or 04842401234
-  altPhone    String?
-  email       String?
-  gstin       String?
-  address     String?
-  state       String?
-  district    String?
-  pincode     String?
+  id            String       @id @default(cuid())
+  code          String       @unique // "CU000001"; a lead's is "LD000001" until it is converted
+  kind          CustomerKind @default(CUSTOMER)
+  type          CustomerType @default(INDIVIDUAL)
+  name          String
+  phone         String       @unique // digits only: 9847012345 or 04842401234
+  altPhone      String?
+  email         String?
+  gstin         String?
+  // B2B accounts: the person to talk to at the company.
+  contactPerson String?
+  address       String?
+  state         String?
+  district      String?
+  pincode       String?
   // How they first found us; each case keeps its own source too.
-  source      LeadSource?
-  notes       String?
+  source        LeadSource?
+  notes         String?
+  // Lead fields. leadCode is set for every record that started as a lead (it
+  // keeps the LD code after conversion); the others are null for plain customers.
+  purpose       String?
+  leadCode      String?      @unique
+  convertedAt   DateTime?    @db.Timestamptz
+  convertedById String?
   // Kept in step by case intake so lists sort without aggregating 100k rows.
-  visitCount  Int          @default(0)
-  lastVisitAt DateTime?    @db.Timestamptz
-  isActive    Boolean      @default(true)
+  visitCount    Int          @default(0)
+  lastVisitAt   DateTime?    @db.Timestamptz
+  isActive      Boolean      @default(true)
   // The branch that registered the customer; branch users see their own (and customers they've serviced).
-  branchId    String?
-  createdById String?
-  updatedById String?
-  createdAt   DateTime     @default(now()) @db.Timestamptz
-  updatedAt   DateTime     @updatedAt @db.Timestamptz
+  branchId      String?
+  createdById   String?
+  updatedById   String?
+  createdAt     DateTime     @default(now()) @db.Timestamptz
+  updatedAt     DateTime     @updatedAt @db.Timestamptz
 
   branch           Branch?           @relation(fields: [branchId], references: [id])
   createdBy        User?             @relation("CustomerCreatedBy", fields: [createdById], references: [id])
   updatedBy        User?             @relation("CustomerUpdatedBy", fields: [updatedById], references: [id])
+  convertedBy      User?             @relation("CustomerConvertedBy", fields: [convertedById], references: [id])
   cases            Case[]            @relation("CaseCustomer")
   accountCases     Case[]            @relation("CaseAccount")
   payments         Payment[]
@@ -455,6 +485,7 @@ model Customer {
   @@index([createdAt])
   @@index([lastVisitAt])
   @@index([branchId])
+  @@index([kind, createdAt])
   @@map("customer")
 }
 
@@ -489,15 +520,15 @@ enum CaseStatus {
   CLOSED
   CANCELLED
   // Chip-Level Lab track (case keeps the same ID throughout)
-  CHIP_TRANSFER             // Branch sent to lab | Lab sees as "Incoming"
-  CHIP_LAB_RECEIVED         // Lab physically received the device
-  CHIP_LAB_DIAGNOSIS        // Lab running diagnosis
+  CHIP_TRANSFER // Branch sent to lab | Lab sees as "Incoming"
+  CHIP_LAB_RECEIVED // Lab physically received the device
+  CHIP_LAB_DIAGNOSIS // Lab running diagnosis
   CHIP_LAB_PENDING_APPROVAL // Pending customer approval on lab estimate
-  CHIP_LAB_SERVICING        // Device in active repair at lab
-  CHIP_LAB_READY_DISPATCH   // Lab repair done, ready for quality check
-  CHIP_LAB_QUALITY_CHECK    // Lab QC before handing back to branch
-  CHIP_BRANCH_RECEIVED      // Branch received device back from lab
-  NON_REPAIRABLE            // Cannot be repaired (reason stored in CaseStatusHistory.note)
+  CHIP_LAB_SERVICING // Device in active repair at lab
+  CHIP_LAB_READY_DISPATCH // Lab repair done, ready for quality check
+  CHIP_LAB_QUALITY_CHECK // Lab QC before handing back to branch
+  CHIP_BRANCH_RECEIVED // Branch received device back from lab
+  NON_REPAIRABLE // Cannot be repaired (reason stored in CaseStatusHistory.note)
 }
 
 enum ItemCondition {
@@ -515,65 +546,66 @@ enum PaymentMode {
 }
 
 model Case {
-  id                   String         @id @default(cuid())
-  jobsheetNo           String         @unique // LC-EDP-2609-0001, see modules/service/jobsheet.ts
-  branchId             String
-  customerId           String
+  id                       String         @id @default(cuid())
+  jobsheetNo               String         @unique // LC-EDP-2609-0001, see modules/service/jobsheet.ts
+  branchId                 String
+  customerId               String
   // B2B account billed for this case (a BUSINESS customer), if any.
-  accountId            String?
-  intakeType           IntakeType     @default(WALK_IN)
-  source               LeadSource
-  status               CaseStatus     @default(INTAKE)
+  accountId                String?
+  intakeType               IntakeType     @default(WALK_IN)
+  source                   LeadSource
+  status                   CaseStatus     @default(INTAKE)
   // When the current stage began — drives the "Age" column and TAT alerts.
-  stageChangedAt       DateTime       @default(now()) @db.Timestamptz
+  stageChangedAt           DateTime       @default(now()) @db.Timestamptz
   // Pickup / on-site visits
-  siteAddress          String?
-  siteLatitude         Float?
-  siteLongitude        Float?
+  siteAddress              String?
+  siteLatitude             Float?
+  siteLongitude            Float?
   // Device
-  productType          ProductType
-  brand                String
-  model                String?
-  serialNo             String?
-  warrantyStatus       WarrantyStatus
+  productType              ProductType
+  brand                    String
+  model                    String?
+  serialNo                 String?
+  warrantyStatus           WarrantyStatus
   // AES-256-GCM (server/crypto.ts); every reveal is written to the activity log.
-  devicePasswordEnc    String?
-  problemReported      String
+  devicePasswordEnc        String?
+  problemReported          String
   // Money
-  estimatedCostPaise   Int?
-  gstInvoiceRequired   Boolean        @default(false)
-  expectedDeliveryDate DateTime?      @db.Date
-  engineerId           String?
-  labWorkType          String?
-  labEngineerId        String?
-  labVendorId          String?
+  estimatedCostPaise       Int?
+  gstInvoiceRequired       Boolean        @default(false)
+  expectedDeliveryDate     DateTime?      @db.Date
+  engineerId               String?
+  labWorkType              String?
+  labEngineerId            String?
+  labVendorId              String?
   // Lab confirms the device was handed over to the branch (set after Transfer to Branch).
-  labTransferCompletedAt   DateTime? @db.Timestamptz
+  labTransferCompletedAt   DateTime?      @db.Timestamptz
   labTransferCompletedById String?
-  createdById          String?
-  updatedById          String?
-  createdAt            DateTime       @default(now()) @db.Timestamptz
-  updatedAt            DateTime       @updatedAt @db.Timestamptz
+  createdById              String?
+  updatedById              String?
+  createdAt                DateTime       @default(now()) @db.Timestamptz
+  updatedAt                DateTime       @updatedAt @db.Timestamptz
 
-  branch        Branch              @relation(fields: [branchId], references: [id])
-  customer      Customer            @relation("CaseCustomer", fields: [customerId], references: [id])
-  account       Customer?           @relation("CaseAccount", fields: [accountId], references: [id])
-  engineer      User?               @relation("CaseEngineer", fields: [engineerId], references: [id])
-  createdBy     User?               @relation("CaseCreatedBy", fields: [createdById], references: [id])
-  updatedBy     User?               @relation("CaseUpdatedBy", fields: [updatedById], references: [id])
-  items            CaseItem[]
-  receivedItems    CaseReceivedItem[]
-  attachments      CaseAttachment[]
-  statusHistory    CaseStatusHistory[]
-  payments         Payment[]
-  whatsappMessages WhatsAppMessage[]
-  purchaseRequests PurchaseRequest[]
-  feedback         CaseFeedback?
-  labOutsources    ChipLabOutsource[]
-  labEngineer      User?               @relation("CaseLabEngineer", fields: [labEngineerId], references: [id])
-  labVendor        ChipLabVendor?      @relation("CaseLabVendor", fields: [labVendorId], references: [id])
-  qcResponses      CaseQcResponse[]
-  labTransferBy    User?               @relation("CaseLabTransferBy", fields: [labTransferCompletedById], references: [id], onDelete: SetNull)
+  branch            Branch                 @relation(fields: [branchId], references: [id])
+  customer          Customer               @relation("CaseCustomer", fields: [customerId], references: [id])
+  account           Customer?              @relation("CaseAccount", fields: [accountId], references: [id])
+  engineer          User?                  @relation("CaseEngineer", fields: [engineerId], references: [id])
+  createdBy         User?                  @relation("CaseCreatedBy", fields: [createdById], references: [id])
+  updatedBy         User?                  @relation("CaseUpdatedBy", fields: [updatedById], references: [id])
+  items             CaseItem[]
+  receivedItems     CaseReceivedItem[]
+  attachments       CaseAttachment[]
+  statusHistory     CaseStatusHistory[]
+  payments          Payment[]
+  whatsappMessages  WhatsAppMessage[]
+  purchaseRequests  PurchaseRequest[]
+  feedback          CaseFeedback?
+  labOutsources     ChipLabOutsource[]
+  labVendorPayments ChipLabVendorPayment[]
+  labEngineer       User?                  @relation("CaseLabEngineer", fields: [labEngineerId], references: [id])
+  labVendor         ChipLabVendor?         @relation("CaseLabVendor", fields: [labVendorId], references: [id])
+  qcResponses       CaseQcResponse[]
+  labTransferBy     User?                  @relation("CaseLabTransferBy", fields: [labTransferCompletedById], references: [id], onDelete: SetNull)
 
   @@index([branchId, status, createdAt])
   @@index([branchId, stageChangedAt])
@@ -590,23 +622,24 @@ model Case {
 // rewrite the estimate. Rows are never updated or deleted: editing the
 // estimate stamps removedAt on the old lines and inserts new ones.
 model CaseItem {
-  id             String    @id @default(cuid())
-  caseId         String
-  itemId         String
-  code           String
-  name           String
-  type           ItemType
-  quantity       Int       @default(1)
-  listPricePaise Int // catalog price per unit when added
-  minPricePaise  Int // lowest allowed per unit when added
-  unitPricePaise Int // billed per unit
-  gstPercent     Int
-  lineTotalPaise Int // unitPrice × quantity
-  sortOrder      Int       @default(0)
-  addedById      String?
-  createdAt      DateTime  @default(now()) @db.Timestamptz
-  removedAt      DateTime? @db.Timestamptz
-  removedById    String?
+  id              String    @id @default(cuid())
+  caseId          String
+  itemId          String
+  code            String
+  name            String
+  type            ItemType
+  quantity        Int       @default(1)
+  listPricePaise  Int // catalog price per unit when added
+  minPricePaise   Int // lowest allowed per unit when added
+  unitPricePaise  Int // billed per unit
+  gstPercent      Int
+  lineTotalPaise  Int // unitPrice × quantity
+  vendorCostPaise Int? // chip-lab outsource only: what we pay the vendor per unit
+  sortOrder       Int       @default(0)
+  addedById       String?
+  createdAt       DateTime  @default(now()) @db.Timestamptz
+  removedAt       DateTime? @db.Timestamptz
+  removedById     String?
 
   case      Case  @relation(fields: [caseId], references: [id])
   item      Item  @relation(fields: [itemId], references: [id])
@@ -671,18 +704,18 @@ model CaseStatusHistory {
 // ─── Service: feedback ───────────────────────────────────────────────────────
 
 enum CustomerBehaviour {
-  COOPERATIVE   // polite and easy to work with
-  NORMAL        // no notable interaction
-  DIFFICULT     // raised concerns / hard to please
-  RUDE          // abusive or disrespectful
-  EXCELLENT     // went out of their way to appreciate the team
+  COOPERATIVE // polite and easy to work with
+  NORMAL // no notable interaction
+  DIFFICULT // raised concerns / hard to please
+  RUDE // abusive or disrespectful
+  EXCELLENT // went out of their way to appreciate the team
 }
 
 // One-per-case feedback record, written when a case is closed.
 model CaseFeedback {
   id                String            @id @default(cuid())
   caseId            String            @unique
-  rating            Int               // 1–5 stars
+  rating            Int // 1–5 stars
   comment           String?
   customerBehaviour CustomerBehaviour @default(NORMAL)
   createdById       String?
@@ -737,9 +770,9 @@ model Payment {
 model TatConfig {
   id                  String     @id @default(cuid())
   status              CaseStatus @unique
-  targetValue         Int        // the numeric TAT (e.g. 4 for 4 hours)
+  targetValue         Int // the numeric TAT (e.g. 4 for 4 hours)
   targetUnit          TatUnit    @default(HOURS)
-  warningThreshold    Int        @default(80)  // % of TAT elapsed at which to show warning
+  warningThreshold    Int        @default(80) // % of TAT elapsed at which to show warning
   escalationThreshold Int        @default(100) // % of TAT at which it becomes overdue
   isActive            Boolean    @default(true)
   remarks             String?
@@ -804,10 +837,10 @@ model WhatsAppMessage {
   caseId        String
   customerId    String
   templateName  String
-  phone         String          // E.164 recipient (e.g. +919847012345)
-  payload       Json            // Full request body sent to Meta
+  phone         String // E.164 recipient (e.g. +919847012345)
+  payload       Json // Full request body sent to Meta
   status        WaMessageStatus @default(QUEUED)
-  metaMessageId String?         // wamid returned by Meta on success
+  metaMessageId String? // wamid returned by Meta on success
   error         String?
   sentAt        DateTime?       @db.Timestamptz
   createdById   String?
@@ -824,19 +857,19 @@ model WhatsAppMessage {
 // ─── Inventory: stock, purchasing, transfers ──────────────────────────────────
 
 enum PurchaseRequestStatus {
-  PENDING    // raised, awaiting PM review
-  WITH_PM    // with purchase manager
-  APPROVED   // PM approved; awaiting arrival
-  REJECTED   // PM rejected
-  FULFILLED  // stock received at branch
+  PENDING // raised, awaiting PM review
+  WITH_PM // with purchase manager
+  APPROVED // PM approved; awaiting arrival
+  REJECTED // PM rejected
+  FULFILLED // stock received at branch
 }
 
 enum TransferStatus {
   PENDING_APPROVAL // awaiting PM approval
-  APPROVED         // approved; ready to dispatch
-  DISPATCHED       // sent from source branch
-  RECEIVED         // received at destination
-  CANCELLED        // cancelled before dispatch
+  APPROVED // approved; ready to dispatch
+  DISPATCHED // sent from source branch
+  RECEIVED // received at destination
+  CANCELLED // cancelled before dispatch
 }
 
 // Physical units of an item at a branch. One row per (branch, item) pair.
@@ -865,7 +898,7 @@ model PurchaseRequest {
   code          String                @unique // "PR-EDP-2610-001"
   branchId      String
   itemId        String
-  caseId        String?               // case that triggered the request
+  caseId        String? // case that triggered the request
   quantity      Int                   @default(1)
   notes         String?
   status        PurchaseRequestStatus @default(PENDING)
@@ -989,7 +1022,7 @@ model BuybackRecord {
   deviceName       String
   brand            String?
   deviceModel      String?
-  condition        String        // e.g. "WORKING", "PARTIAL", "NOT_WORKING"
+  condition        String // e.g. "WORKING", "PARTIAL", "NOT_WORKING"
   agreedPricePaise Int
   status           BuybackStatus @default(PENDING_ASSESSMENT)
   notes            String?
@@ -997,9 +1030,9 @@ model BuybackRecord {
   recordedAt       DateTime      @default(now()) @db.Timestamptz
   isActive         Boolean       @default(true)
 
-  branch     Branch     @relation(fields: [branchId], references: [id])
-  customer   Customer?  @relation(fields: [customerId], references: [id])
-  recordedBy User       @relation("BuybackRecordedBy", fields: [recordedById], references: [id])
+  branch     Branch      @relation(fields: [branchId], references: [id])
+  customer   Customer?   @relation(fields: [customerId], references: [id])
+  recordedBy User        @relation("BuybackRecordedBy", fields: [recordedById], references: [id])
   refurbItem RefurbItem?
 
   @@index([branchId, recordedAt])
@@ -1021,7 +1054,7 @@ model RefurbItem {
   name              String
   brand             String
   specs             String
-  grade             String       // "A" / "B" / "C"
+  grade             String // "A" / "B" / "C"
   costPaise         Int
   sellingPricePaise Int
   warrantyMonths    Int          @default(36)
@@ -1050,8 +1083,8 @@ model SalesTarget {
   branchId    String
   period      TargetPeriod
   year        Int
-  month       Int?         // 1–12; null for YEARLY
-  day         Int?         // 1–31; null for DAILY and MONTHLY
+  month       Int? // 1–12; null for YEARLY
+  day         Int? // 1–31; null for DAILY and MONTHLY
   targetPaise Int
   isActive    Boolean      @default(true)
   createdById String?
@@ -1115,6 +1148,23 @@ model ChipLabOutsource {
   @@map("chip_lab_outsource")
 }
 
+// Money paid to the outsource vendor for a case. Append-only; the vendor due is
+// Σ(CaseItem.vendorCostPaise × quantity) minus the sum of these payments.
+model ChipLabVendorPayment {
+  id          String   @id @default(cuid())
+  caseId      String
+  amountPaise Int
+  note        String?
+  paidAt      DateTime @default(now()) @db.Timestamptz
+  paidById    String?
+
+  case   Case  @relation(fields: [caseId], references: [id])
+  paidBy User? @relation("VendorPaymentBy", fields: [paidById], references: [id], onDelete: SetNull)
+
+  @@index([caseId])
+  @@map("chip_lab_vendor_payment")
+}
+
 // Master list of quality-check points verified during the lab QC stage.
 model QcChecklistItem {
   id          String   @id @default(cuid())
@@ -1127,8 +1177,8 @@ model QcChecklistItem {
   createdAt   DateTime @default(now()) @db.Timestamptz
   updatedAt   DateTime @updatedAt @db.Timestamptz
 
-  createdBy User?             @relation("QcChecklistCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  updatedBy User?             @relation("QcChecklistUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdBy User?            @relation("QcChecklistCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy User?            @relation("QcChecklistUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
   responses CaseQcResponse[]
 
   @@index([isActive])
@@ -1164,9 +1214,9 @@ model CaseQcResponse {
 // Append-only log of every Kiran conversation turn.
 model AiAgentRun {
   id         String   @id @default(cuid())
-  agentName  String   // "kiran"
+  agentName  String // "kiran"
   userId     String
-  branchId   String?  // null = all-branch scope
+  branchId   String? // null = all-branch scope
   question   String
   answer     String
   tokensUsed Int?

@@ -49,9 +49,18 @@ export function branchWhere(scope: BranchScope): { branchId?: string } {
  * for (so its own jobs always link to a visible customer). All branches = no filter.
  */
 export function customerWhere(scope: Pick<BranchScope, "branchId">): Prisma.CustomerWhereInput {
+  // Leads share the table but are not customers until converted.
   return scope.branchId
-    ? { OR: [{ branchId: scope.branchId }, { cases: { some: { branchId: scope.branchId } } }] }
-    : {};
+    ? { kind: "CUSTOMER", OR: [{ branchId: scope.branchId }, { cases: { some: { branchId: scope.branchId } } }] }
+    : { kind: "CUSTOMER" };
+}
+
+/**
+ * Leads a branch can see: its own plus unassigned ones (website enquiries have
+ * no branch yet). All branches = no filter. Always combine with a leadCode filter.
+ */
+export function leadWhere(scope: Pick<BranchScope, "branchId">): Prisma.CustomerWhereInput {
+  return scope.branchId ? { OR: [{ branchId: scope.branchId }, { branchId: null }] } : {};
 }
 
 export const listBranchOptions = () =>

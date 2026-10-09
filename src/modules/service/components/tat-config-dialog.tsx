@@ -51,7 +51,7 @@ function TatConfigForm({
     <form action={formAction} onSubmit={onSubmit} onChange={onChange} noValidate className="space-y-4">
       <input type="hidden" name="status" value={status} />
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Target value" htmlFor="targetValue" required error={errors.targetValue}>
           <Input
             id="targetValue"
@@ -74,7 +74,7 @@ function TatConfigForm({
         </Field>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid gap-4 sm:grid-cols-2">
         <Field
           label="Warning threshold"
           htmlFor="warningThreshold"

@@ -21,7 +21,7 @@ type AppShellProps = {
   children: React.ReactNode;
 };
 
-/** Icon rail (48px) + module sidebar (192px) + top bar (64px) + content. */
+/** Icon rail (48px) + module sidebar (192px) + top bar (64px) + content. Below lg the rail and sidebar become a slide-in drawer. */
 export function AppShell({ nav, counts, user, greeting, logout, branch, children }: AppShellProps) {
   const pathname = usePathname();
 
@@ -41,7 +41,7 @@ export function AppShell({ nav, counts, user, greeting, logout, branch, children
     <div className="min-h-screen">
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-30 bg-black/30 md:hidden"
+          className="fixed inset-0 z-30 bg-black/30 lg:hidden"
           aria-hidden
           onClick={closeMobile}
         />
@@ -49,7 +49,7 @@ export function AppShell({ nav, counts, user, greeting, logout, branch, children
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex transition-transform duration-200 md:translate-x-0",
+          "fixed inset-y-0 left-0 z-40 flex transition-transform duration-200 lg:translate-x-0",
           mobileOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
@@ -68,13 +68,13 @@ export function AppShell({ nav, counts, user, greeting, logout, branch, children
             pathname={pathname}
             counts={counts}
             onNavigate={closeMobile}
-            className={cn(!showSidebar && "md:hidden")}
+            className={cn(!showSidebar && "lg:hidden")}
             footer={isSettings ? <SettingsFooter /> : undefined}
           />
         )}
       </aside>
 
-      <div className={cn("transition-[padding] duration-200", showSidebar ? "md:pl-[240px]" : "md:pl-12")}>
+      <div className={cn("transition-[padding] duration-200", showSidebar ? "lg:pl-[240px]" : "lg:pl-12")}>
         <TopBar
           nav={nav}
           activeModule={activeDbModule}
@@ -85,7 +85,7 @@ export function AppShell({ nav, counts, user, greeting, logout, branch, children
           onToggleSidebar={() => setCollapsed((c) => !c)}
           sidebarCollapsed={collapsed}
         />
-        <main className="mx-auto max-w-[1440px] p-4 md:p-6">{children}</main>
+        <main className="mx-auto max-w-[1440px] p-3 sm:p-4 md:p-6 2xl:max-w-[1760px] 2xl:p-8 min-[2200px]:max-w-[2200px]">{children}</main>
       </div>
     </div>
   );

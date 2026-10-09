@@ -13,10 +13,12 @@ import {
   labOutsourceSchema,
   labItemsSchema,
   labWorkTypeSchema,
+  vendorPaymentSchema,
   type CaseStatusValue,
 } from "../case-schema";
 import { SERVICE_PATHS } from "../paths";
 import { qcBlockReason } from "../qc-response-queries";
+import { nextSequence } from "@/server/sequence";
 
 const STALE = "Someone else changed this case just now. Refresh to see its current stage.";
 
@@ -376,9 +378,10 @@ export async function saveLabItems(caseId: string, _prev: FormState, formData: F
     const user = await requireActionPermission(SERVICE_PATHS.lab, "canEdit");
     const c = await db.case.findFirst({
       where: { id: caseId, status: { in: LAB_STATUSES } },
-      select: { status: true, items: { where: { removedAt: null }, select: { itemId: true } } },
+      select: { status: true, labWorkType: true, items: { where: { removedAt: null }, select: { itemId: true } } },
     });
     if (!c) return { message: "Case is no longer in the lab." };
+    const outsourced = c.labWorkType === "OUTSOURCE";
 
     // Items already on the case may include ones removed from the catalog since.
     const kept = new Set(c.items.map((i) => i.itemId));
@@ -407,6 +410,7 @@ export async function saveLabItems(caseId: string, _prev: FormState, formData: F
         unitPricePaise: unit,
         gstPercent: item.gstPercent,
         lineTotalPaise: unit * l.quantity,
+        vendorCostPaise: outsourced ? l.vendorCost : null,
         sortOrder: i,
         addedById: user.id,
       };
@@ -438,6 +442,141 @@ export async function saveLabItems(caseId: string, _prev: FormState, formData: F
   } catch (e) {
     if (e instanceof ForbiddenError) return { message: e.message };
     if (e instanceof FieldError) return { message: e.message, fieldErrors: { items: [e.message] } };
+    throw e;
+  }
+}
+
+// ── Lab stock: request / consume parts ────────────────────────────────────────
+
+/**
+ * The branch a request or stock use is tracked against: the requester's own
+ * branch (e.g. Head Office). Falls back to the case's branch for an account
+ * that isn't tied to one.
+ */
+async function requesterBranch(userBranchId: string | null, caseId: string) {
+  const id = userBranchId ?? (await db.case.findUnique({ where: { id: caseId }, select: { branchId: true } }))?.branchId;
+  return id ? db.branch.findUnique({ where: { id }, select: { id: true, code: true } }) : null;
+}
+
+const periodFmt = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", year: "2-digit", month: "2-digit" });
+const period = () =>
+  periodFmt.formatToParts(new Date()).reduce((s, p) => (p.type === "year" || p.type === "month" ? s + p.value : s), "");
+
+async function physicalLine(caseItemId: string) {
+  const line = await db.caseItem.findFirst({
+    where: { id: caseItemId, removedAt: null, case: { status: { in: LAB_STATUSES } } },
+    select: { itemId: true, quantity: true, caseId: true, type: true },
+  });
+  return line && (line.type === "PART" || line.type === "ACCESSORY") ? line : null;
+}
+
+/** Raises a purchase request, tracked against the requester's branch, for one billable part. */
+export async function requestPartForLabCase(caseItemId: string): Promise<ActionResult> {
+  try {
+    const user = await requireActionPermission(SERVICE_PATHS.lab, "canEdit");
+    const line = await physicalLine(caseItemId);
+    if (!line) return { ok: false, message: "Only parts and accessories can be requested." };
+    const lab = await requesterBranch(user.branchId, line.caseId);
+    if (!lab) return { ok: false, message: "Your account has no branch to raise the request for." };
+
+    const open = await db.purchaseRequest.findFirst({
+      where: { caseId: line.caseId, itemId: line.itemId, status: { notIn: ["FULFILLED", "REJECTED"] } },
+      select: { id: true },
+    });
+    if (open) return { ok: false, message: "This item is already requested." };
+
+    await db.$transaction(async (tx) => {
+      const seq = await nextSequence(tx, `PR:${lab.code}:${period()}`);
+      const code = `PR-${lab.code.toUpperCase()}-${period()}-${String(seq).padStart(3, "0")}`;
+      await tx.purchaseRequest.create({
+        data: { code, branchId: lab.id, itemId: line.itemId, quantity: line.quantity, caseId: line.caseId, requestedById: user.id },
+      });
+    });
+    revalidatePath(SERVICE_PATHS.lab, "layout");
+    revalidatePath("/inventory", "layout");
+    return { ok: true, message: "Item requested." };
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { ok: false, message: e.message };
+    throw e;
+  }
+}
+
+/** Uses a part from the requester's branch stock for this case (decrements by the line quantity, capped at what's there). */
+export async function consumeLabItem(caseItemId: string): Promise<ActionResult> {
+  try {
+    const user = await requireActionPermission(SERVICE_PATHS.lab, "canEdit");
+    const line = await physicalLine(caseItemId);
+    const lab = line && (await requesterBranch(user.branchId, line.caseId));
+    if (!line || !lab) return { ok: false, message: "Item or stock not found." };
+
+    const used = await db.$transaction(async (tx) => {
+      const stock = await tx.stockItem.findUnique({
+        where: { branchId_itemId: { branchId: lab.id, itemId: line.itemId } },
+        select: { quantity: true },
+      });
+      if (!stock || stock.quantity <= 0) return 0;
+      const take = Math.min(line.quantity, stock.quantity);
+      await tx.stockItem.update({
+        where: { branchId_itemId: { branchId: lab.id, itemId: line.itemId } },
+        data: { quantity: { decrement: take }, updatedById: user.id },
+      });
+      return take;
+    });
+    if (used === 0) return { ok: false, message: "Out of stock." };
+
+    await logActivity({
+      action: "case.lab.consume",
+      userId: user.id,
+      entity: "Case",
+      entityId: line.caseId,
+      detail: `Used ${used} from lab stock (item ${line.itemId})`,
+    });
+    revalidatePath(SERVICE_PATHS.lab, "layout");
+    revalidatePath("/inventory", "layout");
+    return { ok: true, message: "Stock updated." };
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { ok: false, message: e.message };
+    throw e;
+  }
+}
+
+// ── Vendor payments ───────────────────────────────────────────────────────────
+
+/** Records money paid to the outsource vendor for this case. Cannot exceed what is still due. */
+export async function recordVendorPayment(caseId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const parsed = vendorPaymentSchema.safeParse(pick(formData, ["amount", "note"]));
+  if (!parsed.success) return toFieldErrors(parsed.error, formData);
+  const { amount, note } = parsed.data;
+
+  try {
+    const user = await requireActionPermission(SERVICE_PATHS.lab, "canEdit");
+    const c = await db.case.findFirst({
+      where: { id: caseId, labWorkType: "OUTSOURCE" },
+      select: {
+        items: { where: { removedAt: null }, select: { quantity: true, vendorCostPaise: true } },
+        labVendorPayments: { select: { amountPaise: true } },
+      },
+    });
+    if (!c) return { message: "This case isn't outsourced." };
+
+    const owed = c.items.reduce((s, i) => s + (i.vendorCostPaise ?? 0) * i.quantity, 0);
+    const paid = c.labVendorPayments.reduce((s, p) => s + p.amountPaise, 0);
+    const due = owed - paid;
+    if (due <= 0) return { message: "Nothing is due to the vendor." };
+    if (amount! > due) return { message: `Can't pay more than the ${formatPaise(due)} due.`, fieldErrors: { amount: [`Maximum ${formatPaise(due)}`] } };
+
+    await db.chipLabVendorPayment.create({ data: { caseId, amountPaise: amount!, note, paidById: user.id } });
+    await logActivity({
+      action: "case.lab.vendor-payment",
+      userId: user.id,
+      entity: "Case",
+      entityId: caseId,
+      detail: `Paid vendor ${formatPaise(amount!)}`,
+    });
+    revalidatePath(SERVICE_PATHS.lab, "layout");
+    return { ok: true, message: `Payment of ${formatPaise(amount!)} recorded.` };
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { message: e.message };
     throw e;
   }
 }

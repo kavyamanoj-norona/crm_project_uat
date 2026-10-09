@@ -292,7 +292,7 @@ export async function executeKiranTool(
         ? { phone: { contains: phone.replace(/\D/g, "") } }
         : { name: { contains: name, mode: "insensitive" as const } };
       const customers = await db.customer.findMany({
-        where: { ...where, isActive: true },
+        where: { ...where, kind: "CUSTOMER" as const, isActive: true },
         take: 5,
         select: {
           name: true,

@@ -13,7 +13,6 @@ import { SERVICE_PATHS } from "@/modules/service/paths";
 import { CASE_STATUS_LABELS, CASE_STATUS_TONE } from "@/modules/service/case-schema";
 import type { CaseStatusValue } from "@/modules/service/case-schema";
 import { LAB_LIST_SORTS, labStatusCounts, listLabCasesPage } from "@/modules/service/chip-lab-queries";
-import { ChipLabActions } from "@/modules/service/components/chip-lab-actions";
 
 export const metadata = { title: "Chip-Level Lab" };
 
@@ -197,11 +196,6 @@ export default async function ChipLabPage({ searchParams }: PageProps<"/service/
                   <LinkButton href={`${SERVICE_PATHS.lab}/${c.id}`} variant="secondary" size="sm">
                     <Eye className="size-3.5" />
                   </LinkButton>
-                  <ChipLabActions
-                    caseId={c.id}
-                    status={c.status as CaseStatusValue}
-                    transferCompleted={c.labTransferCompletedAt !== null}
-                  />
                 </div>
               ),
             },

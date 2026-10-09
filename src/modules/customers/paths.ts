@@ -3,6 +3,9 @@
 export const CUSTOMER_PATHS = {
   dashboard: "/customers/dashboard",
   database: "/customers/database",
+  leads: "/customers/leads",
+  b2b: "/customers/b2b",
+  leadReports: "/customers/lead-reports",
   csWorkspace: "/customers/cs-workspace",
   announcements: "/customers/announcements",
   portalPreview: "/customers/portal-preview",

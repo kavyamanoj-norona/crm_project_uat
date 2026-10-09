@@ -29,7 +29,7 @@ export function FilterSelect({ path, query, prefix, value, options, className, p
         className="h-10 w-full rounded-lg border border-border bg-primary-soft/60 px-3 text-sm font-medium text-text outline-none focus:border-primary"
       >
         {options.map((o) => (
-          <option key={o.value || "all"} value={o.value}>
+          <option key={o.value || "__default"} value={o.value}>
             {o.label}
           </option>
         ))}

@@ -24,13 +24,20 @@ import {
 import { LAB_QUEUE_STATUSES, type CaseStatusValue } from "@/modules/service/case-schema";
 import { STAGE_ICONS } from "@/modules/service/components/stage-icons";
 import { ChipLabActions } from "@/modules/service/components/chip-lab-actions";
-import { saveLabItems, saveLabWorkType } from "@/modules/service/actions/chip-lab";
+import {
+  consumeLabItem,
+  recordVendorPayment,
+  requestPartForLabCase,
+  saveLabItems,
+  saveLabWorkType,
+} from "@/modules/service/actions/chip-lab";
+import { VendorPaymentDialog } from "@/modules/service/components/vendor-payment-dialog";
 import { LabItemsSection, type LabItemsInitial } from "@/modules/service/components/lab-items-section";
 import { LabWorkTypeForm } from "@/modules/service/components/lab-work-type-form";
 import { QcChecklistCard } from "@/modules/service/components/qc-checklist-card";
 import { saveQcAnswers } from "@/modules/service/actions/qc-response";
 import { getQcState, getSavedQcAnswers } from "@/modules/service/qc-response-queries";
-import { getLabCaseFull, listLabEngineers, listVendorOptions } from "@/modules/service/chip-lab-queries";
+import { getLabCaseFull, getLabStockInfo, listLabEngineers, listVendorOptions } from "@/modules/service/chip-lab-queries";
 import { listCatalogForPicker } from "@/modules/service/queries";
 import { ITEM_TYPE_LABELS, ITEM_TYPE_TONE } from "@/modules/admin/item-schema";
 
@@ -86,11 +93,21 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
   // Work type is set only during diagnosis.
   const showWorkTypeForm = isDiagnosis && permission.canEdit;
 
-  const [catalog, engineers, vendors] = await Promise.all([
+  const outsource = c.labWorkType === "OUTSOURCE";
+  const [catalog, engineers, vendors, labStock] = await Promise.all([
     canEditItems ? listCatalogForPicker() : Promise.resolve([]),
     showWorkTypeForm ? listLabEngineers() : Promise.resolve([]),
     showWorkTypeForm ? listVendorOptions() : Promise.resolve([]),
+    canEditItems ? getLabStockInfo(c.id, user.branchId ?? c.branchId) : Promise.resolve({ stock: {}, requested: [] as string[] }),
   ]);
+
+  // What the customer still owes, and what we still owe the outsource vendor.
+  const billed = c.items.reduce((sum, l) => sum + l.lineTotalPaise, 0);
+  const advance = c.payments.reduce((sum, p) => sum + p.amountPaise, 0);
+  const customerDue = Math.max(0, billed - advance);
+  const vendorOwed = c.items.reduce((sum, l) => sum + (l.vendorCostPaise ?? 0) * l.quantity, 0);
+  const vendorPaid = c.labVendorPayments.reduce((sum, p) => sum + p.amountPaise, 0);
+  const vendorDue = Math.max(0, vendorOwed - vendorPaid);
 
   const qc = status === "CHIP_LAB_QUALITY_CHECK" ? await getQcState(c.id, status, c.stageChangedAt) : null;
   // After QC, keep the saved answers visible (view only).
@@ -127,10 +144,12 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
       itemId: l.itemId,
       quantity: String(l.quantity),
       unitPrice: paiseToInput(l.unitPricePaise),
+      vendorCost: paiseToInput(l.vendorCostPaise),
       info: {
         id: l.itemId,
         code: l.code,
         name: l.name,
+        type: l.type,
         pricePaise: l.listPricePaise,
         minPricePaise: l.minPricePaise,
         maxDiscountPercent: l.listPricePaise > 0
@@ -281,6 +300,13 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
                 action={saveLabItems.bind(null, c.id)}
                 catalog={catalog}
                 initial={labItemsInitial}
+                outsource={outsource}
+                stockInfo={{
+                  ...labStock,
+                  caseItemIds: Object.fromEntries(c.items.map((l) => [l.itemId, l.id])),
+                }}
+                requestAction={requestPartForLabCase}
+                consumeAction={consumeLabItem}
               />
             ) : (
               <>
@@ -305,6 +331,15 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
                       align: "right",
                       cell: (l) => <span className="font-semibold">{formatPaise(l.unitPricePaise, { symbol: false })}</span>,
                     },
+                    ...(outsource
+                      ? [
+                          {
+                            header: "Vendor ₹",
+                            align: "right" as const,
+                            cell: (l: (typeof c.items)[number]) => formatPaise(l.vendorCostPaise, { symbol: false }),
+                          },
+                        ]
+                      : []),
                     {
                       header: "Total ₹",
                       align: "right",
@@ -318,6 +353,67 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
                   </p>
                 )}
               </>
+            )}
+
+            {c.items.length > 0 && (
+              <div className="mt-5 grid gap-6 border-t border-border pt-5 sm:grid-cols-2">
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-[1px] text-text-muted">From customer</p>
+                  <p className="mt-1 text-sm text-text-muted">
+                    Billed {formatPaise(billed)} − Advance {formatPaise(advance)}
+                  </p>
+                  <p className="mt-1 flex items-center gap-2 text-2xl font-semibold tabular-nums text-brand-navy dark:text-text">
+                    Due {formatPaise(customerDue)}
+                    {customerDue === 0 && <Badge tone="success">Settled</Badge>}
+                  </p>
+                </div>
+
+                {outsource && (
+                  <div>
+                    <p className="text-[11px] font-bold uppercase tracking-[1px] text-text-muted">
+                      To vendor{c.labVendor ? ` — ${c.labVendor.name}` : ""}
+                    </p>
+                    <p className="mt-1 text-sm text-text-muted">
+                      Vendor charges {formatPaise(vendorOwed)} − Paid {formatPaise(vendorPaid)}
+                    </p>
+                    <p className="mt-1 flex flex-wrap items-center gap-2 text-2xl font-semibold tabular-nums text-brand-navy dark:text-text">
+                      Due {formatPaise(vendorDue)}
+                      {vendorOwed > 0 && vendorDue === 0 && <Badge tone="success">Paid</Badge>}
+                      {vendorDue > 0 && permission.canEdit && (
+                        <VendorPaymentDialog
+                          jobsheetNo={c.jobsheetNo}
+                          dueLabel={formatPaise(vendorDue)}
+                          vendorName={c.labVendor?.name ?? "the vendor"}
+                          action={recordVendorPayment.bind(null, c.id)}
+                        />
+                      )}
+                    </p>
+                    {vendorOwed === 0 && (
+                      <p className="mt-1 text-xs text-text-muted">Enter the vendor charge on each item to track what is due.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {outsource && c.labVendorPayments.length > 0 && (
+              <div className="mt-5">
+                <p className="mb-2 text-[11px] font-bold uppercase tracking-[1px] text-text-muted">Vendor payments</p>
+                <DataTable
+                  rows={c.labVendorPayments}
+                  rowKey={(p) => p.id}
+                  columns={[
+                    { header: "Date", cell: (p) => formatDateTime(p.paidAt) },
+                    {
+                      header: "Amount ₹",
+                      align: "right",
+                      cell: (p) => <span className="font-semibold">{formatPaise(p.amountPaise, { symbol: false })}</span>,
+                    },
+                    { header: "Note", cell: (p) => p.note ?? "—" },
+                    { header: "Paid by", cell: (p) => personName(p.paidBy) ?? "—" },
+                  ]}
+                />
+              </div>
             )}
           </Card>
 

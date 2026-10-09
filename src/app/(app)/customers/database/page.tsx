@@ -12,7 +12,8 @@ import { saveCustomer, toggleCustomerActive } from "@/modules/customers/actions"
 import { CustomerForm, type CustomerFormValues } from "@/modules/customers/components/customer-form";
 import { CUSTOMER_PATHS } from "@/modules/customers/paths";
 import { CUSTOMER_SORTS, getCustomer, listCustomers } from "@/modules/customers/queries";
-import { LEAD_SOURCE_LABELS } from "@/modules/customers/schemas";
+import { LEAD_SOURCE_LABELS, VIP_MIN_VISITS, VISIT_FILTERS } from "@/modules/customers/schemas";
+import { FilterSelect } from "@/components/data/filter-select";
 import { requirePageAccess } from "@/server/rbac/guard";
 import { getBranchScope } from "@/server/branch-scope";
 
@@ -78,6 +79,18 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
         rowKey={(c) => c.id}
         highlight={(c) => c.id === highlight}
         searchPlaceholder="Search name / phone / email / code…"
+        toolbar={
+          <FilterSelect
+            className="sm:w-56"
+            path={list.path}
+            query={list.query}
+            prefix={list.prefix}
+            param="visits"
+            label="Filter by visits"
+            value={list.query[list.prefix + "visits"] ?? ""}
+            options={VISIT_FILTERS.map((f) => ({ value: f.value, label: f.label }))}
+          />
+        }
         empty="No customers yet. They are also added automatically from New Case."
         columns={[
           { header: "#", cell: (_, i) => i + 1 },
@@ -90,6 +103,7 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
               <Link href={`${CUSTOMER_PATHS.database}/${c.id}`} className="flex items-center gap-2 font-medium hover:text-primary">
                 {c.name}
                 {c.type === "BUSINESS" && <Badge tone="primary">B2B</Badge>}
+                {c.visitCount >= VIP_MIN_VISITS && <Badge tone="violet">VIP</Badge>}
                 {!c.isActive && <Badge>Inactive</Badge>}
               </Link>
             ),

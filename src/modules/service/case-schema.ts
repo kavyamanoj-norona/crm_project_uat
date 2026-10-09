@@ -270,19 +270,31 @@ export const estimateLineSchema = z.object({
 });
 export type EstimateLine = { itemId: string; quantity: string; unitPrice: string };
 
-const estimateLines = z
-  .string()
-  .transform((v, ctx) => {
-    if (v.trim() === "") return [];
-    try {
-      return JSON.parse(v) as unknown;
-    } catch {
-      ctx.addIssue({ code: "custom", message: "Items could not be read" });
-      return z.NEVER;
-    }
-  })
-  .pipe(z.array(estimateLineSchema).max(50, "Up to 50 items"))
-  .refine((lines) => new Set(lines.map((l) => l.itemId)).size === lines.length, "Each item can be added once — change its quantity instead");
+/** Lab line: the estimate line plus what we pay the outsource vendor per unit (optional). */
+export const labLineSchema = estimateLineSchema.extend({
+  vendorCost: optionalRupees("Vendor charge").optional().default(null),
+});
+
+const jsonLines = <T extends z.ZodType>(line: T) =>
+  z
+    .string()
+    .transform((v, ctx) => {
+      if (v.trim() === "") return [];
+      try {
+        return JSON.parse(v) as unknown;
+      } catch {
+        ctx.addIssue({ code: "custom", message: "Items could not be read" });
+        return z.NEVER;
+      }
+    })
+    .pipe(z.array(line).max(50, "Up to 50 items"))
+    .refine(
+      (lines) => new Set((lines as { itemId: string }[]).map((l) => l.itemId)).size === lines.length,
+      "Each item can be added once — change its quantity instead",
+    );
+
+const estimateLines = jsonLines(estimateLineSchema);
+const labLines = jsonLines(labLineSchema);
 
 /** "Start diagnosis" and "Edit items": engineer, items and delivery promise. */
 export const estimateSchema = z
@@ -312,7 +324,13 @@ export const ESTIMATE_EDITABLE: CaseStatusValue[] = ["DIAGNOSIS", "PENDING_APPRO
 
 /** Items saved during chip-level lab diagnosis. No engineer, delivery date, GST, or payment fields. */
 export const labItemsSchema = z.object({
-  items: estimateLines,
+  items: labLines,
+});
+
+/** A payment made to the outsource vendor. */
+export const vendorPaymentSchema = z.object({
+  amount: optionalRupees("Amount").refine((v) => v !== null && v > 0, "Enter an amount"),
+  note: optionalText.refine((v) => v === null || v.length <= 200, "Keep the note under 200 characters"),
 });
 export type LabItemsInput = z.output<typeof labItemsSchema>;
 

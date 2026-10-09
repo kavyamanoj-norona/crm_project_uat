@@ -367,7 +367,7 @@ function DateRangeFilter({ from, to, list }: { from: string; to: string; list: L
       </div>
 
       {/* Calendar — auto-applies when range is complete */}
-      <div className="w-72">
+      <div className="w-full max-w-72">
         <CalendarPicker
           from={localFrom}
           to={localTo}

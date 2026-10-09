@@ -11,8 +11,8 @@ type PageHeaderProps = {
 
 export function PageHeader({ title, subtitle, breadcrumbs, actions, badges }: PageHeaderProps) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-      <div>
+    <div className="mb-4 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between sm:gap-4">
+      <div className="min-w-0">
         {breadcrumbs && breadcrumbs.length > 0 && (
           <ol className="mb-1 flex flex-wrap items-center gap-1 text-xs text-text-muted">
             {breadcrumbs.map((crumb, i) => (
@@ -24,12 +24,12 @@ export function PageHeader({ title, subtitle, breadcrumbs, actions, badges }: Pa
           </ol>
         )}
         <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-[22px] font-black text-brand-navy dark:text-text">{title}</h1>
+          <h1 className="text-xl font-black sm:text-[22px] text-brand-navy dark:text-text">{title}</h1>
           {badges}
         </div>
         {subtitle && <p className="mt-1 text-sm text-text-muted">{subtitle}</p>}
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
   );
 }

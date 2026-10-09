@@ -79,7 +79,7 @@ export function ApprovedModulesModal({ privilegeId, privilegeName, isSuperAdmin,
       ) : loading ? (
         <div className="flex items-center justify-center py-10 text-sm text-text-muted">Loading…</div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-border">
+        <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full text-sm">
             <thead className="bg-surface-muted text-[11px] font-semibold uppercase tracking-wide text-text-muted">
               <tr>

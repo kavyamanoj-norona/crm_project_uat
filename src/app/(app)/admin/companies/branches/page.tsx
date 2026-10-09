@@ -10,6 +10,8 @@ import { EntityForm, type FieldConfig } from "@/modules/admin/components/entity-
 import { RowActions } from "@/modules/admin/components/row-actions";
 import { ADMIN_PATHS } from "@/modules/admin/paths";
 import { BRANCH_SORTS, listBranches } from "@/modules/admin/queries";
+import { BRANCH_TYPE_LABELS, branchTypeOptions } from "@/modules/admin/schemas";
+import { bpToInput, formatPercent } from "@/lib/percent";
 import { requirePageAccess } from "@/server/rbac/guard";
 
 export const metadata = { title: "Branches" };
@@ -35,6 +37,30 @@ export default async function BranchesPage({ searchParams }: PageProps<"/admin/c
     },
     { name: "code", label: "Branch code", required: true, placeholder: "Enter branch code", hint: "Used in jobsheet numbers" },
     { name: "name", label: "Branch name", required: true, placeholder: "Enter branch name" },
+    {
+      name: "branchType",
+      label: "Branch type",
+      type: "select",
+      required: true,
+      placeholder: "Select branch type",
+      options: branchTypeOptions,
+    },
+    {
+      name: "companyShare",
+      label: "Company share (%)",
+      required: true,
+      placeholder: "Enter company share",
+      hint: "Share of revenue and settlements kept by the company",
+      showWhen: { field: "branchType", value: "FRANCHISE" },
+    },
+    {
+      name: "franchiseShare",
+      label: "Franchise owner share (%)",
+      required: true,
+      placeholder: "Enter franchise owner share",
+      hint: "Company and franchise owner shares must add up to 100%",
+      showWhen: { field: "branchType", value: "FRANCHISE" },
+    },
     { name: "phone", label: "Phone" },
     { name: "address", label: "Address", type: "textarea", span: 2 },
     { name: "isVirtual", label: "Virtual branch (e.g. lab)", type: "switch" },
@@ -60,7 +86,15 @@ export default async function BranchesPage({ searchParams }: PageProps<"/admin/c
                     fields={fields}
                     schema="branch" action={saveBranch}
                     id={editing?.id}
-                    initial={editing ?? { isActive: true, companyId: companies[0]?.id }}
+                    initial={
+                      editing
+                        ? {
+                            ...editing,
+                            companyShare: bpToInput(editing.companyShareBp),
+                            franchiseShare: bpToInput(editing.franchiseShareBp),
+                          }
+                        : { isActive: true, companyId: companies[0]?.id, branchType: "COMPANY_OWNED" }
+                    }
                   />
                 ),
             }
@@ -89,6 +123,24 @@ export default async function BranchesPage({ searchParams }: PageProps<"/admin/c
             ),
           },
           { header: "Company", sort: "company", cell: (r) => r.company.name },
+          {
+            header: "Type",
+            sort: "branchType",
+            cell: (r) => (
+              <Badge tone={r.branchType === "FRANCHISE" ? "violet" : "navy"}>{BRANCH_TYPE_LABELS[r.branchType]}</Badge>
+            ),
+          },
+          {
+            header: "Company / Franchise share",
+            cell: (r) =>
+              r.branchType === "FRANCHISE" ? (
+                <span className="tabular-nums">
+                  {formatPercent(r.companyShareBp)} / {formatPercent(r.franchiseShareBp)}
+                </span>
+              ) : (
+                <span className="text-text-muted">—</span>
+              ),
+          },
           { header: "Phone", cell: (r) => r.phone ?? "—" },
           { header: "Users", cell: (r) => r._count.users, align: "center" },
           { header: "Status", cell: (r) => <ActiveBadge active={r.isActive} /> },

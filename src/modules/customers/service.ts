@@ -8,6 +8,69 @@ export async function nextCustomerCode(tx: Prisma.TransactionClient) {
   return `CU${String(await nextSequence(tx, "CUSTOMER")).padStart(6, "0")}`;
 }
 
+/** Next lead code: LD000001, LD000002 … Separate counter from customers. */
+export async function nextLeadCode(tx: Prisma.TransactionClient) {
+  return `LD${String(await nextSequence(tx, "LEAD")).padStart(6, "0")}`;
+}
+
+export type NewLeadInput = {
+  name: string;
+  phone: string;
+  purpose: string;
+  email: string | null;
+  source: LeadSourceValue | "WEBSITE" | null;
+  notes: string | null;
+};
+
+/** Creates a lead (a customer-table row with kind LEAD). Call inside a transaction. */
+export async function createLeadRecord(
+  tx: Prisma.TransactionClient,
+  input: NewLeadInput,
+  who: { branchId: string | null; actorId: string | null },
+) {
+  const code = await nextLeadCode(tx);
+  return tx.customer.create({
+    data: {
+      ...input,
+      code,
+      leadCode: code,
+      kind: "LEAD",
+      branchId: who.branchId,
+      createdById: who.actorId,
+      updatedById: who.actorId,
+    },
+  });
+}
+
+/**
+ * Turns a lead into a customer on the SAME row: it gets a CU code (the LD code
+ * is kept in leadCode), so nothing is duplicated and links stay valid. Returns
+ * null if the row is no longer an open lead (already converted by someone else).
+ */
+export async function convertLeadRecord(
+  tx: Prisma.TransactionClient,
+  leadId: string,
+  actorId: string,
+  /** Home branch for a lead that has none yet (e.g. a website enquiry). */
+  fallbackBranchId: string | null,
+) {
+  const lead = await tx.customer.findFirst({ where: { id: leadId, kind: "LEAD" }, select: { branchId: true } });
+  if (!lead) return null;
+  const { count } = await tx.customer.updateMany({
+    where: { id: leadId, kind: "LEAD" },
+    data: {
+      kind: "CUSTOMER",
+      code: await nextCustomerCode(tx),
+      convertedAt: new Date(),
+      convertedById: actorId,
+      isActive: true,
+      branchId: lead.branchId ?? fallbackBranchId,
+      updatedById: actorId,
+    },
+  });
+  return count === 0 ? null : tx.customer.findUniqueOrThrow({ where: { id: leadId } });
+}
+
 /** Keys of `after` whose value differs from `before`. */
 export function changedFields(before: Record<string, unknown>, after: Record<string, unknown>) {
   return Object.keys(after).filter((k) => (before[k] ?? null) !== (after[k] ?? null));
@@ -39,7 +102,9 @@ export async function upsertIntakeCustomer(
   branchId: string,
 ) {
   const now = new Date();
-  const existing = await tx.customer.findUnique({ where: { phone: input.phone } });
+  let existing = await tx.customer.findUnique({ where: { phone: input.phone } });
+  // A lead with this phone becomes the customer (same row) rather than a duplicate.
+  if (existing?.kind === "LEAD") existing = (await convertLeadRecord(tx, existing.id, actorId, branchId)) ?? existing;
 
   if (!existing) {
     const customer = await tx.customer.create({

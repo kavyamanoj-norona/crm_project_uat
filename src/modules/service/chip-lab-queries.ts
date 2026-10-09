@@ -191,6 +191,20 @@ export async function getLabCaseFull(id: string) {
           unitPricePaise: true,
           lineTotalPaise: true,
           gstPercent: true,
+          vendorCostPaise: true,
+        },
+      },
+      // Advance / payments the customer has made on this case
+      payments: { select: { amountPaise: true } },
+      // Money paid out to the outsource vendor
+      labVendorPayments: {
+        orderBy: { paidAt: "desc" },
+        select: {
+          id: true,
+          amountPaise: true,
+          note: true,
+          paidAt: true,
+          paidBy: { select: { firstName: true, lastName: true } },
         },
       },
       statusHistory: {
@@ -209,6 +223,24 @@ export async function getLabCaseFull(id: string) {
 }
 
 export type LabCaseFullDetails = NonNullable<Awaited<ReturnType<typeof getLabCaseFull>>>;
+
+/**
+ * Units on hand per item at the viewer's branch (where their requests are
+ * tracked and received), and the items with a request still open for this case.
+ */
+export async function getLabStockInfo(caseId: string, branchId: string) {
+  const [stock, open] = await Promise.all([
+    db.stockItem.findMany({ where: { branchId, quantity: { gt: 0 } }, select: { itemId: true, quantity: true } }),
+    db.purchaseRequest.findMany({
+      where: { caseId, status: { notIn: ["FULFILLED", "REJECTED"] } },
+      select: { itemId: true },
+    }),
+  ]);
+  return {
+    stock: Object.fromEntries(stock.map((s) => [s.itemId, s.quantity])),
+    requested: open.map((r) => r.itemId),
+  };
+}
 
 // ── Vendors ───────────────────────────────────────────────────────────────────
 

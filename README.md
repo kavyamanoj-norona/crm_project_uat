@@ -28,7 +28,7 @@ Demo logins (password `Welcome@123`): `admin`, `bm.edp`, `sales.edp`,
 | 1 | Service | Dashboard · Cases · New Case (Intake) · Chip-Level Lab · Uncollected Devices |
 | 2 | Sales & Finance | Dashboard · Direct Sales · Daybook & Expenses |
 | 3 | Inventory | Dashboard · Stock & Purchasing · Catalog |
-| 4 | Customers & Support | Dashboard · Customer Database · CS Workspace · Announcements · Portal Preview |
+| 4 | Customers & Support | Dashboard · Leads · Lead Reports · Customer Database · CS Workspace · Announcements · Portal Preview |
 | 5 | Company (Owner/Admin) | Owner Dashboard · AI Agents — "The Seven" · Audit Log |
 | 6 | Master Settings | Users · Company · Privilege · Modules · Rules · Security (Block List, User Activity) |
 
@@ -69,6 +69,18 @@ that file (including ones added through the UI).
 - **Customer Database** `/customers/database`: shared by all branches. The list
   shows who created and who last updated each customer; the details page has
   the full change history ("Changed: Email, PIN code") from the activity log.
+
+- **Leads** `/customers/leads`: enquiries that are not customers yet. Leads live in the
+  same `customer` table (`kind = LEAD`, IDs `LD000001…`); name, mobile number and
+  purpose are mandatory. **Convert** flips the same row to a customer (new `CU` code, the
+  `LD` code is kept in `leadCode`), so nothing is duplicated; a New Case for a lead's phone
+  converts it too. Customer screens, dashboards and pickers only ever see `kind = CUSTOMER`.
+- **Lead Reports** `/customers/lead-reports`: per month, leads that arrived, how many are
+  converted, and the conversion rate (plus by source).
+- **Website enquiries**: the website posts to `POST /api/leads/website` with header
+  `x-api-key: $WEBSITE_LEADS_API_KEY` and `{ name, phone, purpose, email? }`. Set
+  `WEBSITE_LEADS_API_KEY` in `.env` (and `WEBSITE_LEADS_ORIGIN` only if a browser calls it
+  directly). A repeat enquiry from the same phone is added to the lead's notes.
 
 ## How the dynamic menu works
 

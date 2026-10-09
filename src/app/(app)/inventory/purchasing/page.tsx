@@ -150,6 +150,14 @@ export default async function PurchasingPage({ searchParams }: PageProps<"/inven
               },
               { header: "Qty", align: "center", cell: (pr) => pr.quantity },
               {
+                header: "Branch",
+                cell: (pr) => (
+                  <span className="text-xs text-text-muted">
+                    {pr.branch.code} — {pr.branch.name}
+                  </span>
+                ),
+              },
+              {
                 header: "Raised",
                 cell: (pr) => (
                   <span className="text-xs text-text-muted">

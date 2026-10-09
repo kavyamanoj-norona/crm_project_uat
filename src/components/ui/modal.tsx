@@ -56,8 +56,8 @@ export function Modal({ open, onClose, title, description, icon, size = "sm", fo
       )}
     >
       {open && (
-        <div className="flex max-h-[85vh] flex-col">
-          <div className="flex items-start justify-between gap-4 border-b border-border px-6 py-4">
+        <div className="flex max-h-[85dvh] flex-col">
+          <div className="flex items-start justify-between gap-4 border-b border-border px-4 py-4 sm:px-6">
             <div className="flex items-start gap-3">
               {icon && <span className="mt-0.5 text-primary">{icon}</span>}
               <div>
@@ -76,8 +76,8 @@ export function Modal({ open, onClose, title, description, icon, size = "sm", fo
               <X className="size-5" />
             </button>
           </div>
-          <div className="overflow-y-auto px-6 py-5">{children}</div>
-          {footer && <div className="flex justify-end gap-2 border-t border-border px-6 py-3">{footer}</div>}
+          <div className="overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">{children}</div>
+          {footer && <div className="flex flex-wrap justify-end gap-2 border-t border-border px-4 py-3 sm:px-6">{footer}</div>}
         </div>
       )}
     </dialog>
