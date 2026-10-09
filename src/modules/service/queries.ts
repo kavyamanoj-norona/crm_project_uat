@@ -246,7 +246,7 @@ export async function listBranchStaff(branchId: string) {
   const users = await db.user.findMany({
     where: { isActive: true, status: "WORKING", branchId },
     orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
-    select: { id: true, firstName: true, lastName: true, department: { select: { name: true } } },
+    select: { id: true, firstName: true, lastName: true, privilege: { select: { name: true } } },
   });
-  return users.map((u) => ({ value: u.id, label: `${[u.firstName, u.lastName].filter(Boolean).join(" ")} · ${u.department.name}` }));
+  return users.map((u) => ({ value: u.id, label: `${[u.firstName, u.lastName].filter(Boolean).join(" ")} · ${u.privilege.name}` }));
 }

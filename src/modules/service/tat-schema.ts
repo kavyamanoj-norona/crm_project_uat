@@ -5,6 +5,14 @@ import type { CaseStatus } from "@/generated/prisma/client";
 export const TAT_STAGES: CaseStatus[] = [
   "INTAKE", "DIAGNOSIS", "PENDING_APPROVAL",
   "AWAITING_STOCK", "QUALITY_CHECK", "READY_FOR_DELIVERY",
+  "CHIP_TRANSFER",
+  "CHIP_LAB_RECEIVED",
+  "CHIP_LAB_DIAGNOSIS",
+  "CHIP_LAB_PENDING_APPROVAL",
+  "CHIP_LAB_SERVICING",
+  "CHIP_LAB_READY_DISPATCH",
+  "CHIP_LAB_QUALITY_CHECK",
+  "CHIP_BRANCH_RECEIVED",
 ];
 
 export const TAT_UNITS = ["MINUTES", "HOURS", "DAYS"] as const;

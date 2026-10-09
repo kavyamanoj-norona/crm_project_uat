@@ -14,6 +14,7 @@ import { CUSTOMER_PATHS } from "@/modules/customers/paths";
 import { CUSTOMER_SORTS, getCustomer, listCustomers } from "@/modules/customers/queries";
 import { LEAD_SOURCE_LABELS } from "@/modules/customers/schemas";
 import { requirePageAccess } from "@/server/rbac/guard";
+import { getBranchScope } from "@/server/branch-scope";
 
 export const metadata = { title: "Customer Database" };
 
@@ -21,15 +22,16 @@ const iconLink =
   "inline-flex size-8 items-center justify-center rounded-lg text-text-muted hover:bg-surface-muted hover:text-text";
 
 export default async function CustomersPage({ searchParams }: PageProps<"/customers/database">) {
-  const { permission } = await requirePageAccess(CUSTOMER_PATHS.database);
+  const { user, permission } = await requirePageAccess(CUSTOMER_PATHS.database);
+  const scope = await getBranchScope(user);
   const sp = await searchParams;
   const list = listState(CUSTOMER_PATHS.database, sp, { sorts: CUSTOMER_SORTS, defaultSort: "createdAt", defaultPageSize: 25 });
   const editId = param(sp, "edit");
   const highlight = param(sp, "highlight") ?? editId;
 
   const [{ rows, total, tabs }, editing] = await Promise.all([
-    listCustomers(list),
-    editId && permission.canEdit ? getCustomer(editId) : null,
+    listCustomers(list, scope),
+    editId && permission.canEdit ? getCustomer(editId, scope) : null,
   ]);
 
   const initial: CustomerFormValues | undefined = editing
@@ -53,7 +55,7 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
     <AdminPage
       title="Customer Database"
       group="Customers & Support"
-      subtitle={`${total.toLocaleString("en-IN")} customers · shared by all branches, one record per phone number`}
+      subtitle={`${total.toLocaleString("en-IN")} customers · ${scope.branch ? `${scope.branch.name} (${scope.branch.code})` : "all branches"} · one record per phone number`}
       saved={param(sp, "saved")}
       form={
         (editing ? permission.canEdit : permission.canCreate)
@@ -91,6 +93,10 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
                 {!c.isActive && <Badge>Inactive</Badge>}
               </Link>
             ),
+          },
+          {
+            header: "Branch",
+            cell: (c) => (c.branch ? `${c.branch.name} (${c.branch.code})` : <span className="text-text-muted">—</span>),
           },
           { header: "Phone", sort: "phone", cell: (c) => formatPhone(c.phone) },
           { header: "Email", cell: (c) => c.email ?? "—" },

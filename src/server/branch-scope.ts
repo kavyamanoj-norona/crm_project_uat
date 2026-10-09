@@ -1,6 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { cookies } from "next/headers";
+import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/server/db";
 import type { CurrentUser } from "@/server/auth/session";
 
@@ -41,6 +42,16 @@ export const getBranchScope = cache(async (user: CurrentUser): Promise<BranchSco
  */
 export function branchWhere(scope: BranchScope): { branchId?: string } {
   return scope.branchId ? { branchId: scope.branchId } : {};
+}
+
+/**
+ * Customers a branch can see: the ones it registered, plus anyone it has a case
+ * for (so its own jobs always link to a visible customer). All branches = no filter.
+ */
+export function customerWhere(scope: Pick<BranchScope, "branchId">): Prisma.CustomerWhereInput {
+  return scope.branchId
+    ? { OR: [{ branchId: scope.branchId }, { cases: { some: { branchId: scope.branchId } } }] }
+    : {};
 }
 
 export const listBranchOptions = () =>

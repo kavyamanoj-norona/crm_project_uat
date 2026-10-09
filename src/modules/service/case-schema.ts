@@ -31,6 +31,16 @@ export const CASE_STATUSES = [
   "READY_FOR_DELIVERY",
   "CLOSED",
   "CANCELLED",
+  // Chip-Level Lab track
+  "CHIP_TRANSFER",
+  "CHIP_LAB_RECEIVED",
+  "CHIP_LAB_DIAGNOSIS",
+  "CHIP_LAB_PENDING_APPROVAL",
+  "CHIP_LAB_SERVICING",
+  "CHIP_LAB_READY_DISPATCH",
+  "CHIP_LAB_QUALITY_CHECK",
+  "CHIP_BRANCH_RECEIVED",
+  "NON_REPAIRABLE",
 ] as const;
 export type CaseStatusValue = (typeof CASE_STATUSES)[number];
 
@@ -43,6 +53,15 @@ export const CASE_STATUS_LABELS: Record<CaseStatusValue, string> = {
   READY_FOR_DELIVERY: "Ready for delivery",
   CLOSED: "Closed",
   CANCELLED: "Cancelled",
+  CHIP_TRANSFER: "Transfer to Chip-Level",
+  CHIP_LAB_RECEIVED: "Lab Received",
+  CHIP_LAB_DIAGNOSIS: "Lab Diagnosis",
+  CHIP_LAB_PENDING_APPROVAL: "Lab Pending Approval",
+  CHIP_LAB_SERVICING: "In Servicing",
+  CHIP_LAB_READY_DISPATCH: "Ready to Dispatch",
+  CHIP_LAB_QUALITY_CHECK: "Quality Check",
+  CHIP_BRANCH_RECEIVED: "Received from Lab",
+  NON_REPAIRABLE: "Non-Repairable",
 };
 
 export const CASE_STATUS_TONE = {
@@ -54,10 +73,27 @@ export const CASE_STATUS_TONE = {
   READY_FOR_DELIVERY: "success",
   CLOSED: "neutral",
   CANCELLED: "danger",
+  CHIP_TRANSFER: "violet",
+  CHIP_LAB_RECEIVED: "primary",
+  CHIP_LAB_DIAGNOSIS: "primary",
+  CHIP_LAB_PENDING_APPROVAL: "warning",
+  CHIP_LAB_SERVICING: "indigo",
+  CHIP_LAB_READY_DISPATCH: "success",
+  CHIP_LAB_QUALITY_CHECK: "indigo",
+  CHIP_BRANCH_RECEIVED: "navy",
+  NON_REPAIRABLE: "danger",
 } as const satisfies Record<CaseStatusValue, string>;
 
-/** The normal path of a case, in order (Cancelled sits outside it). */
-export const CASE_FLOW: CaseStatusValue[] = CASE_STATUSES.filter((s) => s !== "CANCELLED");
+/** The normal path of a case, in order (Cancelled and chip-level track sit outside it). */
+export const CASE_FLOW: CaseStatusValue[] = [
+  "INTAKE",
+  "DIAGNOSIS",
+  "PENDING_APPROVAL",
+  "AWAITING_STOCK",
+  "QUALITY_CHECK",
+  "READY_FOR_DELIVERY",
+  "CLOSED",
+];
 
 /** The stage after `status` on the normal path, or null at the end / when cancelled. */
 export function nextStage(status: CaseStatusValue): CaseStatusValue | null {
@@ -66,6 +102,71 @@ export function nextStage(status: CaseStatusValue): CaseStatusValue | null {
 }
 
 export const isOpenStatus = (s: CaseStatusValue) => s !== "CLOSED" && s !== "CANCELLED";
+
+/** All statuses that belong to the chip-level lab track. */
+export const CHIP_LAB_STATUSES: CaseStatusValue[] = [
+  "CHIP_TRANSFER",
+  "CHIP_LAB_RECEIVED",
+  "CHIP_LAB_DIAGNOSIS",
+  "CHIP_LAB_PENDING_APPROVAL",
+  "CHIP_LAB_SERVICING",
+  "CHIP_LAB_READY_DISPATCH",
+  "CHIP_LAB_QUALITY_CHECK",
+  "CHIP_BRANCH_RECEIVED",
+  "NON_REPAIRABLE",
+];
+
+/** Returns true when the case is currently in the chip-level lab track. */
+export function isChipLabStatus(s: CaseStatusValue): boolean {
+  return (CHIP_LAB_STATUSES as string[]).includes(s);
+}
+
+/** Lab-side statuses (visible in the chip-level lab queue). */
+export const LAB_QUEUE_STATUSES: CaseStatusValue[] = [
+  "CHIP_TRANSFER",
+  "CHIP_LAB_RECEIVED",
+  "CHIP_LAB_DIAGNOSIS",
+  "CHIP_LAB_PENDING_APPROVAL",
+  "CHIP_LAB_SERVICING",
+  "CHIP_LAB_READY_DISPATCH",
+  "CHIP_LAB_QUALITY_CHECK",
+  "NON_REPAIRABLE",
+];
+
+/** Branch-side chip statuses (branch can see/act on these). */
+export const BRANCH_CHIP_STATUSES: CaseStatusValue[] = [
+  "CHIP_TRANSFER",
+  "CHIP_BRANCH_RECEIVED",
+];
+
+/** Branch-visible workflow for chip-level cases (what branch sees in stage rail). */
+export const CHIP_BRANCH_FLOW: CaseStatusValue[] = [
+  "INTAKE",
+  "DIAGNOSIS",
+  "CHIP_TRANSFER",
+  "CHIP_BRANCH_RECEIVED",
+  "QUALITY_CHECK",
+  "READY_FOR_DELIVERY",
+  "CLOSED",
+];
+
+/** Lab-internal statuses where the branch has no actionable role — device is with the lab. */
+export const LAB_INTERNAL_STATUSES: CaseStatusValue[] = [
+  "CHIP_TRANSFER",
+  "CHIP_LAB_RECEIVED",
+  "CHIP_LAB_DIAGNOSIS",
+  "CHIP_LAB_PENDING_APPROVAL",
+  "CHIP_LAB_SERVICING",
+  "CHIP_LAB_READY_DISPATCH",
+  "CHIP_LAB_QUALITY_CHECK",
+  "NON_REPAIRABLE",
+];
+
+/** Maps any chip-lab status to its branch-visible stage rail position.
+ * Lab-internal statuses (device is with the lab) always show as CHIP_TRANSFER on the branch rail. */
+export function branchChipRailStatus(status: CaseStatusValue): CaseStatusValue {
+  return LAB_INTERNAL_STATUSES.includes(status) ? "CHIP_TRANSFER" : status;
+}
 
 /** What kind of job it is, from the warranty status: "Paid repair" … */
 export const CASE_KIND_LABELS = { NON_WARRANTY: "Paid repair", WARRANTY: "Warranty repair", RETURN: "Warranty rework" };
@@ -187,6 +288,8 @@ const estimateLines = z
 export const estimateSchema = z
   .object({
     engineerId: requiredText("Engineer"),
+    /** Checkbox: "on" when chip-level service is selected, absent otherwise. Only meaningful for mode=start. */
+    chipLevel: z.string().optional().default("").transform((v) => v === "on"),
     expectedDeliveryDate: optionalDate.refine(
       (d) => d === null || d.toISOString().slice(0, 10) >= todayIst(),
       "Expected delivery can't be in the past",
@@ -207,11 +310,67 @@ export type EstimateInput = z.output<typeof estimateSchema>;
 /** Stages in which the items can still be changed (before the customer approves). */
 export const ESTIMATE_EDITABLE: CaseStatusValue[] = ["DIAGNOSIS", "PENDING_APPROVAL"];
 
+/** Items saved during chip-level lab diagnosis. No engineer, delivery date, GST, or payment fields. */
+export const labItemsSchema = z.object({
+  items: estimateLines,
+});
+export type LabItemsInput = z.output<typeof labItemsSchema>;
+
+// ─── Lab work type ────────────────────────────────────────────────────────────
+
+export const LAB_WORK_TYPES = ["INHOUSE", "OUTSOURCE"] as const;
+export type LabWorkType = (typeof LAB_WORK_TYPES)[number];
+export const LAB_WORK_TYPE_LABELS: Record<LabWorkType, string> = {
+  INHOUSE: "Inhouse",
+  OUTSOURCE: "Outsource",
+};
+
+/** Work type + conditional engineer or vendor. Both are required for their type. */
+export const labWorkTypeSchema = z
+  .object({
+    workType: z.enum(LAB_WORK_TYPES, { error: "Select a work type" }),
+    engineerId: optionalText,
+    vendorId: optionalText,
+  })
+  .superRefine((v, ctx) => {
+    if (v.workType === "INHOUSE" && !v.engineerId)
+      ctx.addIssue({ code: "custom", path: ["engineerId"], message: "Select an engineer" });
+    if (v.workType === "OUTSOURCE" && !v.vendorId)
+      ctx.addIssue({ code: "custom", path: ["vendorId"], message: "Select a vendor" });
+  });
+export type LabWorkTypeInput = z.output<typeof labWorkTypeSchema>;
+
 // ─── Stage changes ───────────────────────────────────────────────────────────
 
 export const stageChangeSchema = z.object({
-  toStatus: z.enum(CASE_FLOW as [CaseStatusValue, ...CaseStatusValue[]], { error: "Pick a stage" }),
+  toStatus: z.enum(CASE_STATUSES as unknown as [CaseStatusValue, ...CaseStatusValue[]], {
+    error: "Pick a stage",
+  }),
   note: optionalText.refine((v) => v === null || v.length <= 500, "Keep the note under 500 characters"),
+});
+
+export const transferToChipSchema = z.object({
+  note: optionalText.refine(
+    (v) => v === null || v.length <= 500,
+    "Keep the note under 500 characters",
+  ),
+});
+
+export const nonRepairableSchema = z.object({
+  reason: requiredText("Reason").pipe(
+    z.string().min(5, "Give a reason (at least 5 characters)").max(500),
+  ),
+});
+
+export const labOutsourceSchema = z.object({
+  vendorId: requiredText("Vendor"),
+  sentAt: requiredText("Sent date"),
+  expectedReturnAt: optionalText,
+  referenceNo: optionalText,
+  notes: optionalText.refine(
+    (v) => v === null || v.length <= 1000,
+    "Keep notes under 1000 characters",
+  ),
 });
 
 export const cancelSchema = z.object({

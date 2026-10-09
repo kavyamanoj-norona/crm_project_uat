@@ -17,6 +17,7 @@ import { CUSTOMER_PATHS } from "@/modules/customers/paths";
 import { LEAD_SOURCE_LABELS } from "@/modules/customers/schemas";
 import { getCustomerDashboardStats } from "@/modules/customers/queries";
 import { requirePageAccess } from "@/server/rbac/guard";
+import { getBranchScope } from "@/server/branch-scope";
 
 export const metadata = { title: "Customers Dashboard" };
 
@@ -60,8 +61,8 @@ function StatCard({
 }
 
 export default async function CustomersDashboardPage() {
-  await requirePageAccess(CUSTOMER_PATHS.dashboard);
-  const stats = await getCustomerDashboardStats();
+  const { user } = await requirePageAccess(CUSTOMER_PATHS.dashboard);
+  const stats = await getCustomerDashboardStats(await getBranchScope(user));
 
   const maxSource = Math.max(...stats.bySource.map((s) => s._count.id), 1);
 

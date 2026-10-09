@@ -313,7 +313,7 @@ export async function listUsers(list: ListState, scope: { branchId?: string } = 
       include: {
         privilege: { select: { name: true } },
         department: { select: { name: true } },
-        branch: { select: { code: true } },
+        branch: { select: { name: true, code: true } },
         createdBy: { select: { firstName: true, lastName: true } },
       },
       ...pageArgs(list),

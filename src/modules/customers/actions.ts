@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/server/db";
 import { pick, toFieldErrors, type ActionResult, type FormState } from "@/lib/form";
 import { FieldError, handleActionError } from "@/server/prisma-errors";
+import { customerWhere, getBranchScope } from "@/server/branch-scope";
 import { ForbiddenError, requireActionPermission } from "@/server/rbac/guard";
 import { logActivity } from "@/server/security/activity";
 import { CUSTOMER_PATHS } from "./paths";
@@ -20,6 +21,7 @@ export async function saveCustomer(_prev: FormState, formData: FormData): Promis
   let savedId: string;
   try {
     const actor = await requireActionPermission(CUSTOMER_PATHS.database, id ? "canEdit" : "canCreate");
+    const scope = await getBranchScope(actor);
     // The phone is the dedupe key: say who already has it (the unique index still guards races).
     const clash = await db.customer.findFirst({
       where: { phone: data.phone, ...(id ? { NOT: { id } } : {}) },
@@ -28,7 +30,7 @@ export async function saveCustomer(_prev: FormState, formData: FormData): Promis
     if (clash) throw new FieldError("phone", `This phone belongs to ${clash.name} (${clash.code})`);
 
     if (id) {
-      const existing = await db.customer.findUnique({ where: { id } });
+      const existing = await db.customer.findFirst({ where: { id, ...customerWhere(scope) } });
       if (!existing) throw new FieldError("name", "This customer no longer exists.");
       const changed = changedFields(existing, data);
       savedId = id;
@@ -45,7 +47,14 @@ export async function saveCustomer(_prev: FormState, formData: FormData): Promis
     } else {
       const customer = await db.$transaction(async (tx) =>
         tx.customer.create({
-          data: { ...data, code: await nextCustomerCode(tx), createdById: actor.id, updatedById: actor.id },
+          data: {
+            ...data,
+            code: await nextCustomerCode(tx),
+            // the branch the user is working in (null when an all-branch user hasn't picked one)
+            branchId: scope.branchId,
+            createdById: actor.id,
+            updatedById: actor.id,
+          },
         }),
       );
       savedId = customer.id;
@@ -63,7 +72,10 @@ export async function saveCustomer(_prev: FormState, formData: FormData): Promis
 export async function toggleCustomerActive(id: string): Promise<ActionResult> {
   try {
     const actor = await requireActionPermission(CUSTOMER_PATHS.database, "canEdit");
-    const row = await db.customer.findUnique({ where: { id }, select: { isActive: true } });
+    const row = await db.customer.findFirst({
+      where: { id, ...customerWhere(await getBranchScope(actor)) },
+      select: { isActive: true },
+    });
     if (!row) return { ok: false, message: "Customer not found." };
     await db.customer.update({ where: { id }, data: { isActive: !row.isActive, updatedById: actor.id } });
     await logActivity({

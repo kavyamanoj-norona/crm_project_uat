@@ -31,7 +31,13 @@ export type IntakeCustomerInput = {
  * visit. Details confirmed at the counter replace the stored ones, but an empty
  * field never wipes what we already have.
  */
-export async function upsertIntakeCustomer(tx: Prisma.TransactionClient, input: IntakeCustomerInput, actorId: string) {
+export async function upsertIntakeCustomer(
+  tx: Prisma.TransactionClient,
+  input: IntakeCustomerInput,
+  actorId: string,
+  /** The branch taking the case: becomes the home branch of a new customer. */
+  branchId: string,
+) {
   const now = new Date();
   const existing = await tx.customer.findUnique({ where: { phone: input.phone } });
 
@@ -46,6 +52,7 @@ export async function upsertIntakeCustomer(tx: Prisma.TransactionClient, input: 
         source: input.source,
         visitCount: 1,
         lastVisitAt: now,
+        branchId,
         createdById: actorId,
         updatedById: actorId,
       },

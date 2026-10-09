@@ -111,6 +111,7 @@ export async function createCase(_prev: FormState, formData: FormData): Promise<
           tx,
           { phone: data.phone, name: data.name, email: data.email, altPhone: data.altPhone, source: data.source },
           actor.id,
+          branch.id,
         );
         const jobsheetNo = await nextJobsheetNo(tx, branch.code);
         const created = await tx.case.create({

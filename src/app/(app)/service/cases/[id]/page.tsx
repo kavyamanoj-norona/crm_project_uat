@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, ArrowRight, FileText, Image as ImageIcon, IndianRupee, MessageCircle, Pencil, Send } from "lucide-react";
+import { ArrowLeft, ArrowRight, Eye, FileText, History, Image as ImageIcon, IndianRupee, MessageCircle, Pencil, Send } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ActionButton } from "@/components/ui/action-button";
 import { buttonClass, LinkButton } from "@/components/ui/button";
@@ -22,7 +22,7 @@ import { formatPhone } from "@/lib/phone";
 import { param } from "@/modules/admin/components/admin-page";
 import { CUSTOMER_PATHS } from "@/modules/customers/paths";
 import { LEAD_SOURCE_LABELS } from "@/modules/customers/schemas";
-import { assignEngineer, cancelCase, changeCaseStage, moveCaseToNextStage, revealDevicePassword, saveEstimate, saveCaseFeedback, submitDiagnosis } from "@/modules/service/actions/case";
+import { assignEngineer, cancelCase, changeCaseStage, moveCaseToNextStage, receiveFromChipLab, revealDevicePassword, saveEstimate, saveCaseFeedback, sendBackToChipLab, submitDiagnosis, transferToChipLab } from "@/modules/service/actions/case";
 import { consumeItemFromCase } from "@/modules/inventory/actions/stock";
 import { requestPartForCase } from "@/modules/inventory/actions/purchase";
 import { sendWhatsAppTemplate } from "@/modules/service/actions/whatsapp";
@@ -36,8 +36,16 @@ import { FeedbackDialog } from "@/modules/service/components/feedback-dialog";
 import { ITEM_TYPE_LABELS, ITEM_TYPE_TONE } from "@/modules/admin/item-schema";
 import { StageActions } from "@/modules/service/components/stage-actions";
 import { STAGE_ICONS } from "@/modules/service/components/stage-icons";
+import { ChipBranchActions } from "@/modules/service/components/chip-branch-actions";
+import { QcChecklistCard } from "@/modules/service/components/qc-checklist-card";
+import { QcChecklistDialog } from "@/modules/service/components/qc-checklist-panel";
+import { saveQcAnswers } from "@/modules/service/actions/qc-response";
+import { getQcState } from "@/modules/service/qc-response-queries";
 import {
   CASE_FLOW,
+  CHIP_BRANCH_FLOW,
+  LAB_INTERNAL_STATUSES,
+  branchChipRailStatus,
   CASE_KIND_LABELS,
   CASE_STATUS_LABELS,
   CASE_STATUS_TONE,
@@ -46,10 +54,11 @@ import {
   CUSTOMER_BEHAVIOURS,
   ESTIMATE_EDITABLE,
   INTAKE_TYPE_LABELS,
-  PAYMENT_MODE_LABELS,
-  WARRANTY_LABELS,
+  isChipLabStatus,
   isOpenStatus,
   nextStage,
+  PAYMENT_MODE_LABELS,
+  WARRANTY_LABELS,
 } from "@/modules/service/case-schema";
 import { SERVICE_PATHS } from "@/modules/service/paths";
 import { getCase, getCaseExtras, listBranchStaff, listCatalogForPicker, type CaseDetails } from "@/modules/service/queries";
@@ -132,12 +141,20 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
     }),
   ]);
   const reached = reachedAt(c);
+  const qc = c.status === "QUALITY_CHECK" ? await getQcState(c.id, "QUALITY_CHECK", c.stageChangedAt) : null;
 
   const paid = c.payments.reduce((sum, p) => sum + p.amountPaise, 0);
   const subtotal = c.estimatedCostPaise;
   const due = subtotal === null ? null : Math.max(0, subtotal - paid);
   const device = [c.brand, c.model].filter(Boolean).join(" ");
   const next = nextStage(c.status);
+  const isInChipTrack = isChipLabStatus(c.status);
+  // true if the case currently has chip-level lab history (used to show "Send Back" at QUALITY_CHECK)
+  const hasChipHistory = c.statusHistory.some((h) => h.toStatus === "CHIP_TRANSFER");
+  const isChipCase = isInChipTrack || hasChipHistory;
+  // Quality Check runs in one popup (checklist → next stage / send back) whenever checklist items exist.
+  const qcInModal = permission.canEdit && c.status === "QUALITY_CHECK" && Boolean(qc && qc.rows.length > 0);
+  const isLabInternal = LAB_INTERNAL_STATUSES.includes(c.status);
   const cancelledFrom = c.status === "CANCELLED" ? c.statusHistory.find((h) => h.toStatus === "CANCELLED")?.fromStatus : null;
   const portalCode = c.jobsheetNo.split("-").pop();
   const half = extras.gstPercent / 2;
@@ -235,7 +252,11 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
       />
       <PageHeader
         title={c.jobsheetNo}
-        badges={<Badge tone={CASE_STATUS_TONE[c.status]}>{CASE_STATUS_LABELS[c.status]}</Badge>}
+        badges={
+          <Badge tone={isLabInternal ? "violet" : CASE_STATUS_TONE[c.status]}>
+            {isLabInternal ? "With Chip-Level Lab" : CASE_STATUS_LABELS[c.status]}
+          </Badge>
+        }
         subtitle={[
           CASE_KIND_LABELS[c.warrantyStatus],
           INTAKE_TYPE_LABELS[c.intakeType],
@@ -249,6 +270,9 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
             <LinkButton href={SERVICE_PATHS.cases} variant="secondary">
               <ArrowLeft className="size-4" /> Back
             </LinkButton>
+            <LinkButton href={`${SERVICE_PATHS.cases}/${c.id}/history`} variant="secondary">
+              <History className="size-4" /> History
+            </LinkButton>
             {waLink && (
               <LinkButton href={waLink} variant="secondary" target="_blank" rel="noopener noreferrer">
                 <MessageCircle className="size-4" /> WhatsApp customer
@@ -261,7 +285,16 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
                 action={sendWhatsApp}
               />
             )}
-            {permission.canEdit && isOpenStatus(c.status) && (
+            {permission.canEdit && (
+              <ChipBranchActions
+                status={c.status}
+                hasChipHistory={hasChipHistory}
+                qcInModal={qcInModal}
+                transferToChipLab={transferToChipLab.bind(null, c.id)}
+                sendBackToChipLab={sendBackToChipLab.bind(null, c.id)}
+              />
+            )}
+            {permission.canEdit && isOpenStatus(c.status) && !isLabInternal && (
               <StageActions
                 jobsheetNo={c.jobsheetNo}
                 status={c.status}
@@ -272,17 +305,49 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
                 primary={
                   estimateMode === "start"
                     ? estimate
-                    : c.status === "DIAGNOSIS" && c.estimatedCostPaise && permission.canEdit
+                    : qcInModal && next && qc
+                      ? (
+                          <QcChecklistDialog
+                            trigger={
+                              <>
+                                Move to {CASE_STATUS_LABELS[next]} <ArrowRight className="size-4" />
+                              </>
+                            }
+                            triggerVariant="navy"
+                            jobsheetNo={c.jobsheetNo}
+                            items={qc.rows}
+                            action={saveQcAnswers.bind(null, c.id)}
+                            next={{
+                              label: CASE_STATUS_LABELS[next],
+                              move: moveCaseToNextStage.bind(null, c.id),
+                              sendBack: sendBackToChipLab.bind(null, c.id),
+                              cameFromLab: hasChipHistory,
+                            }}
+                          />
+                        )
+                    : c.status === "CHIP_BRANCH_RECEIVED" && permission.canEdit
                       ? (
                           <ActionButton
-                            action={submitDiagnosis.bind(null, c.id)}
-                            label="Send quote to customer"
+                            action={receiveFromChipLab.bind(null, c.id)}
+                            label="Receive from lab"
                             className={buttonClass("navy")}
                           >
-                            <Send className="size-4" /> Send quote to customer
+                            <span className="inline-flex items-center gap-2">
+                              Receive from Lab <ArrowRight className="size-4" />
+                            </span>
                           </ActionButton>
                         )
-                      : undefined
+                      : c.status === "DIAGNOSIS" && c.estimatedCostPaise && permission.canEdit
+                        ? (
+                            <ActionButton
+                              action={submitDiagnosis.bind(null, c.id)}
+                              label="Send quote to customer"
+                              className={buttonClass("navy")}
+                            >
+                              <Send className="size-4" /> Send quote to customer
+                            </ActionButton>
+                          )
+                        : undefined
                 }
               />
             )}
@@ -290,19 +355,47 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
         }
       />
 
+      {isChipCase && (
+        <div className="mb-4 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 dark:border-violet-800 dark:bg-violet-950/30">
+          <div>
+            <p className="text-sm font-medium text-violet-800 dark:text-violet-300">
+              {isLabInternal
+                ? "Device is currently with the chip-level repair lab"
+                : c.status === "CHIP_BRANCH_RECEIVED"
+                  ? "Device received from chip-level lab — confirm receipt to continue"
+                  : "Chip-Level Lab Track"}
+            </p>
+            <p className="text-xs text-violet-600 dark:text-violet-400 mt-0.5">
+              {isLabInternal
+                ? ""
+                : "Cases sent to chip-level lab for board-level repair."}
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="mb-6 rounded-xl border border-border bg-surface px-4 py-5 shadow-sm">
         <StageRail
-          stages={CASE_FLOW.map((s) => {
+          stages={(isChipCase ? CHIP_BRANCH_FLOW : CASE_FLOW).map((s) => {
             const Icon = STAGE_ICONS[s];
             return { key: s, label: CASE_STATUS_LABELS[s], icon: <Icon />, caption: reached.has(s) ? formatShortDateTime(reached.get(s)) : undefined };
           })}
-          current={cancelledFrom ?? c.status}
+          current={cancelledFrom ?? (isChipCase ? branchChipRailStatus(c.status) : c.status)}
           stoppedLabel={c.status === "CANCELLED" ? "Cancelled" : undefined}
         />
       </div>
 
       <div className="grid items-start gap-6 xl:grid-cols-[1.65fr_1fr]">
         <div className="space-y-6">
+          {qc && (
+            <QcChecklistCard
+              jobsheetNo={c.jobsheetNo}
+              rows={qc.rows}
+              action={saveQcAnswers.bind(null, c.id)}
+              canEdit={permission.canEdit}
+            />
+          )}
+
           <Card
             title="Billable items"
             actions={

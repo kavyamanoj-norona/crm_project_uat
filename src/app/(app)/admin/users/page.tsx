@@ -144,6 +144,7 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
           { header: "Username", sort: "username", cell: (u) => u.username },
           { header: "Mobile", sort: "mobile", cell: (u) => u.mobile },
           { header: "Email", sort: "email", cell: (u) => u.email },
+          { header: "Branch", cell: (u) => u.branch ? `${u.branch.name} (${u.branch.code})` : "—" },
           { header: "Privilege", sort: "privilege", cell: (u) => u.privilege.name },
           { header: "Department", cell: (u) => u.department.name },
           { header: "Gender", sort: "gender", cell: (u) => (u.gender ? label(u.gender) : "—") },

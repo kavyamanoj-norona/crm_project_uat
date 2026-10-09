@@ -45,9 +45,10 @@ model Branch {
   updatedAt DateTime @updatedAt @db.Timestamptz
 
   company  Company   @relation(fields: [companyId], references: [id])
-  users    User[]
-  cases    Case[]
-  payments Payment[]
+  users     User[]
+  cases     Case[]
+  payments  Payment[]
+  customers Customer[]
 
   stockItems       StockItem[]
   purchaseRequests PurchaseRequest[]
@@ -212,6 +213,15 @@ model User {
   directSalesSold     DirectSale[]    @relation("DirectSaleSoldBy")
   buybacksRecorded    BuybackRecord[] @relation("BuybackRecordedBy")
   salesTargetsCreated SalesTarget[]   @relation("SalesTargetCreatedBy")
+
+  labVendorsCreated    ChipLabVendor[]    @relation("VendorCreatedBy")
+  labVendorsUpdated    ChipLabVendor[]    @relation("VendorUpdatedBy")
+  labOutsourcesCreated ChipLabOutsource[] @relation("OutsourceCreatedBy")
+  labCases             Case[]             @relation("CaseLabEngineer")
+  qcChecklistCreated   QcChecklistItem[]  @relation("QcChecklistCreatedBy")
+  qcChecklistUpdated   QcChecklistItem[]  @relation("QcChecklistUpdatedBy")
+  qcResponsesAnswered  CaseQcResponse[]   @relation("QcResponseAnsweredBy")
+  labTransfersCompleted Case[]            @relation("CaseLabTransferBy")
 
   @@index([companyId])
   @@index([branchId])
@@ -423,11 +433,14 @@ model Customer {
   visitCount  Int          @default(0)
   lastVisitAt DateTime?    @db.Timestamptz
   isActive    Boolean      @default(true)
+  // The branch that registered the customer; branch users see their own (and customers they've serviced).
+  branchId    String?
   createdById String?
   updatedById String?
   createdAt   DateTime     @default(now()) @db.Timestamptz
   updatedAt   DateTime     @updatedAt @db.Timestamptz
 
+  branch           Branch?           @relation(fields: [branchId], references: [id])
   createdBy        User?             @relation("CustomerCreatedBy", fields: [createdById], references: [id])
   updatedBy        User?             @relation("CustomerUpdatedBy", fields: [updatedById], references: [id])
   cases            Case[]            @relation("CaseCustomer")
@@ -441,6 +454,7 @@ model Customer {
   @@index([name])
   @@index([createdAt])
   @@index([lastVisitAt])
+  @@index([branchId])
   @@map("customer")
 }
 
@@ -474,6 +488,16 @@ enum CaseStatus {
   READY_FOR_DELIVERY
   CLOSED
   CANCELLED
+  // Chip-Level Lab track (case keeps the same ID throughout)
+  CHIP_TRANSFER             // Branch sent to lab | Lab sees as "Incoming"
+  CHIP_LAB_RECEIVED         // Lab physically received the device
+  CHIP_LAB_DIAGNOSIS        // Lab running diagnosis
+  CHIP_LAB_PENDING_APPROVAL // Pending customer approval on lab estimate
+  CHIP_LAB_SERVICING        // Device in active repair at lab
+  CHIP_LAB_READY_DISPATCH   // Lab repair done, ready for quality check
+  CHIP_LAB_QUALITY_CHECK    // Lab QC before handing back to branch
+  CHIP_BRANCH_RECEIVED      // Branch received device back from lab
+  NON_REPAIRABLE            // Cannot be repaired (reason stored in CaseStatusHistory.note)
 }
 
 enum ItemCondition {
@@ -520,6 +544,12 @@ model Case {
   gstInvoiceRequired   Boolean        @default(false)
   expectedDeliveryDate DateTime?      @db.Date
   engineerId           String?
+  labWorkType          String?
+  labEngineerId        String?
+  labVendorId          String?
+  // Lab confirms the device was handed over to the branch (set after Transfer to Branch).
+  labTransferCompletedAt   DateTime? @db.Timestamptz
+  labTransferCompletedById String?
   createdById          String?
   updatedById          String?
   createdAt            DateTime       @default(now()) @db.Timestamptz
@@ -539,12 +569,19 @@ model Case {
   whatsappMessages WhatsAppMessage[]
   purchaseRequests PurchaseRequest[]
   feedback         CaseFeedback?
+  labOutsources    ChipLabOutsource[]
+  labEngineer      User?               @relation("CaseLabEngineer", fields: [labEngineerId], references: [id])
+  labVendor        ChipLabVendor?      @relation("CaseLabVendor", fields: [labVendorId], references: [id])
+  qcResponses      CaseQcResponse[]
+  labTransferBy    User?               @relation("CaseLabTransferBy", fields: [labTransferCompletedById], references: [id], onDelete: SetNull)
 
   @@index([branchId, status, createdAt])
   @@index([branchId, stageChangedAt])
   @@index([customerId])
   @@index([accountId])
   @@index([engineerId])
+  @@index([labEngineerId])
+  @@index([labVendorId])
   @@map("service_case") // "case" is an SQL keyword
 }
 
@@ -1027,6 +1064,99 @@ model SalesTarget {
   @@unique([branchId, period, year, month, day])
   @@index([branchId, period, year])
   @@map("sales_target")
+}
+
+// ─── Chip-Level Lab ──────────────────────────────────────────────────────────
+
+// External vendors used for chip-level outsourcing.
+model ChipLabVendor {
+  id          String   @id @default(cuid())
+  name        String
+  contactName String?
+  phone       String?
+  email       String?
+  address     String?
+  isActive    Boolean  @default(true)
+  remarks     String?
+  createdById String?
+  updatedById String?
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+
+  createdBy  User?              @relation("VendorCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy  User?              @relation("VendorUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  outsources ChipLabOutsource[]
+  labCases   Case[]             @relation("CaseLabVendor")
+
+  @@index([isActive])
+  @@map("chip_lab_vendor")
+}
+
+// Tracks one outsourced repair to an external vendor. Append-only: a case that
+// is outsourced multiple times gets multiple rows.
+model ChipLabOutsource {
+  id               String    @id @default(cuid())
+  caseId           String
+  vendorId         String
+  sentAt           DateTime  @db.Timestamptz
+  expectedReturnAt DateTime? @db.Timestamptz
+  actualReturnAt   DateTime? @db.Timestamptz
+  referenceNo      String?
+  notes            String?
+  createdById      String?
+  createdAt        DateTime  @default(now()) @db.Timestamptz
+  updatedAt        DateTime  @updatedAt @db.Timestamptz
+
+  case      Case          @relation(fields: [caseId], references: [id])
+  vendor    ChipLabVendor @relation(fields: [vendorId], references: [id])
+  createdBy User?         @relation("OutsourceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([caseId])
+  @@map("chip_lab_outsource")
+}
+
+// Master list of quality-check points verified during the lab QC stage.
+model QcChecklistItem {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdById String?
+  updatedById String?
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+
+  createdBy User?             @relation("QcChecklistCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy User?             @relation("QcChecklistUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  responses CaseQcResponse[]
+
+  @@index([isActive])
+  @@map("qc_checklist_item")
+}
+
+// One answer to one checklist point at a QC stage (branch QUALITY_CHECK or
+// CHIP_LAB_QUALITY_CHECK). Never updated: re-saving stamps removedAt on the old
+// rows and inserts new ones. A QC round counts only when answered after the
+// case entered the stage (createdAt >= Case.stageChangedAt).
+model CaseQcResponse {
+  id              String     @id @default(cuid())
+  caseId          String
+  checklistItemId String
+  stage           CaseStatus
+  title           String // checklist wording when answered
+  passed          Boolean
+  remarks         String?
+  answeredById    String?
+  createdAt       DateTime   @default(now()) @db.Timestamptz
+  removedAt       DateTime?  @db.Timestamptz
+
+  case          Case            @relation(fields: [caseId], references: [id])
+  checklistItem QcChecklistItem @relation(fields: [checklistItemId], references: [id])
+  answeredBy    User?           @relation("QcResponseAnsweredBy", fields: [answeredById], references: [id], onDelete: SetNull)
+
+  @@index([caseId, stage, removedAt])
+  @@map("case_qc_response")
 }
 
 // ─── AI Agents ────────────────────────────────────────────────────────────────

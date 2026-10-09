@@ -3,9 +3,10 @@ import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/server/db";
 import { pageArgs, type ListState } from "@/lib/list";
 import type { FilterTab } from "@/components/data/filter-tabs";
+import { customerWhere, type BranchScope } from "@/server/branch-scope";
 
-// Customers are shared by all branches (the phone is the dedupe key), so these
-// queries are not branch-scoped. Their cases are.
+// One customer record per phone number. Branch users only see their branch's
+// customers (see customerWhere); all-branch users see everyone.
 
 const contains = (q: string) => ({ contains: q, mode: "insensitive" as const });
 
@@ -19,9 +20,9 @@ const TAB_WHERE: Record<string, Prisma.CustomerWhereInput> = {
   inactive: { isActive: false },
 };
 
-export async function listCustomers(list: ListState) {
+export async function listCustomers(list: ListState, scope: BranchScope) {
   const digits = list.q.replace(/\D/g, "");
-  const search: Prisma.CustomerWhereInput = list.q
+  const textSearch: Prisma.CustomerWhereInput = list.q
     ? {
         OR: [
           { name: contains(list.q) },
@@ -32,7 +33,8 @@ export async function listCustomers(list: ListState) {
         ],
       }
     : {};
-  const where = { ...search, ...(TAB_WHERE[list.tab] ?? {}) };
+  const search: Prisma.CustomerWhereInput = { AND: [customerWhere(scope), textSearch] };
+  const where: Prisma.CustomerWhereInput = { AND: [search, TAB_WHERE[list.tab] ?? {}] };
   const orderBy: Prisma.CustomerOrderByWithRelationInput =
     list.sort === "lastVisitAt" ? { lastVisitAt: { sort: list.dir, nulls: "last" } } : { [list.sort]: list.dir };
 
@@ -40,12 +42,12 @@ export async function listCustomers(list: ListState) {
     db.customer.findMany({
       where,
       orderBy: [orderBy, { createdAt: "desc" }],
-      include: { createdBy: who, updatedBy: who },
+      include: { createdBy: who, updatedBy: who, branch: { select: { code: true, name: true } } },
       ...pageArgs(list),
     }),
     db.customer.count({ where }),
     db.customer.count({ where: search }),
-    ...(["individual", "business", "inactive"] as const).map((k) => db.customer.count({ where: { ...search, ...TAB_WHERE[k] } })),
+    ...(["individual", "business", "inactive"] as const).map((k) => db.customer.count({ where: { AND: [search, TAB_WHERE[k]!] } })),
   ]);
   const tabs: FilterTab[] = [
     { key: "", label: "All", count: all },
@@ -56,8 +58,12 @@ export async function listCustomers(list: ListState) {
   return { rows, total, tabs };
 }
 
-export const getCustomer = (id: string) =>
-  db.customer.findUnique({ where: { id }, include: { createdBy: who, updatedBy: who } });
+/** One customer, or null when it isn't in the branch scope (a 404 for branch users). */
+export const getCustomer = (id: string, scope: BranchScope) =>
+  db.customer.findFirst({
+    where: { id, ...customerWhere(scope) },
+    include: { createdBy: who, updatedBy: who, branch: { select: { code: true, name: true } } },
+  });
 
 /** The customer's latest cases in the branch scope. */
 export const listCustomerCases = (customerId: string, scope: { branchId?: string }) =>
@@ -106,7 +112,8 @@ export const listBusinessAccounts = () =>
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
-export async function getCustomerDashboardStats() {
+export async function getCustomerDashboardStats(scope: BranchScope) {
+  const cw = customerWhere(scope);
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
@@ -114,24 +121,25 @@ export async function getCustomerDashboardStats() {
 
   const [total, newThisMonth, business, atRisk, repeatLast30, bySource, topByVisits, recentCustomers] =
     await Promise.all([
-      db.customer.count({ where: { isActive: true } }),
-      db.customer.count({ where: { createdAt: { gte: startOfMonth }, isActive: true } }),
-      db.customer.count({ where: { type: "BUSINESS", isActive: true } }),
-      db.customer.count({ where: { isActive: true, lastVisitAt: { lt: ninetyDaysAgo, not: null } } }),
-      db.customer.count({ where: { isActive: true, lastVisitAt: { gte: thirtyDaysAgo }, visitCount: { gt: 1 } } }),
+      db.customer.count({ where: { ...cw, isActive: true } }),
+      db.customer.count({ where: { ...cw, createdAt: { gte: startOfMonth }, isActive: true } }),
+      db.customer.count({ where: { ...cw, type: "BUSINESS", isActive: true } }),
+      db.customer.count({ where: { ...cw, isActive: true, lastVisitAt: { lt: ninetyDaysAgo, not: null } } }),
+      db.customer.count({ where: { ...cw, isActive: true, lastVisitAt: { gte: thirtyDaysAgo }, visitCount: { gt: 1 } } }),
       db.customer.groupBy({
         by: ["source"],
-        where: { isActive: true, source: { not: null } },
+        where: { ...cw, isActive: true, source: { not: null } },
         _count: { id: true },
         orderBy: { _count: { id: "desc" } },
       }),
       db.customer.findMany({
-        where: { isActive: true, visitCount: { gt: 1 } },
+        where: { ...cw, isActive: true, visitCount: { gt: 1 } },
         orderBy: { visitCount: "desc" },
         take: 8,
         select: { id: true, code: true, name: true, phone: true, visitCount: true, lastVisitAt: true, type: true },
       }),
       db.customer.findMany({
+        where: cw,
         orderBy: { createdAt: "desc" },
         take: 6,
         select: { id: true, code: true, name: true, phone: true, type: true, source: true, createdAt: true },
@@ -175,7 +183,7 @@ export async function getCsWorkspaceData(scope: { branchId?: string }) {
       select: caseWorkspaceSelect,
     }),
     db.customer.findMany({
-      where: { isActive: true, lastVisitAt: { lt: sixtyDaysAgo, not: null } },
+      where: { ...customerWhere({ branchId: scope.branchId ?? null }), isActive: true, lastVisitAt: { lt: sixtyDaysAgo, not: null } },
       orderBy: { lastVisitAt: "asc" },
       take: 20,
       select: { id: true, code: true, name: true, phone: true, lastVisitAt: true, visitCount: true },

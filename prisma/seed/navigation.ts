@@ -68,6 +68,8 @@ export const MODULES: ModuleDef[] = [
         icon: "boxes",
         items: [
           { title: "Items", path: "/service/items", icon: "package" },
+          { title: "Vendors", path: "/service/lab/vendors", icon: "users", roles: [CHIP], approve: [CHIP] },
+          { title: "QC Checklist", path: "/service/qc-checklist", icon: "clipboard-check", roles: [CHIP], approve: [CHIP] },
           { title: "TAT Configuration", path: "/service/tat-config", icon: "timer", roles: [] }, // Admin only
         ],
       },

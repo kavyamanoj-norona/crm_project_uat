@@ -38,7 +38,7 @@ export default async function CustomerDetailsPage({ params, searchParams }: Page
   const scope = await getBranchScope(user);
 
   const [customer, cases, history, casesPermission] = await Promise.all([
-    getCustomer(id),
+    getCustomer(id, scope),
     listCustomerCases(id, branchWhere(scope)),
     listRecordHistory(list, id),
     getMenuPermission(user, SERVICE_PATHS.cases),

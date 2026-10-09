@@ -18,11 +18,13 @@ type StageRailProps = {
   stoppedLabel?: string;
   /** Caption under the current stage when not stopped. */
   currentLabel?: string;
+  /** Every stage is finished, including the last one. */
+  complete?: boolean;
 };
 
 /** Lifecycle stepper: ✓ done · ● current · icon upcoming, joined by a progress line. */
-export function StageRail({ stages, current, stoppedLabel, currentLabel = "In progress" }: StageRailProps) {
-  const at = stages.findIndex((s) => s.key === current);
+export function StageRail({ stages, current, stoppedLabel, currentLabel = "In progress", complete = false }: StageRailProps) {
+  const at = complete ? stages.length : stages.findIndex((s) => s.key === current);
 
   return (
     <ol className="flex overflow-x-auto pb-1" aria-label="Stages">

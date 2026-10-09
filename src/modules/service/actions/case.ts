@@ -13,7 +13,9 @@ import type { RevealResult } from "@/components/ui/secret-reveal";
 import { FieldError, handleActionError } from "@/server/prisma-errors";
 import { formatPaise } from "@/lib/money";
 import { minPricePaise } from "@/lib/pricing";
+import { qcBlockReason } from "../qc-response-queries";
 import {
+  CASE_FLOW,
   CASE_STATUS_LABELS,
   ESTIMATE_EDITABLE,
   cancelSchema,
@@ -22,6 +24,7 @@ import {
   isOpenStatus,
   nextStage,
   stageChangeSchema,
+  transferToChipSchema,
   type CaseStatusValue,
 } from "../case-schema";
 import { SERVICE_PATHS } from "../paths";
@@ -67,6 +70,10 @@ export async function moveCaseToNextStage(caseId: string): Promise<ActionResult>
     if (row.status === "INTAKE") return { ok: false, message: "Use Start diagnosis to assign an engineer and add items." };
     const to = nextStage(row.status);
     if (!to) return { ok: false, message: "This case has no next stage." };
+    if (row.status === "QUALITY_CHECK") {
+      const blocked = await qcBlockReason(caseId, "QUALITY_CHECK");
+      if (blocked) return { ok: false, message: blocked };
+    }
     if (!(await applyStage(caseId, row.status, to, null, user.id, scope))) return { ok: false, message: STALE };
     return { ok: true, message: `Moved to ${CASE_STATUS_LABELS[to]}.` };
   } catch (e) {
@@ -87,6 +94,11 @@ export async function changeCaseStage(caseId: string, _prev: FormState, formData
     if (row.status === "INTAKE") return { message: "Use Start diagnosis to assign an engineer and add items." };
     const { toStatus, note } = parsed.data;
     if (toStatus === row.status) return { message: "The case is already in that stage.", fieldErrors: { toStatus: ["Pick a different stage"] } };
+    // Moving forward out of Quality Check needs the checklist; stepping back doesn't.
+    if (row.status === "QUALITY_CHECK" && CASE_FLOW.indexOf(toStatus) > CASE_FLOW.indexOf("QUALITY_CHECK")) {
+      const blocked = await qcBlockReason(caseId, "QUALITY_CHECK");
+      if (blocked) return { message: blocked };
+    }
     if (!(await applyStage(caseId, row.status, toStatus, note, user.id, scope))) return { message: STALE };
     return { ok: true, message: `Moved to ${CASE_STATUS_LABELS[toStatus]}.` };
   } catch (e) {
@@ -198,6 +210,61 @@ export async function saveCaseFeedback(caseId: string, _prev: FormState, formDat
   }
 }
 
+// ── Branch-side chip-level actions ───────────────────────────────────────────
+
+/** Branch sends a case to the chip-level lab: DIAGNOSIS → CHIP_TRANSFER */
+export async function transferToChipLab(caseId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const parsed = transferToChipSchema.safeParse(pick(formData, ["note"]));
+  if (!parsed.success) return toFieldErrors(parsed.error, formData);
+  try {
+    const user = await requireActionPermission(SERVICE_PATHS.cases, "canEdit");
+    const { row, scope } = await scopedCase(caseId, user);
+    if (!row) return { message: "Case not found." };
+    if (row.status !== "DIAGNOSIS") return { message: "Only cases in Diagnosis can be transferred to chip-level lab." };
+    if (!(await applyStage(caseId, "DIAGNOSIS", "CHIP_TRANSFER", parsed.data.note ?? "Transferred to chip-level lab", user.id, scope)))
+      return { message: "Someone else changed this case just now. Refresh to see its current stage." };
+    return { ok: true, message: "Case transferred to chip-level lab." };
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { message: e.message };
+    throw e;
+  }
+}
+
+/** Branch confirms receipt of a device back from the lab: CHIP_BRANCH_RECEIVED → QUALITY_CHECK */
+export async function receiveFromChipLab(caseId: string): Promise<ActionResult> {
+  try {
+    const user = await requireActionPermission(SERVICE_PATHS.cases, "canEdit");
+    const { row, scope } = await scopedCase(caseId, user);
+    if (!row) return { ok: false, message: "Case not found." };
+    if (row.status !== "CHIP_BRANCH_RECEIVED") return { ok: false, message: "Case has not been dispatched from the lab yet." };
+    if (!(await applyStage(caseId, "CHIP_BRANCH_RECEIVED", "QUALITY_CHECK", "Device received from chip-level lab", user.id, scope)))
+      return { ok: false, message: "Someone else changed this case just now. Refresh to see its current stage." };
+    return { ok: true, message: "Device received — moved to Quality Check." };
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { ok: false, message: e.message };
+    throw e;
+  }
+}
+
+/** Branch fails QC and sends the device back to the lab: QUALITY_CHECK → CHIP_TRANSFER */
+export async function sendBackToChipLab(caseId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const note = formData.get("note")?.toString()?.trim() || null;
+  try {
+    const user = await requireActionPermission(SERVICE_PATHS.cases, "canEdit");
+    const { row, scope } = await scopedCase(caseId, user);
+    if (!row) return { message: "Case not found." };
+    if (row.status !== "QUALITY_CHECK") return { message: "Case must be in Quality Check to send back to the lab." };
+    const beenToLab = (await db.caseStatusHistory.count({ where: { caseId, toStatus: "CHIP_TRANSFER" } })) > 0;
+    const defaultNote = beenToLab ? "QC failed — sent back to chip-level lab" : "Issue found at quality check — sent to chip-level lab";
+    if (!(await applyStage(caseId, "QUALITY_CHECK", "CHIP_TRANSFER", note ?? defaultNote, user.id, scope)))
+      return { message: "Someone else changed this case just now. Refresh to see its current stage." };
+    return { ok: true, message: beenToLab ? "Case sent back to chip-level lab." : "Case sent to chip-level lab." };
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { message: e.message };
+    throw e;
+  }
+}
+
 /** Quick-assign (or reassign) the engineer on any open case. */
 export async function assignEngineer(caseId: string, _prev: FormState, formData: FormData): Promise<FormState> {
   const engineerId = String(formData.get("engineerId") ?? "").trim();
@@ -243,7 +310,7 @@ export async function getBranchStaffOptions(branchId: string): Promise<{ value: 
   }
 }
 
-const ESTIMATE_FIELDS = ["engineerId", "expectedDeliveryDate", "gstInvoiceRequired", "note", "items", "advanceAmount", "advanceMode"];
+const ESTIMATE_FIELDS = ["engineerId", "chipLevel", "expectedDeliveryDate", "gstInvoiceRequired", "note", "items", "advanceAmount", "advanceMode"];
 
 /**
  * "Start diagnosis" (mode start: Intake → Diagnosis) and "Edit items" (mode
@@ -304,11 +371,14 @@ export async function saveEstimate(caseId: string, mode: "start" | "edit", _prev
     const total = lines.reduce((sum, l) => sum + l.lineTotalPaise, 0);
     const now = new Date();
 
+    // When the technician marks chip-level at intake, skip branch diagnosis entirely.
+    const targetStatus = mode === "start" && data.chipLevel ? "CHIP_TRANSFER" : "DIAGNOSIS";
+
     const saved = await db.$transaction(async (tx) => {
       const { count } = await tx.case.updateMany({
         where: { id: caseId, status: c.status, ...scope },
         data: {
-          ...(mode === "start" ? { status: "DIAGNOSIS" as const, stageChangedAt: now } : {}),
+          ...(mode === "start" ? { status: targetStatus, stageChangedAt: now } : {}),
           engineerId: data.engineerId,
           expectedDeliveryDate: data.expectedDeliveryDate,
           gstInvoiceRequired: data.gstInvoiceRequired,
@@ -322,7 +392,7 @@ export async function saveEstimate(caseId: string, mode: "start" | "edit", _prev
       if (lines.length) await tx.caseItem.createMany({ data: lines });
       if (mode === "start") {
         await tx.caseStatusHistory.create({
-          data: { caseId, fromStatus: "INTAKE", toStatus: "DIAGNOSIS", note: data.note, changedById: user.id, at: now },
+          data: { caseId, fromStatus: "INTAKE", toStatus: targetStatus, note: data.note, changedById: user.id, at: now },
         });
       }
       return true;
@@ -344,15 +414,24 @@ export async function saveEstimate(caseId: string, mode: "start" | "edit", _prev
     }
 
     const summary = `${lines.length} ${lines.length === 1 ? "item" : "items"}, ${formatPaise(total)}`;
+    const isChipRoute = mode === "start" && data.chipLevel;
     await logActivity({
       action: mode === "start" ? "case.stage" : "case.estimate",
       userId: user.id,
       entity: "Case",
       entityId: caseId,
-      detail: mode === "start" ? `INTAKE → DIAGNOSIS (${summary})` : summary,
+      detail: isChipRoute ? `INTAKE → CHIP_TRANSFER (chip-level service, ${summary})` : mode === "start" ? `INTAKE → DIAGNOSIS (${summary})` : summary,
     });
     revalidatePath(SERVICE_PATHS.cases, "layout");
-    return { ok: true, message: mode === "start" ? `Diagnosis started · estimate ${formatPaise(total)}.` : `Items saved · estimate ${formatPaise(total)}.` };
+    if (isChipRoute) revalidatePath(SERVICE_PATHS.lab, "layout");
+    return {
+      ok: true,
+      message: isChipRoute
+        ? `Transferred to chip-level lab · estimate ${formatPaise(total)}.`
+        : mode === "start"
+          ? `Diagnosis started · estimate ${formatPaise(total)}.`
+          : `Items saved · estimate ${formatPaise(total)}.`,
+    };
   } catch (e) {
     return handleActionError(e, {}, formData);
   }
