@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { ListView } from "@/components/data/list-view";
 import { listState } from "@/lib/list";
 import { saveBlockedIp } from "@/modules/admin/actions/save";
-import { toggleActive } from "@/modules/admin/actions/toggle";
+import { deleteRecord } from "@/modules/admin/actions/toggle";
 import { AdminPage, param } from "@/modules/admin/components/admin-page";
 import { EntityForm, type FieldConfig } from "@/modules/admin/components/entity-form";
 import { RowActions } from "@/modules/admin/components/row-actions";
@@ -79,8 +79,7 @@ export default async function BlockedIpsPage({ searchParams }: PageProps<"/admin
               permission.canEdit && (
                 <RowActions
                   editHref={`${ADMIN_PATHS.blockedIps}?edit=${r.id}`}
-                  toggle={toggleActive.bind(null, "blockedIp", r.id)}
-                  active={r.isActive}
+                  remove={deleteRecord.bind(null, "blockedIp", r.id)}
                 />
               ),
           },

@@ -8,7 +8,7 @@ import { formatDate } from "@/lib/dates";
 import { formatPhone } from "@/lib/phone";
 import { AdminPage, param } from "@/modules/admin/components/admin-page";
 import { RowActions } from "@/modules/admin/components/row-actions";
-import { saveCustomer, toggleCustomerActive } from "@/modules/customers/actions";
+import { saveCustomer, deleteCustomer } from "@/modules/customers/actions";
 import { CustomerForm, type CustomerFormValues } from "@/modules/customers/components/customer-form";
 import { CUSTOMER_PATHS } from "@/modules/customers/paths";
 import { CUSTOMER_SORTS, getCustomer, listCustomers } from "@/modules/customers/queries";
@@ -124,8 +124,7 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
             cell: (c) => (
               <RowActions
                 editHref={permission.canEdit ? `${CUSTOMER_PATHS.database}?edit=${c.id}` : undefined}
-                toggle={permission.canEdit ? toggleCustomerActive.bind(null, c.id) : undefined}
-                active={c.isActive}
+                remove={permission.canEdit ? deleteCustomer.bind(null, c.id) : undefined}
               >
                 <Link href={`${CUSTOMER_PATHS.database}/${c.id}`} className={iconLink} aria-label="View" title="View">
                   <Eye className="size-4" />

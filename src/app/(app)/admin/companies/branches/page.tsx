@@ -3,7 +3,7 @@ import { ActiveBadge, Badge } from "@/components/ui/badge";
 import { ListView } from "@/components/data/list-view";
 import { listState } from "@/lib/list";
 import { saveBranch } from "@/modules/admin/actions/save";
-import { toggleActive } from "@/modules/admin/actions/toggle";
+import { deleteRecord } from "@/modules/admin/actions/toggle";
 import { AdminPage, param } from "@/modules/admin/components/admin-page";
 import { CompanyTabs } from "@/modules/admin/components/company-tabs";
 import { EntityForm, type FieldConfig } from "@/modules/admin/components/entity-form";
@@ -150,8 +150,7 @@ export default async function BranchesPage({ searchParams }: PageProps<"/admin/c
               permission.canEdit && (
                 <RowActions
                   editHref={`${ADMIN_PATHS.branches}?edit=${r.id}`}
-                  toggle={toggleActive.bind(null, "branch", r.id)}
-                  active={r.isActive}
+                  remove={deleteRecord.bind(null, "branch", r.id)}
                 />
               ),
           },

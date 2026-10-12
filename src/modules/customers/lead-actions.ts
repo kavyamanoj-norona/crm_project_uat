@@ -106,22 +106,17 @@ export async function convertLead(id: string): Promise<ActionResult> {
   }
 }
 
-/** Leads are never deleted — they are closed (and can be reopened). */
-export async function toggleLeadActive(id: string): Promise<ActionResult> {
+/** Soft delete — sets `isDelete = 1`; the lead stays in the database. */
+export async function deleteLead(id: string): Promise<ActionResult> {
   try {
     const actor = await requireActionPermission(CUSTOMER_PATHS.leads, "canEdit");
     const row = await getLeadInScope(id, await getBranchScope(actor));
     if (!row) return { ok: false, message: "Lead not found." };
-    await db.customer.update({ where: { id }, data: { isActive: !row.isActive, updatedById: actor.id } });
-    await logActivity({
-      action: `lead.${row.isActive ? "close" : "reopen"}`,
-      userId: actor.id,
-      entity: "Customer",
-      entityId: id,
-    });
+    await db.customer.update({ where: { id }, data: { isDelete: 1, updatedById: actor.id } });
+    await logActivity({ action: "lead.delete", userId: actor.id, entity: "Customer", entityId: id });
     revalidatePath(CUSTOMER_PATHS.leads, "layout");
     revalidatePath(CUSTOMER_PATHS.leadReports, "layout");
-    return { ok: true, message: row.isActive ? "Lead closed." : "Lead reopened." };
+    return { ok: true, message: "Lead deleted." };
   } catch (e) {
     if (e instanceof ForbiddenError) return { ok: false, message: e.message };
     throw e;

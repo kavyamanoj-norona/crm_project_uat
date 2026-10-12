@@ -5,9 +5,10 @@ import { db } from "@/server/db";
 import { Badge } from "@/components/ui/badge";
 import { ListView } from "@/components/data/list-view";
 import { listState } from "@/lib/list";
-import { changeUserPassword, saveUser, toggleUserFlag } from "@/modules/admin/actions/users";
+import { changeUserPassword, deleteUser, saveUser, toggleUserFlag } from "@/modules/admin/actions/users";
 import { PasswordDialog } from "@/modules/admin/components/password-dialog";
 import { AdminPage, param } from "@/modules/admin/components/admin-page";
+import { DeleteButton } from "@/components/ui/delete-button";
 import { FlagToggle } from "@/modules/admin/components/flag-toggle";
 import { UserForm, type UserFormValues } from "@/modules/admin/components/user-form";
 import { ADMIN_PATHS } from "@/modules/admin/paths";
@@ -173,6 +174,7 @@ export default async function UsersPage({ searchParams }: PageProps<"/admin/user
                     <Link href={`${ADMIN_PATHS.users}?edit=${u.id}`} className={iconLink} aria-label="Edit" title="Edit">
                       <Pencil className="size-4" />
                     </Link>
+                    {u.id !== me.id && <DeleteButton action={deleteUser.bind(null, u.id)} />}
                     <PasswordDialog
                       userName={fullName(u)}
                       action={changeUserPassword.bind(null, u.id)}

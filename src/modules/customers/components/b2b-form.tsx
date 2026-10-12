@@ -54,7 +54,7 @@ export function B2bForm({ action, initial, id, cancelHref }: B2bFormProps) {
         <Field label="Contact person" htmlFor="contactPerson" error={errors.contactPerson}>
           <Input {...f("contactPerson")} placeholder="Enter contact person" />
         </Field>
-        <Field label="Phone" htmlFor="phone" required error={errors.phone} hint="Mobile, or landline with STD code">
+        <Field label="Mobile" htmlFor="phone" required error={errors.phone} hint="Mobile, or landline with STD code">
           <Input {...f("phone")} type="tel" inputMode="tel" placeholder="Enter phone number" />
         </Field>
         <Field label="Alt phone" htmlFor="altPhone" error={errors.altPhone}>

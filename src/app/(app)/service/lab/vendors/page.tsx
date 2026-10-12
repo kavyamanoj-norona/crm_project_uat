@@ -7,10 +7,11 @@ import { listState } from "@/lib/list";
 import { formatDate } from "@/lib/dates";
 import { requirePageAccess } from "@/server/rbac/guard";
 import { AdminPage, param } from "@/modules/admin/components/admin-page";
+import { DeleteButton } from "@/components/ui/delete-button";
 import { FlagToggle } from "@/modules/admin/components/flag-toggle";
 import { SERVICE_PATHS } from "@/modules/service/paths";
 import { VENDOR_SORTS, listVendorsPage, type VendorPageRow } from "@/modules/service/chip-lab-queries";
-import { saveVendor, toggleVendorActive } from "@/modules/service/actions/vendor";
+import { deleteVendor, saveVendor, toggleVendorActive } from "@/modules/service/actions/vendor";
 import { VendorForm, type VendorFormValues } from "@/modules/service/components/vendor-form";
 
 export const metadata = { title: "Vendors" };
@@ -108,6 +109,7 @@ export default async function VendorsPage({ searchParams }: PageProps<"/service/
                       >
                         <Pencil className="size-4" />
                       </Link>
+                      <DeleteButton action={deleteVendor.bind(null, v.id)} />
                     </span>
                   ),
                 },

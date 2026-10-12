@@ -50,15 +50,34 @@ export async function saveVendor(_prev: FormState, formData: FormData): Promise<
   redirect(`${SERVICE_PATHS.vendors}?saved=${Date.now()}${id ? "" : `&highlight=${savedId}`}`);
 }
 
+/** Soft delete — sets `isDelete = 1`. */
+export async function deleteVendor(id: string): Promise<ActionResult> {
+  try {
+    const user = await requireActionPermission(SERVICE_PATHS.vendors, "canEdit");
+    const vendor = await db.chipLabVendor.findUnique({ where: { id }, select: { name: true } });
+    if (!vendor) return { ok: false, message: "Vendor not found." };
+    await db.chipLabVendor.update({ where: { id }, data: { isDelete: 1, updatedById: user.id } });
+    await logActivity({
+      action: "vendor.delete",
+      userId: user.id,
+      entity: "ChipLabVendor",
+      entityId: id,
+      detail: `Deleted: ${vendor.name}`,
+    });
+    revalidatePath(SERVICE_PATHS.vendors);
+    return { ok: true, message: "Vendor deleted." };
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { ok: false, message: e.message };
+    throw e;
+  }
+}
+
 export async function toggleVendorActive(id: string): Promise<ActionResult> {
   try {
     const user = await requireActionPermission(SERVICE_PATHS.vendors, "canEdit");
     const vendor = await db.chipLabVendor.findUnique({ where: { id }, select: { isActive: true, name: true } });
     if (!vendor) return { ok: false, message: "Vendor not found." };
-    await db.chipLabVendor.update({
-      where: { id },
-      data: { isActive: !vendor.isActive, updatedById: user.id },
-    });
+    await db.chipLabVendor.update({ where: { id }, data: { isActive: !vendor.isActive, updatedById: user.id } });
     await logActivity({
       action: "vendor.toggle",
       userId: user.id,

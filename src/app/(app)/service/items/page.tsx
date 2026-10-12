@@ -6,7 +6,7 @@ import { listState } from "@/lib/list";
 import { formatPaise, paiseToInput } from "@/lib/money";
 import { minPricePaise } from "@/lib/pricing";
 import { saveItem } from "@/modules/admin/actions/save";
-import { toggleActive } from "@/modules/admin/actions/toggle";
+import { deleteRecord } from "@/modules/admin/actions/toggle";
 import { AdminPage, param } from "@/modules/admin/components/admin-page";
 import { EntityForm, type FieldConfig } from "@/modules/admin/components/entity-form";
 import { RowActions } from "@/modules/admin/components/row-actions";
@@ -112,8 +112,7 @@ export default async function ItemsPage({ searchParams }: PageProps<"/service/it
               permission.canEdit && (
                 <RowActions
                   editHref={`${SERVICE_PATHS.items}?edit=${r.id}`}
-                  toggle={toggleActive.bind(null, "item", r.id)}
-                  active={r.isActive}
+                  remove={deleteRecord.bind(null, "item", r.id)}
                 />
               ),
           },

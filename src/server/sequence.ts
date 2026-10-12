@@ -1,6 +1,5 @@
 import "server-only";
-import type { Prisma } from "@/generated/prisma/client";
-import { db } from "@/server/db";
+import { db, type Tx } from "@/server/db";
 
 /**
  * Next value of the counter `key`, starting at 1. A single
@@ -8,7 +7,7 @@ import { db } from "@/server/db";
  * number. Call it with the transaction client of the save that uses the number:
  * if that save rolls back, so does the increment.
  */
-export async function nextSequence(tx: Prisma.TransactionClient, key: string): Promise<number> {
+export async function nextSequence(tx: Tx, key: string): Promise<number> {
   const rows = await tx.$queryRaw<{ value: number }[]>`
     INSERT INTO "number_sequence" ("key", "value", "updatedAt")
     VALUES (${key}, 1, now())

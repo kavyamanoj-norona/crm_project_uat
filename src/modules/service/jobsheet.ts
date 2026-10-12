@@ -1,5 +1,5 @@
 import "server-only";
-import type { Prisma } from "@/generated/prisma/client";
+import type { Tx } from "@/server/db";
 import { nextSequence, peekSequence } from "@/server/sequence";
 
 // Jobsheet numbers: LC-{BRANCH}-{YYMM}-{SEQ}, e.g. LC-EDP-2607-0144 (blueprint §11).
@@ -27,7 +27,7 @@ const sequenceKey = (branchCode: string, period: string) => `JOBSHEET:${branchCo
  * Takes the next jobsheet number for a branch. Must run inside the transaction
  * that creates the case, so a failed save doesn't burn a number.
  */
-export async function nextJobsheetNo(tx: Prisma.TransactionClient, branchCode: string, date: Date = new Date()) {
+export async function nextJobsheetNo(tx: Tx, branchCode: string, date: Date = new Date()) {
   const period = jobsheetPeriod(date);
   return formatJobsheetNo(branchCode, period, await nextSequence(tx, sequenceKey(branchCode, period)));
 }

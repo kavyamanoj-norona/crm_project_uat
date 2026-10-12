@@ -10,7 +10,7 @@ import { formatPhone } from "@/lib/phone";
 import { AdminPage, param } from "@/modules/admin/components/admin-page";
 import { EntityForm, type FieldConfig } from "@/modules/admin/components/entity-form";
 import { RowActions } from "@/modules/admin/components/row-actions";
-import { convertLeadWithConfirm, saveLead, toggleLeadActive } from "@/modules/customers/lead-actions";
+import { convertLeadWithConfirm, saveLead, deleteLead } from "@/modules/customers/lead-actions";
 import { LEAD_SORTS, getLead, listLeads } from "@/modules/customers/lead-queries";
 import { CUSTOMER_PATHS } from "@/modules/customers/paths";
 import { LEAD_SOURCE_LABELS, leadEntrySourceOptions } from "@/modules/customers/schemas";
@@ -148,8 +148,7 @@ export default async function LeadsPage({ searchParams }: PageProps<"/customers/
               ) : (
                 <RowActions
                   editHref={permission.canEdit ? `${CUSTOMER_PATHS.leads}?edit=${l.id}` : undefined}
-                  toggle={permission.canEdit ? toggleLeadActive.bind(null, l.id) : undefined}
-                  active={l.isActive}
+                  remove={permission.canEdit ? deleteLead.bind(null, l.id) : undefined}
                 >
                   {permission.canEdit && l.isActive && (
                     <ActionDialog

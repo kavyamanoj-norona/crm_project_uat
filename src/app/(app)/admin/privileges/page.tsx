@@ -3,7 +3,7 @@ import { ActiveBadge, Badge } from "@/components/ui/badge";
 import { ListView } from "@/components/data/list-view";
 import { listState } from "@/lib/list";
 import { savePrivilege } from "@/modules/admin/actions/save";
-import { toggleActive } from "@/modules/admin/actions/toggle";
+import { deleteRecord } from "@/modules/admin/actions/toggle";
 import { AdminPage, param } from "@/modules/admin/components/admin-page";
 import { EntityForm, type FieldConfig } from "@/modules/admin/components/entity-form";
 import { PrivilegeActionsCell } from "@/modules/admin/components/privilege-actions-cell";
@@ -100,8 +100,7 @@ export default async function PrivilegesPage({ searchParams }: PageProps<"/admin
                 privilegeName={r.name}
                 isSuperAdmin={r.isSuperAdmin}
                 editHref={permission.canEdit ? `${ADMIN_PATHS.privileges}?edit=${r.id}` : undefined}
-                toggle={permission.canEdit ? toggleActive.bind(null, "privilege", r.id) : undefined}
-                active={r.isActive}
+                remove={permission.canEdit ? deleteRecord.bind(null, "privilege", r.id) : undefined}
                 canEdit={permission.canEdit}
                 permissionsHref={`${ADMIN_PATHS.privileges}/${r.id}`}
               />

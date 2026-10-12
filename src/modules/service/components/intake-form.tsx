@@ -208,9 +208,12 @@ function CustomerFields({
   const [coords, setCoords] = useState({ lat: v.siteLatitude ?? "", lng: v.siteLongitude ?? "" });
   const [locating, setLocating] = useState(false);
   const [locateError, setLocateError] = useState("");
+  const [phone, setPhone] = useState(v.phone ?? "");
 
   const onPhone = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const digits = normalizePhone(e.target.value);
+    const raw = e.target.value.replace(/\D/g, "").slice(0, 10);
+    setPhone(raw);
+    const digits = normalizePhone(raw);
     if (!isValidPhone(digits)) {
       lastLookup.current = "";
       setMatch(undefined);
@@ -255,8 +258,19 @@ function CustomerFields({
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       <div>
-        <Field label="Phone" htmlFor="phone" required error={errors.phone}>
-          <Input {...f("phone")} type="tel" inputMode="tel" autoComplete="off" placeholder="Enter phone number" onChange={onPhone} autoFocus />
+        <Field label="Mobile" htmlFor="phone" required error={errors.phone}>
+          <Input
+            {...f("phone")}
+            defaultValue={undefined}
+            value={phone}
+            type="tel"
+            inputMode="numeric"
+            maxLength={10}
+            autoComplete="off"
+            placeholder="Enter mobile number"
+            onChange={onPhone}
+            autoFocus
+          />
         </Field>
         {!errors.phone && (
           <p className="mt-1 flex items-center gap-1 text-xs" aria-live="polite">
@@ -284,7 +298,7 @@ function CustomerFields({
       <Field label="Email" htmlFor="email" required error={errors.email}>
         <Input {...f("email")} type="email" autoComplete="off" />
       </Field>
-      <Field label="Alt phone" htmlFor="altPhone" error={errors.altPhone}>
+      <Field label="Alt mobile" htmlFor="altPhone" error={errors.altPhone}>
         <Input {...f("altPhone")} type="tel" inputMode="tel" autoComplete="off" />
       </Field>
       <Field label="Company account (B2B)" htmlFor="accountId" error={errors.accountId}>

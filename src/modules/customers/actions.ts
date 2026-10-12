@@ -68,24 +68,19 @@ export async function saveCustomer(_prev: FormState, formData: FormData): Promis
   redirect(`${CUSTOMER_PATHS.database}?saved=${Date.now()}&highlight=${savedId}`);
 }
 
-/** Customers are never deleted — they are switched off. */
-export async function toggleCustomerActive(id: string): Promise<ActionResult> {
+/** Soft delete — sets `isDelete = 1`; the customer stays in the database. */
+export async function deleteCustomer(id: string): Promise<ActionResult> {
   try {
     const actor = await requireActionPermission(CUSTOMER_PATHS.database, "canEdit");
     const row = await db.customer.findFirst({
       where: { id, ...customerWhere(await getBranchScope(actor)) },
-      select: { isActive: true },
+      select: { id: true },
     });
     if (!row) return { ok: false, message: "Customer not found." };
-    await db.customer.update({ where: { id }, data: { isActive: !row.isActive, updatedById: actor.id } });
-    await logActivity({
-      action: `customer.${row.isActive ? "deactivate" : "activate"}`,
-      userId: actor.id,
-      entity: "Customer",
-      entityId: id,
-    });
+    await db.customer.update({ where: { id }, data: { isDelete: 1, updatedById: actor.id } });
+    await logActivity({ action: "customer.delete", userId: actor.id, entity: "Customer", entityId: id });
     revalidatePath(CUSTOMER_PATHS.database, "layout");
-    return { ok: true, message: row.isActive ? "Customer deactivated." : "Customer activated." };
+    return { ok: true, message: "Customer deleted." };
   } catch (e) {
     if (e instanceof ForbiddenError) return { ok: false, message: e.message };
     throw e;

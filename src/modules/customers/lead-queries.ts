@@ -106,17 +106,17 @@ export async function getLeadReport(scope: BranchScope) {
              count("convertedAt") AS converted,
              count(*) FILTER (WHERE kind = 'LEAD' AND "isActive") AS open
       FROM customer
-      WHERE "leadCode" IS NOT NULL ${branchCond}
+      WHERE "isDelete" = 0 AND "leadCode" IS NOT NULL ${branchCond}
       GROUP BY 1 ORDER BY 1 DESC`),
     db.$queryRaw<{ month: string; n: bigint }[]>(Prisma.sql`
       SELECT to_char("convertedAt" AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM') AS month, count(*) AS n
       FROM customer
-      WHERE "leadCode" IS NOT NULL AND "convertedAt" IS NOT NULL ${branchCond}
+      WHERE "isDelete" = 0 AND "leadCode" IS NOT NULL AND "convertedAt" IS NOT NULL ${branchCond}
       GROUP BY 1`),
     db.$queryRaw<{ source: string | null; total: bigint; converted: bigint }[]>(Prisma.sql`
       SELECT source::text AS source, count(*) AS total, count("convertedAt") AS converted
       FROM customer
-      WHERE "leadCode" IS NOT NULL ${branchCond}
+      WHERE "isDelete" = 0 AND "leadCode" IS NOT NULL ${branchCond}
       GROUP BY 1 ORDER BY 2 DESC`),
   ]);
 

@@ -53,15 +53,34 @@ export async function saveQcChecklistItem(_prev: FormState, formData: FormData):
   redirect(`${SERVICE_PATHS.qcChecklist}?saved=${Date.now()}${id ? "" : `&highlight=${savedId}`}`);
 }
 
+/** Soft delete — sets `isDelete = 1`. */
+export async function deleteQcChecklistItem(id: string): Promise<ActionResult> {
+  try {
+    const user = await requireActionPermission(SERVICE_PATHS.qcChecklist, "canEdit");
+    const item = await db.qcChecklistItem.findUnique({ where: { id }, select: { title: true } });
+    if (!item) return { ok: false, message: "Checklist item not found." };
+    await db.qcChecklistItem.update({ where: { id }, data: { isDelete: 1, updatedById: user.id } });
+    await logActivity({
+      action: "qc-checklist.delete",
+      userId: user.id,
+      entity: "QcChecklistItem",
+      entityId: id,
+      detail: `Deleted: ${item.title}`,
+    });
+    revalidatePath(SERVICE_PATHS.qcChecklist);
+    return { ok: true, message: "Checklist item deleted." };
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { ok: false, message: e.message };
+    throw e;
+  }
+}
+
 export async function toggleQcChecklistActive(id: string): Promise<ActionResult> {
   try {
     const user = await requireActionPermission(SERVICE_PATHS.qcChecklist, "canEdit");
     const item = await db.qcChecklistItem.findUnique({ where: { id }, select: { isActive: true, title: true } });
     if (!item) return { ok: false, message: "Checklist item not found." };
-    await db.qcChecklistItem.update({
-      where: { id },
-      data: { isActive: !item.isActive, updatedById: user.id },
-    });
+    await db.qcChecklistItem.update({ where: { id }, data: { isActive: !item.isActive, updatedById: user.id } });
     await logActivity({
       action: "qc-checklist.toggle",
       userId: user.id,

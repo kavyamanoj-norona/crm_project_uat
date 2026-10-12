@@ -7,10 +7,11 @@ import { listState } from "@/lib/list";
 import { formatDate } from "@/lib/dates";
 import { requirePageAccess } from "@/server/rbac/guard";
 import { AdminPage, param } from "@/modules/admin/components/admin-page";
+import { DeleteButton } from "@/components/ui/delete-button";
 import { FlagToggle } from "@/modules/admin/components/flag-toggle";
 import { SERVICE_PATHS } from "@/modules/service/paths";
 import { QC_CHECKLIST_SORTS, listQcChecklistPage, type QcChecklistPageRow } from "@/modules/service/qc-checklist-queries";
-import { saveQcChecklistItem, toggleQcChecklistActive } from "@/modules/service/actions/qc-checklist";
+import { saveQcChecklistItem, deleteQcChecklistItem, toggleQcChecklistActive } from "@/modules/service/actions/qc-checklist";
 import { QcChecklistForm, type QcChecklistFormValues } from "@/modules/service/components/qc-checklist-form";
 
 export const metadata = { title: "QC Checklist" };
@@ -97,6 +98,7 @@ export default async function QcChecklistPage({ searchParams }: PageProps<"/serv
                       >
                         <Pencil className="size-4" />
                       </Link>
+                      <DeleteButton action={deleteQcChecklistItem.bind(null, q.id)} />
                     </span>
                   ),
                 },

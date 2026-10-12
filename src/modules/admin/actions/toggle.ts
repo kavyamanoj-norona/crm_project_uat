@@ -8,9 +8,9 @@ import type { ActionResult } from "@/lib/form";
 import { ADMIN_PATHS } from "../paths";
 import { SERVICE_PATHS } from "../../service/paths";
 
-type Toggleable = {
-  findUnique(args: { where: { id: string }; select: { isActive: true } }): Promise<{ isActive: boolean } | null>;
-  update(args: { where: { id: string }; data: { isActive: boolean } }): Promise<unknown>;
+type SoftDeletable = {
+  findUnique(args: { where: { id: string }; select: { id: true } }): Promise<{ id: string } | null>;
+  update(args: { where: { id: string }; data: { isDelete: number } }): Promise<unknown>;
 };
 
 const TARGETS = {
@@ -28,31 +28,25 @@ const TARGETS = {
 
 export type ToggleTarget = keyof typeof TARGETS;
 
-/** Flips `isActive` — the only way records are "removed" (no hard deletes). */
-export async function toggleActive(target: ToggleTarget, id: string): Promise<ActionResult> {
+/** Soft delete — sets `isDelete = 1`; the row stays in the database and drops out of every list. */
+export async function deleteRecord(target: ToggleTarget, id: string): Promise<ActionResult> {
   const t = TARGETS[target];
   if (!t) return { ok: false, message: "Unknown record type." };
   try {
     const user = await requireActionPermission(t.path, "canEdit");
-    // Don't let an admin switch off the privilege they are signed in with.
+    // Don't let an admin delete the privilege they are signed in with.
     if (target === "privilege" && id === user.privilege.id) {
-      return { ok: false, message: "You can't deactivate the privilege you are signed in with." };
+      return { ok: false, message: "You can't delete the privilege you are signed in with." };
     }
 
-    const model = t.model() as unknown as Toggleable;
-    const row = await model.findUnique({ where: { id }, select: { isActive: true } });
+    const model = t.model() as unknown as SoftDeletable;
+    const row = await model.findUnique({ where: { id }, select: { id: true } });
     if (!row) return { ok: false, message: "Record not found." };
-    await model.update({ where: { id }, data: { isActive: !row.isActive } });
+    await model.update({ where: { id }, data: { isDelete: 1 } });
 
-    await logActivity({
-      action: `${target}.${row.isActive ? "deactivate" : "activate"}`,
-      userId: user.id,
-      entity: target,
-      entityId: id,
-    });
+    await logActivity({ action: `${target}.delete`, userId: user.id, entity: target, entityId: id });
     revalidatePath("/", "layout"); // menus/modules affect the shell everywhere
-    const name = LABELS[target];
-    return { ok: true, message: row.isActive ? `${name} deactivated.` : `${name} activated.` };
+    return { ok: true, message: `${LABELS[target]} deleted.` };
   } catch (e) {
     if (e instanceof ForbiddenError) return { ok: false, message: e.message };
     throw e;

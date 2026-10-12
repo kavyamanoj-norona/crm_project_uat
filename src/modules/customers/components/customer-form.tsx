@@ -52,7 +52,7 @@ export function CustomerForm({ action, initial, id, cancelHref }: CustomerFormPr
         <Field label={type === "BUSINESS" ? "Business name" : "Name"} htmlFor="name" required error={errors.name}>
           <Input {...f("name")} placeholder={type === "BUSINESS" ? "Enter business name" : "Enter full name"} />
         </Field>
-        <Field label="Phone" htmlFor="phone" required error={errors.phone} hint="Mobile, or landline with STD code">
+        <Field label="Mobile" htmlFor="phone" required error={errors.phone} hint="Mobile, or landline with STD code">
           <Input {...f("phone")} type="tel" inputMode="tel" placeholder="Enter phone number" />
         </Field>
         <Field label="Alt phone" htmlFor="altPhone" error={errors.altPhone}>

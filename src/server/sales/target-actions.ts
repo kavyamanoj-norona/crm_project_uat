@@ -62,13 +62,14 @@ export async function createSalesTargets(_prev: FormState, formData: FormData): 
   await Promise.all(
     ids.map(async (branchId) => {
       const existing = await db.salesTarget.findFirst({
-        where: { branchId, period, year, month: month ?? null, day: day ?? null },
+        // isDelete in (0,1): also match a soft-deleted target so re-adding it revives the row.
+        where: { branchId, period, year, month: month ?? null, day: day ?? null, isDelete: { in: [0, 1] } },
         select: { id: true },
       });
       if (existing) {
         await db.salesTarget.update({
           where: { id: existing.id },
-          data: { targetPaise, isActive: true },
+          data: { targetPaise, isActive: true, isDelete: 0 },
         });
       } else {
         await db.salesTarget.create({
@@ -100,7 +101,7 @@ export async function deleteSalesTarget(_prev: FormState, formData: FormData): P
   const id = String(formData.get("id") ?? "");
   if (!id) return { ok: false, message: "Missing target ID." };
 
-  await db.salesTarget.update({ where: { id }, data: { isActive: false } });
+  await db.salesTarget.update({ where: { id }, data: { isDelete: 1 } });
   revalidatePath(SALES_PATHS.target);
-  return { ok: true, message: "Target removed." };
+  return { ok: true, message: "Target deleted." };
 }

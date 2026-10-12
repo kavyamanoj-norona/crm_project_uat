@@ -11,7 +11,7 @@ import { RowActions } from "@/modules/admin/components/row-actions";
 import { saveB2bAccount } from "@/modules/customers/b2b-actions";
 import { B2bForm, type B2bFormValues } from "@/modules/customers/components/b2b-form";
 import { B2B_SORTS, getB2bAccount, listB2bAccounts } from "@/modules/customers/b2b-queries";
-import { toggleCustomerActive } from "@/modules/customers/actions";
+import { deleteCustomer } from "@/modules/customers/actions";
 import { CUSTOMER_PATHS } from "@/modules/customers/paths";
 import { VIP_MIN_VISITS } from "@/modules/customers/schemas";
 import { requirePageAccess } from "@/server/rbac/guard";
@@ -108,8 +108,7 @@ export default async function B2bAccountsPage({ searchParams }: PageProps<"/cust
             cell: (a) => (
               <RowActions
                 editHref={permission.canEdit ? `${CUSTOMER_PATHS.b2b}?edit=${a.id}` : undefined}
-                toggle={permission.canEdit ? toggleCustomerActive.bind(null, a.id) : undefined}
-                active={a.isActive}
+                remove={permission.canEdit ? deleteCustomer.bind(null, a.id) : undefined}
               >
                 <Link href={`${CUSTOMER_PATHS.database}/${a.id}`} className={iconLink} aria-label="View" title="View">
                   <Eye className="size-4" />

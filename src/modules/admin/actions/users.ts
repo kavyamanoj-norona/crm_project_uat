@@ -149,3 +149,20 @@ export async function toggleUserFlag(id: string, flag: UserFlag): Promise<Action
     throw e;
   }
 }
+
+/** Soft delete — sets `isDelete = 1`; the user can no longer sign in or appear in lists. */
+export async function deleteUser(id: string): Promise<ActionResult> {
+  try {
+    const actor = await requireActionPermission(ADMIN_PATHS.users, "canEdit");
+    if (id === actor.id) return { ok: false, message: "You can't delete your own account." };
+    const user = await db.user.findUnique({ where: { id }, select: { id: true } });
+    if (!user) return { ok: false, message: "User not found." };
+    await db.user.update({ where: { id }, data: { isDelete: 1 } });
+    await logActivity({ action: "user.delete", userId: actor.id, entity: "User", entityId: id });
+    revalidatePath(ADMIN_PATHS.users);
+    return { ok: true, message: "User deleted." };
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { ok: false, message: e.message };
+    throw e;
+  }
+}

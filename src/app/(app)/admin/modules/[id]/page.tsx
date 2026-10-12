@@ -7,7 +7,7 @@ import { ListView } from "@/components/data/list-view";
 import { NavIcon } from "@/components/ui/nav-icon";
 import { listState } from "@/lib/list";
 import { saveMenu } from "@/modules/admin/actions/save";
-import { toggleActive } from "@/modules/admin/actions/toggle";
+import { deleteRecord } from "@/modules/admin/actions/toggle";
 import { AdminPage, param } from "@/modules/admin/components/admin-page";
 import { EntityForm, type FieldConfig } from "@/modules/admin/components/entity-form";
 import { RowActions } from "@/modules/admin/components/row-actions";
@@ -128,7 +128,7 @@ export default async function ModuleMenusPage({ params, searchParams }: PageProp
             header: "Action",
             cell: (r) =>
               permission.canEdit && (
-                <RowActions editHref={`${base}?edit=${r.id}`} toggle={toggleActive.bind(null, "menu", r.id)} active={r.isActive} />
+                <RowActions editHref={`${base}?edit=${r.id}`} remove={deleteRecord.bind(null, "menu", r.id)} />
               ),
           },
         ]}

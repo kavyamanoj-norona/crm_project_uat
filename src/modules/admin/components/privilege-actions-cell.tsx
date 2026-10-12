@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { KeyRound, Pencil, Power, PowerOff } from "lucide-react";
+import { KeyRound, Pencil, Trash2 } from "lucide-react";
+import { cn } from "@/lib/cn";
 import { ActionButton } from "@/components/ui/action-button";
 import type { ActionResult } from "@/lib/form";
 import { ApprovedModulesModal } from "./approved-modules-modal";
@@ -12,8 +13,7 @@ type Props = {
   privilegeName: string;
   isSuperAdmin: boolean;
   editHref?: string;
-  toggle?: () => Promise<ActionResult>;
-  active: boolean;
+  remove?: () => Promise<ActionResult>;
   canEdit: boolean;
   permissionsHref: string;
 };
@@ -26,8 +26,7 @@ export function PrivilegeActionsCell({
   privilegeName,
   isSuperAdmin,
   editHref,
-  toggle,
-  active,
+  remove,
   canEdit,
   permissionsHref,
 }: Props) {
@@ -54,10 +53,15 @@ export function PrivilegeActionsCell({
           </Link>
         )}
 
-        {/* Activate / Deactivate */}
-        {toggle && (
-          <ActionButton action={toggle} label={active ? "Deactivate" : "Activate"} className={iconBtn}>
-            {active ? <PowerOff className="size-4 text-danger" /> : <Power className="size-4 text-success" />}
+        {/* Delete (soft) */}
+        {remove && (
+          <ActionButton
+            action={remove}
+            label="Delete"
+            confirm="Are you sure you want to delete this privilege?"
+            className={cn(iconBtn, "hover:bg-danger/10 hover:text-danger")}
+          >
+            <Trash2 className="size-4" />
           </ActionButton>
         )}
       </div>

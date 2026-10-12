@@ -1,15 +1,15 @@
 import "server-only";
-import type { Prisma } from "@/generated/prisma/client";
+import type { Tx } from "@/server/db";
 import { nextSequence } from "@/server/sequence";
 import { CUSTOMER_LABELS, type LeadSourceValue } from "./schemas";
 
 /** Next customer code: CU000001, CU000002 … Call inside the create transaction. */
-export async function nextCustomerCode(tx: Prisma.TransactionClient) {
+export async function nextCustomerCode(tx: Tx) {
   return `CU${String(await nextSequence(tx, "CUSTOMER")).padStart(6, "0")}`;
 }
 
 /** Next lead code: LD000001, LD000002 … Separate counter from customers. */
-export async function nextLeadCode(tx: Prisma.TransactionClient) {
+export async function nextLeadCode(tx: Tx) {
   return `LD${String(await nextSequence(tx, "LEAD")).padStart(6, "0")}`;
 }
 
@@ -24,7 +24,7 @@ export type NewLeadInput = {
 
 /** Creates a lead (a customer-table row with kind LEAD). Call inside a transaction. */
 export async function createLeadRecord(
-  tx: Prisma.TransactionClient,
+  tx: Tx,
   input: NewLeadInput,
   who: { branchId: string | null; actorId: string | null },
 ) {
@@ -48,7 +48,7 @@ export async function createLeadRecord(
  * null if the row is no longer an open lead (already converted by someone else).
  */
 export async function convertLeadRecord(
-  tx: Prisma.TransactionClient,
+  tx: Tx,
   leadId: string,
   actorId: string,
   /** Home branch for a lead that has none yet (e.g. a website enquiry). */
@@ -95,7 +95,7 @@ export type IntakeCustomerInput = {
  * field never wipes what we already have.
  */
 export async function upsertIntakeCustomer(
-  tx: Prisma.TransactionClient,
+  tx: Tx,
   input: IntakeCustomerInput,
   actorId: string,
   /** The branch taking the case: becomes the home branch of a new customer. */

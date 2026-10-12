@@ -27,6 +27,7 @@ model Company {
 
   branches Branch[]
   users    User[]
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@map("company")
 }
@@ -69,6 +70,7 @@ model Branch {
   buybackRecords BuybackRecord[]
   refurbItems    RefurbItem[]
   salesTargets   SalesTarget[]
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([companyId])
   @@map("branch")
@@ -84,6 +86,7 @@ model Domain {
 
   departments Department[]
   users       User[]
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@map("domain")
 }
@@ -98,6 +101,7 @@ model Department {
 
   domain Domain @relation(fields: [domainId], references: [id])
   users  User[]
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@unique([domainId, name])
   @@map("department")
@@ -122,6 +126,7 @@ model Privilege {
 
   users       User[]
   permissions PrivilegePermission[]
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@map("privilege")
 }
@@ -234,6 +239,7 @@ model User {
   qcChecklistUpdated    QcChecklistItem[]      @relation("QcChecklistUpdatedBy")
   qcResponsesAnswered   CaseQcResponse[]       @relation("QcResponseAnsweredBy")
   labTransfersCompleted Case[]                 @relation("CaseLabTransferBy")
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([companyId])
   @@index([branchId])
@@ -270,6 +276,7 @@ model Module {
 
   menus        Menu[]
   defaultUsers User[]
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@map("module")
 }
@@ -292,6 +299,7 @@ model Menu {
   parent      Menu?                 @relation("MenuTree", fields: [parentId], references: [id])
   children    Menu[]                @relation("MenuTree")
   permissions PrivilegePermission[]
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([moduleId])
   @@index([parentId])
@@ -312,6 +320,7 @@ model PrivilegePermission {
 
   privilege Privilege @relation(fields: [privilegeId], references: [id])
   menu      Menu      @relation(fields: [menuId], references: [id])
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@unique([privilegeId, menuId])
   @@index([menuId])
@@ -343,6 +352,7 @@ model Rule {
   updatedAt   DateTime      @updatedAt @db.Timestamptz
 
   updatedBy User? @relation(fields: [updatedById], references: [id])
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([category])
   @@map("rule")
@@ -387,6 +397,7 @@ model Item {
   transferItems    StockTransferItem[]
 
   directSaleItems DirectSaleItem[]
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([name])
   @@index([type, isActive])
@@ -402,6 +413,7 @@ model NumberSequence {
   key       String   @id
   value     Int      @default(0)
   updatedAt DateTime @updatedAt @db.Timestamptz
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@map("number_sequence")
 }
@@ -480,6 +492,7 @@ model Customer {
 
   directSales    DirectSale[]
   buybackRecords BuybackRecord[]
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([name])
   @@index([createdAt])
@@ -606,6 +619,7 @@ model Case {
   labVendor         ChipLabVendor?         @relation("CaseLabVendor", fields: [labVendorId], references: [id])
   qcResponses       CaseQcResponse[]
   labTransferBy     User?                  @relation("CaseLabTransferBy", fields: [labTransferCompletedById], references: [id], onDelete: SetNull)
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([branchId, status, createdAt])
   @@index([branchId, stageChangedAt])
@@ -645,6 +659,7 @@ model CaseItem {
   item      Item  @relation(fields: [itemId], references: [id])
   addedBy   User? @relation("CaseItemAddedBy", fields: [addedById], references: [id])
   removedBy User? @relation("CaseItemRemovedBy", fields: [removedById], references: [id])
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([caseId, removedAt])
   @@index([itemId])
@@ -662,6 +677,7 @@ model CaseReceivedItem {
   createdAt   DateTime      @default(now()) @db.Timestamptz
 
   case Case @relation(fields: [caseId], references: [id])
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([caseId])
   @@map("case_received_item")
@@ -679,6 +695,7 @@ model CaseAttachment {
 
   case      Case  @relation(fields: [caseId], references: [id])
   createdBy User? @relation(fields: [createdById], references: [id])
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([caseId])
   @@map("case_attachment")
@@ -696,6 +713,7 @@ model CaseStatusHistory {
 
   case      Case  @relation(fields: [caseId], references: [id])
   changedBy User? @relation(fields: [changedById], references: [id])
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([caseId, at])
   @@map("case_status_history")
@@ -724,6 +742,7 @@ model CaseFeedback {
 
   case      Case  @relation(fields: [caseId], references: [id])
   createdBy User? @relation(fields: [createdById], references: [id])
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@map("case_feedback")
 }
@@ -759,6 +778,7 @@ model Payment {
   case       Case?    @relation(fields: [caseId], references: [id])
   customer   Customer @relation(fields: [customerId], references: [id])
   receivedBy User?    @relation(fields: [receivedById], references: [id])
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([branchId, createdAt])
   @@index([caseId])
@@ -783,6 +803,7 @@ model TatConfig {
 
   createdBy User? @relation("TatConfigCreatedBy", fields: [createdById], references: [id])
   updatedBy User? @relation("TatConfigUpdatedBy", fields: [updatedById], references: [id])
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@map("tat_config")
 }
@@ -799,6 +820,7 @@ model BlockedIp {
   updatedAt   DateTime @updatedAt @db.Timestamptz
 
   blockedBy User? @relation(fields: [blockedById], references: [id])
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@map("blocked_ip")
 }
@@ -817,6 +839,7 @@ model UserActivityLog {
   userAgent String?
 
   user User? @relation(fields: [userId], references: [id])
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([userId, at])
   @@index([at])
@@ -849,6 +872,7 @@ model WhatsAppMessage {
   case      Case     @relation(fields: [caseId], references: [id])
   customer  Customer @relation(fields: [customerId], references: [id])
   createdBy User?    @relation(fields: [createdById], references: [id])
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([caseId, createdAt])
   @@map("whatsapp_message")
@@ -886,6 +910,7 @@ model StockItem {
   branch    Branch @relation(fields: [branchId], references: [id])
   item      Item   @relation(fields: [itemId], references: [id])
   updatedBy User?  @relation("StockItemUpdatedBy", fields: [updatedById], references: [id])
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@unique([branchId, itemId])
   @@index([branchId])
@@ -914,6 +939,7 @@ model PurchaseRequest {
   case        Case?  @relation(fields: [caseId], references: [id])
   requestedBy User?  @relation("PRRequestedBy", fields: [requestedById], references: [id])
   reviewedBy  User?  @relation("PRReviewedBy", fields: [reviewedById], references: [id])
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([branchId, status])
   @@index([itemId])
@@ -941,6 +967,7 @@ model StockTransfer {
   createdBy  User?               @relation("TransferCreatedBy", fields: [createdById], references: [id])
   approvedBy User?               @relation("TransferApprovedBy", fields: [approvedById], references: [id])
   items      StockTransferItem[]
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([fromBranchId, status])
   @@index([toBranchId, status])
@@ -957,6 +984,7 @@ model StockTransferItem {
 
   transfer StockTransfer @relation(fields: [transferId], references: [id])
   item     Item          @relation(fields: [itemId], references: [id])
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@unique([transferId, itemId])
   @@index([transferId])
@@ -982,6 +1010,7 @@ model DirectSale {
   customer Customer?        @relation(fields: [customerId], references: [id])
   soldBy   User             @relation("DirectSaleSoldBy", fields: [soldById], references: [id])
   items    DirectSaleItem[]
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([branchId, soldAt])
   @@map("direct_sale")
@@ -998,6 +1027,7 @@ model DirectSaleItem {
 
   sale DirectSale @relation(fields: [saleId], references: [id])
   item Item       @relation(fields: [itemId], references: [id])
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([saleId])
   @@map("direct_sale_item")
@@ -1034,6 +1064,7 @@ model BuybackRecord {
   customer   Customer?   @relation(fields: [customerId], references: [id])
   recordedBy User        @relation("BuybackRecordedBy", fields: [recordedById], references: [id])
   refurbItem RefurbItem?
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([branchId, recordedAt])
   @@map("buyback_record")
@@ -1065,6 +1096,7 @@ model RefurbItem {
 
   branch  Branch         @relation(fields: [branchId], references: [id])
   buyback BuybackRecord? @relation(fields: [buybackId], references: [id])
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([branchId, status])
   @@map("refurb_item")
@@ -1093,6 +1125,7 @@ model SalesTarget {
 
   branch    Branch @relation(fields: [branchId], references: [id])
   createdBy User?  @relation("SalesTargetCreatedBy", fields: [createdById], references: [id])
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@unique([branchId, period, year, month, day])
   @@index([branchId, period, year])
@@ -1120,6 +1153,7 @@ model ChipLabVendor {
   updatedBy  User?              @relation("VendorUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
   outsources ChipLabOutsource[]
   labCases   Case[]             @relation("CaseLabVendor")
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([isActive])
   @@map("chip_lab_vendor")
@@ -1143,6 +1177,7 @@ model ChipLabOutsource {
   case      Case          @relation(fields: [caseId], references: [id])
   vendor    ChipLabVendor @relation(fields: [vendorId], references: [id])
   createdBy User?         @relation("OutsourceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([caseId])
   @@map("chip_lab_outsource")
@@ -1160,6 +1195,7 @@ model ChipLabVendorPayment {
 
   case   Case  @relation(fields: [caseId], references: [id])
   paidBy User? @relation("VendorPaymentBy", fields: [paidById], references: [id], onDelete: SetNull)
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([caseId])
   @@map("chip_lab_vendor_payment")
@@ -1180,6 +1216,7 @@ model QcChecklistItem {
   createdBy User?            @relation("QcChecklistCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   updatedBy User?            @relation("QcChecklistUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
   responses CaseQcResponse[]
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([isActive])
   @@map("qc_checklist_item")
@@ -1204,6 +1241,7 @@ model CaseQcResponse {
   case          Case            @relation(fields: [caseId], references: [id])
   checklistItem QcChecklistItem @relation(fields: [checklistItemId], references: [id])
   answeredBy    User?           @relation("QcResponseAnsweredBy", fields: [answeredById], references: [id], onDelete: SetNull)
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([caseId, stage, removedAt])
   @@map("case_qc_response")
@@ -1223,6 +1261,7 @@ model AiAgentRun {
   durationMs Int?
   error      String?
   createdAt  DateTime @default(now()) @db.Timestamptz
+  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([userId, createdAt])
   @@index([agentName, createdAt])
