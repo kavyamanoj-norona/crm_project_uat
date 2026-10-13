@@ -223,7 +223,13 @@ export const intakeSchema = z
     // 1 · Customer
     phone: requiredPhone(),
     name: requiredText("Name"),
-    email: z.string().trim().toLowerCase().min(1, "Email is required").pipe(z.email("Enter a valid email")),
+    email: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .default("")
+      .transform((v) => (v === "" ? null : v))
+      .pipe(z.email("Enter a valid email").nullable()),
     altPhone: optionalPhone,
     accountId: optionalText,
     source: requiredEnum(LEAD_SOURCES, "How they heard about us"),

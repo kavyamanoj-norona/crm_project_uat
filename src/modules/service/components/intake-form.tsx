@@ -295,7 +295,7 @@ function CustomerFields({
       <Field label="Name" htmlFor="name" required error={errors.name}>
         <Input {...f("name")} autoComplete="off" />
       </Field>
-      <Field label="Email" htmlFor="email" required error={errors.email}>
+      <Field label="Email" htmlFor="email" error={errors.email}>
         <Input {...f("email")} type="email" autoComplete="off" />
       </Field>
       <Field label="Alt mobile" htmlFor="altPhone" error={errors.altPhone}>
