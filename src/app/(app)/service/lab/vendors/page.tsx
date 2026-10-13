@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { Pencil } from "lucide-react";
 import { db } from "@/server/db";
-import { Badge } from "@/components/ui/badge";
 import { ListView } from "@/components/data/list-view";
 import { listState } from "@/lib/list";
 import { formatDate } from "@/lib/dates";
@@ -86,10 +85,6 @@ export default async function VendorsPage({ searchParams }: PageProps<"/service/
           { header: "Phone", cell: (v) => v.phone ?? "—" },
           { header: "Email", cell: (v) => v.email ?? "—" },
           { header: "Address", cell: (v) => <span className="text-xs">{v.address ?? "—"}</span> },
-          {
-            header: "Status",
-            cell: (v) => <Badge tone={v.isActive ? "success" : "neutral"}>{v.isActive ? "Active" : "Inactive"}</Badge>,
-          },
           {
             header: "Enabled",
             align: "center",

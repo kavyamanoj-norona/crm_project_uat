@@ -67,7 +67,6 @@ export default async function CustomerDetailsPage({ params, searchParams }: Page
         <Card title="Details" className="xl:col-span-2">
           <div className="mb-4 flex flex-wrap gap-2">
             <Badge tone={customer.type === "BUSINESS" ? "primary" : "neutral"}>{CUSTOMER_TYPE_LABELS[customer.type]}</Badge>
-            {!customer.isActive && <Badge tone="danger">Inactive</Badge>}
           </div>
           <dl className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
             <DetailItem term="Phone">{formatPhone(customer.phone)}</DetailItem>

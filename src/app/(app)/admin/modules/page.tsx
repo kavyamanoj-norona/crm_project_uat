@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { ListTree } from "lucide-react";
 import { db } from "@/server/db";
-import { ActiveBadge } from "@/components/ui/badge";
 import { ListView } from "@/components/data/list-view";
 import { NavIcon } from "@/components/ui/nav-icon";
 import { listState } from "@/lib/list";
@@ -73,7 +72,6 @@ export default async function ModulesPage({ searchParams }: PageProps<"/admin/mo
           { header: "Code", sort: "code", cell: (r) => r.code },
           { header: "Path", sort: "path", cell: (r) => <code className="text-xs">{r.path}</code> },
           { header: "Menus", align: "center", cell: (r) => r._count.menus },
-          { header: "Status", cell: (r) => <ActiveBadge active={r.isActive} /> },
           {
             header: "Action",
             cell: (r) => (

@@ -14,9 +14,8 @@ const who = { select: { firstName: true, lastName: true } } as const;
 export const LEAD_SORTS = ["createdAt", "code", "name", "phone", "updatedAt"] as const;
 
 const TAB_WHERE: Record<string, Prisma.CustomerWhereInput> = {
-  "": { kind: "LEAD", isActive: true }, // open
+  "": { kind: "LEAD" }, // open
   converted: { kind: "CUSTOMER" },
-  closed: { kind: "LEAD", isActive: false },
   all: {},
 };
 
@@ -39,7 +38,7 @@ export async function listLeads(list: ListState, scope: BranchScope) {
   const where: Prisma.CustomerWhereInput = { AND: [search, TAB_WHERE[tab]!] };
 
   const count = (key: string) => db.customer.count({ where: { AND: [search, TAB_WHERE[key]!] } });
-  const [rows, total, open, converted, closed, all] = await Promise.all([
+  const [rows, total, open, converted, all] = await Promise.all([
     db.customer.findMany({
       where,
       orderBy: [{ [list.sort]: list.dir }, { createdAt: "desc" }],
@@ -54,13 +53,11 @@ export async function listLeads(list: ListState, scope: BranchScope) {
     db.customer.count({ where }),
     count(""),
     count("converted"),
-    count("closed"),
     count("all"),
   ]);
   const tabs: FilterTab[] = [
     { key: "", label: "Open", count: open },
     { key: "converted", label: "Converted", count: converted },
-    { key: "closed", label: "Closed", count: closed },
     { key: "all", label: "All", count: all },
   ];
   return { rows, total, tabs };

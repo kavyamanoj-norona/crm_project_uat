@@ -13,11 +13,7 @@ const who = { select: { firstName: true, lastName: true } } as const;
 
 export const B2B_SORTS = ["createdAt", "code", "name", "phone", "lastVisitAt", "updatedAt"] as const;
 
-const TAB_WHERE: Record<string, Prisma.CustomerWhereInput> = {
-  "": { isActive: true },
-  inactive: { isActive: false },
-  all: {},
-};
+const TAB_WHERE: Record<string, Prisma.CustomerWhereInput> = { "": {} };
 
 export async function listB2bAccounts(list: ListState, scope: BranchScope) {
   const digits = list.q.replace(/\D/g, "");
@@ -40,7 +36,7 @@ export async function listB2bAccounts(list: ListState, scope: BranchScope) {
     list.sort === "lastVisitAt" ? { lastVisitAt: { sort: list.dir, nulls: "last" } } : { [list.sort]: list.dir };
 
   const count = (key: string) => db.customer.count({ where: { AND: [search, TAB_WHERE[key]!] } });
-  const [rows, total, active, inactive, all] = await Promise.all([
+  const [rows, total, all] = await Promise.all([
     db.customer.findMany({
       where,
       orderBy: [orderBy, { createdAt: "desc" }],
@@ -53,14 +49,8 @@ export async function listB2bAccounts(list: ListState, scope: BranchScope) {
     }),
     db.customer.count({ where }),
     count(""),
-    count("inactive"),
-    count("all"),
   ]);
-  const tabs: FilterTab[] = [
-    { key: "", label: "Active", count: active },
-    { key: "inactive", label: "Inactive", count: inactive },
-    { key: "all", label: "All", count: all },
-  ];
+  const tabs: FilterTab[] = [{ key: "", label: "All", count: all }];
   return { rows, total, tabs };
 }
 

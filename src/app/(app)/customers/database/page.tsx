@@ -104,7 +104,6 @@ export default async function CustomersPage({ searchParams }: PageProps<"/custom
                 {c.name}
                 {c.type === "BUSINESS" && <Badge tone="primary">B2B</Badge>}
                 {c.visitCount >= VIP_MIN_VISITS && <Badge tone="violet">VIP</Badge>}
-                {!c.isActive && <Badge>Inactive</Badge>}
               </Link>
             ),
           },

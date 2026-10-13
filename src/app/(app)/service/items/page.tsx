@@ -1,5 +1,5 @@
 import { db } from "@/server/db";
-import { ActiveBadge, Badge } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";
 import { ListView } from "@/components/data/list-view";
 import { WhoWhen } from "@/components/data/who-when";
 import { listState } from "@/lib/list";
@@ -105,7 +105,6 @@ export default async function ItemsPage({ searchParams }: PageProps<"/service/it
           { header: "Unit", cell: (r) => r.unit },
           { header: "Warranty", cell: (r) => (r.warrantyDays ? `${r.warrantyDays} days` : "—") },
           { header: "Last updated", sort: "updatedAt", cell: (r) => <WhoWhen by={r.updatedBy} at={r.updatedAt} /> },
-          { header: "Status", cell: (r) => <ActiveBadge active={r.isActive} /> },
           {
             header: "Action",
             cell: (r) =>

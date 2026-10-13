@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { Pencil } from "lucide-react";
 import { db } from "@/server/db";
-import { Badge } from "@/components/ui/badge";
 import { ListView } from "@/components/data/list-view";
 import { listState } from "@/lib/list";
 import { formatDate } from "@/lib/dates";
@@ -74,10 +73,6 @@ export default async function QcChecklistPage({ searchParams }: PageProps<"/serv
           {
             header: "Description",
             cell: (q) => <span className="text-xs text-text-muted">{q.description ?? "—"}</span>,
-          },
-          {
-            header: "Status",
-            cell: (q) => <Badge tone={q.isActive ? "success" : "neutral"}>{q.isActive ? "Active" : "Inactive"}</Badge>,
           },
           {
             header: "Enabled",

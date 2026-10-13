@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { ActiveBadge, Badge } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";
 import { LinkButton } from "@/components/ui/button";
 import { ListView } from "@/components/data/list-view";
 import { NavIcon } from "@/components/ui/nav-icon";
@@ -123,7 +123,6 @@ export default async function ModuleMenusPage({ params, searchParams }: PageProp
           { header: "Type", cell: (r) => <Badge tone={r.type === "GROUP" ? "neutral" : "primary"}>{r.type}</Badge> },
           { header: "Path", cell: (r) => (r.path ? <code className="text-xs">{r.path}</code> : "—") },
           { header: "Code", cell: (r) => <span className="text-xs text-text-muted">{r.code}</span> },
-          { header: "Status", cell: (r) => <ActiveBadge active={r.isActive} /> },
           {
             header: "Action",
             cell: (r) =>

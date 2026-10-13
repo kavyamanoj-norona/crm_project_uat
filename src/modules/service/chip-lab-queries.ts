@@ -7,19 +7,6 @@ import type { FilterTab } from "@/components/data/filter-tabs";
 
 const containsI = (q: string) => ({ contains: q, mode: "insensitive" as const });
 
-/** All · Active · Inactive tabs with counts (search applied, tab not). */
-async function activeTabs(count: (where: { isActive?: boolean }) => Promise<number>) {
-  const [all, active] = await Promise.all([count({}), count({ isActive: true })]);
-  return [
-    { key: "", label: "All", count: all },
-    { key: "active", label: "Active", count: active },
-    { key: "inactive", label: "Inactive", count: all - active },
-  ] satisfies FilterTab[];
-}
-
-const activeWhere = (tab: string) =>
-  tab === "active" ? { isActive: true } : tab === "inactive" ? { isActive: false } : {};
-
 const LAB_QUEUE_STATUSES: CaseStatus[] = [
   CaseStatus.CHIP_TRANSFER,
   CaseStatus.CHIP_LAB_RECEIVED,
@@ -331,8 +318,8 @@ export async function listVendorsPage(list: ListState) {
         ],
       }
     : {};
-  const where = { ...search, ...activeWhere(list.tab) };
-  const [rows, total, tabs] = await Promise.all([
+  const where = search;
+  const [rows, total] = await Promise.all([
     db.chipLabVendor.findMany({
       where,
       orderBy: { [list.sort]: list.dir },
@@ -350,9 +337,8 @@ export async function listVendorsPage(list: ListState) {
       },
     }),
     db.chipLabVendor.count({ where }),
-    activeTabs((w) => db.chipLabVendor.count({ where: { ...search, ...w } })),
   ]);
-  return { rows, total, tabs };
+  return { rows, total, tabs: [] as FilterTab[] };
 }
 
 export type VendorPageRow = Awaited<ReturnType<typeof listVendorsPage>>["rows"][number];

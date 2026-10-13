@@ -88,7 +88,6 @@ export default async function B2bAccountsPage({ searchParams }: PageProps<"/cust
               <Link href={`${CUSTOMER_PATHS.database}/${a.id}`} className="flex items-center gap-2 font-medium hover:text-primary">
                 {a.name}
                 {a.visitCount >= VIP_MIN_VISITS && <Badge tone="violet">VIP</Badge>}
-                {!a.isActive && <Badge>Inactive</Badge>}
               </Link>
             ),
           },

@@ -18,7 +18,6 @@ export const CUSTOMER_SORTS = ["createdAt", "code", "name", "phone", "visitCount
 const TAB_WHERE: Record<string, Prisma.CustomerWhereInput> = {
   individual: { type: "INDIVIDUAL", isActive: true },
   business: { type: "BUSINESS", isActive: true },
-  inactive: { isActive: false },
 };
 
 export async function listCustomers(list: ListState, scope: BranchScope) {
@@ -41,7 +40,7 @@ export async function listCustomers(list: ListState, scope: BranchScope) {
   const orderBy: Prisma.CustomerOrderByWithRelationInput =
     list.sort === "lastVisitAt" ? { lastVisitAt: { sort: list.dir, nulls: "last" } } : { [list.sort]: list.dir };
 
-  const [rows, total, all, individual, business, inactive] = await Promise.all([
+  const [rows, total, all, individual, business] = await Promise.all([
     db.customer.findMany({
       where,
       orderBy: [orderBy, { createdAt: "desc" }],
@@ -50,13 +49,12 @@ export async function listCustomers(list: ListState, scope: BranchScope) {
     }),
     db.customer.count({ where }),
     db.customer.count({ where: search }),
-    ...(["individual", "business", "inactive"] as const).map((k) => db.customer.count({ where: { AND: [search, TAB_WHERE[k]!] } })),
+    ...(["individual", "business"] as const).map((k) => db.customer.count({ where: { AND: [search, TAB_WHERE[k]!] } })),
   ]);
   const tabs: FilterTab[] = [
     { key: "", label: "All", count: all },
     { key: "individual", label: "Individual", count: individual },
     { key: "business", label: "Business (B2B)", count: business },
-    { key: "inactive", label: "Inactive", count: inactive },
   ];
   return { rows, total, tabs };
 }

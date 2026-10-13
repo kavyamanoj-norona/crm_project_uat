@@ -6,19 +6,15 @@ import type { FilterTab } from "@/components/data/filter-tabs";
 
 const containsI = (q: string) => ({ contains: q, mode: "insensitive" as const });
 
-const activeWhere = (tab: string) =>
-  tab === "active" ? { isActive: true } : tab === "inactive" ? { isActive: false } : {};
-
 export const QC_CHECKLIST_SORTS = ["title", "createdAt"] as const;
 
 export async function listQcChecklistPage(list: ListState) {
   const search: Prisma.QcChecklistItemWhereInput = list.q
     ? { OR: [{ title: containsI(list.q) }, { description: containsI(list.q) }] }
     : {};
-  const where = { ...search, ...activeWhere(list.tab) };
+  const where = search;
 
-  const count = (w: { isActive?: boolean }) => db.qcChecklistItem.count({ where: { ...search, ...w } });
-  const [rows, total, all, active] = await Promise.all([
+  const [rows, total] = await Promise.all([
     db.qcChecklistItem.findMany({
       where,
       orderBy: { [list.sort]: list.dir },
@@ -32,16 +28,9 @@ export async function listQcChecklistPage(list: ListState) {
       },
     }),
     db.qcChecklistItem.count({ where }),
-    count({}),
-    count({ isActive: true }),
   ]);
 
-  const tabs: FilterTab[] = [
-    { key: "", label: "All", count: all },
-    { key: "active", label: "Active", count: active },
-    { key: "inactive", label: "Inactive", count: all - active },
-  ];
-  return { rows, total, tabs };
+  return { rows, total, tabs: [] as FilterTab[] };
 }
 
 export type QcChecklistPageRow = Awaited<ReturnType<typeof listQcChecklistPage>>["rows"][number];

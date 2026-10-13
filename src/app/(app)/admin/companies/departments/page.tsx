@@ -1,5 +1,4 @@
 import { db } from "@/server/db";
-import { ActiveBadge } from "@/components/ui/badge";
 import { ListView } from "@/components/data/list-view";
 import { listState } from "@/lib/list";
 import { saveDepartment } from "@/modules/admin/actions/save";
@@ -77,7 +76,6 @@ export default async function DepartmentsPage({ searchParams }: PageProps<"/admi
           { header: "Department", sort: "name", cell: (r) => <span className="font-medium">{r.name}</span> },
           { header: "Domain", sort: "domain", cell: (r) => r.domain.name },
           { header: "Users", cell: (r) => r._count.users, align: "center" },
-          { header: "Status", cell: (r) => <ActiveBadge active={r.isActive} /> },
           {
             header: "Action",
             cell: (r) =>

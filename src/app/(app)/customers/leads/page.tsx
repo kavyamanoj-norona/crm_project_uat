@@ -107,7 +107,6 @@ export default async function LeadsPage({ searchParams }: PageProps<"/customers/
               <span className="flex items-center gap-2 font-medium">
                 {l.name}
                 {l.kind === "CUSTOMER" && <Badge tone="success">Converted</Badge>}
-                {l.kind === "LEAD" && !l.isActive && <Badge>Closed</Badge>}
               </span>
             ),
           },

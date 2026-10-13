@@ -1,5 +1,5 @@
 import { db } from "@/server/db";
-import { ActiveBadge, Badge } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";
 import { ListView } from "@/components/data/list-view";
 import { listState } from "@/lib/list";
 import { savePrivilege } from "@/modules/admin/actions/save";

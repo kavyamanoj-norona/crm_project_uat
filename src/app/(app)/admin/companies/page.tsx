@@ -1,5 +1,4 @@
 import { db } from "@/server/db";
-import { ActiveBadge } from "@/components/ui/badge";
 import { ListView } from "@/components/data/list-view";
 import { listState } from "@/lib/list";
 import { saveCompany } from "@/modules/admin/actions/save";
@@ -68,7 +67,6 @@ export default async function CompaniesPage({ searchParams }: PageProps<"/admin/
           { header: "Phone", cell: (r) => r.phone ?? "—" },
           { header: "Branches", cell: (r) => r._count.branches, align: "center" },
           { header: "Users", cell: (r) => r._count.users, align: "center" },
-          { header: "Status", cell: (r) => <ActiveBadge active={r.isActive} /> },
           {
             header: "Action",
             cell: (r) =>

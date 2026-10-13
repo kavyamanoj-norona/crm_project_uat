@@ -20,7 +20,3 @@ export function Badge({ tone = "neutral", className, children }: { tone?: Tone; 
     </span>
   );
 }
-
-export function ActiveBadge({ active }: { active: boolean }) {
-  return <Badge tone={active ? "success" : "neutral"}>{active ? "Active" : "Inactive"}</Badge>;
-}

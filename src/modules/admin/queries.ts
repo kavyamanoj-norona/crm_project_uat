@@ -11,20 +11,6 @@ const contains = (q: string) => ({ contains: q, mode: "insensitive" as const });
 
 type Page<T> = { rows: T[]; total: number; tabs: FilterTab[] };
 
-/** All · Active · Inactive tabs with counts (search applied, tab not). */
-async function statusTabs(count: (where: { isActive?: boolean }) => Promise<number>, labels = ["Active", "Inactive"]) {
-  const [all, active] = await Promise.all([count({}), count({ isActive: true })]);
-  return [
-    { key: "", label: "All", count: all },
-    { key: "active", label: labels[0]!, count: active },
-    { key: "inactive", label: labels[1]!, count: all - active },
-  ];
-}
-
-function statusWhere(tab: string) {
-  return tab === "active" ? { isActive: true } : tab === "inactive" ? { isActive: false } : {};
-}
-
 // ─── Company ─────────────────────────────────────────────────────────────────
 
 export const COMPANY_SORTS = ["code", "name", "createdAt"] as const;
@@ -33,8 +19,8 @@ export async function listCompanies(list: ListState): Promise<Page<Prisma.Compan
   const search: Prisma.CompanyWhereInput = list.q
     ? { OR: [{ name: contains(list.q) }, { code: contains(list.q) }, { gstin: contains(list.q) }] }
     : {};
-  const where = { ...search, ...statusWhere(list.tab) };
-  const [rows, total, tabs] = await Promise.all([
+  const where = search;
+  const [rows, total] = await Promise.all([
     db.company.findMany({
       where,
       orderBy: { [list.sort]: list.dir },
@@ -42,9 +28,8 @@ export async function listCompanies(list: ListState): Promise<Page<Prisma.Compan
       ...pageArgs(list),
     }),
     db.company.count({ where }),
-    statusTabs((w) => db.company.count({ where: { ...search, ...w } })),
   ]);
-  return { rows, total, tabs };
+  return { rows, total, tabs: [] as FilterTab[] };
 }
 
 // ─── Branch ──────────────────────────────────────────────────────────────────
@@ -55,10 +40,10 @@ export async function listBranches(list: ListState) {
   const search: Prisma.BranchWhereInput = list.q
     ? { OR: [{ name: contains(list.q) }, { code: contains(list.q) }, { company: { name: contains(list.q) } }] }
     : {};
-  const where = { ...search, ...statusWhere(list.tab) };
+  const where = search;
   const orderBy: Prisma.BranchOrderByWithRelationInput =
     list.sort === "company" ? { company: { name: list.dir } } : { [list.sort]: list.dir };
-  const [rows, total, tabs] = await Promise.all([
+  const [rows, total] = await Promise.all([
     db.branch.findMany({
       where,
       orderBy,
@@ -66,9 +51,8 @@ export async function listBranches(list: ListState) {
       ...pageArgs(list),
     }),
     db.branch.count({ where }),
-    statusTabs((w) => db.branch.count({ where: { ...search, ...w } })),
   ]);
-  return { rows, total, tabs };
+  return { rows, total, tabs: [] as FilterTab[] };
 }
 
 // ─── Domain / Department ─────────────────────────────────────────────────────
@@ -77,8 +61,8 @@ export const DOMAIN_SORTS = ["code", "name", "createdAt"] as const;
 
 export async function listDomains(list: ListState) {
   const search: Prisma.DomainWhereInput = list.q ? { OR: [{ name: contains(list.q) }, { code: contains(list.q) }] } : {};
-  const where = { ...search, ...statusWhere(list.tab) };
-  const [rows, total, tabs] = await Promise.all([
+  const where = search;
+  const [rows, total] = await Promise.all([
     db.domain.findMany({
       where,
       orderBy: { [list.sort]: list.dir },
@@ -86,9 +70,8 @@ export async function listDomains(list: ListState) {
       ...pageArgs(list),
     }),
     db.domain.count({ where }),
-    statusTabs((w) => db.domain.count({ where: { ...search, ...w } })),
   ]);
-  return { rows, total, tabs };
+  return { rows, total, tabs: [] as FilterTab[] };
 }
 
 export const DEPARTMENT_SORTS = ["name", "domain", "createdAt"] as const;
@@ -132,8 +115,8 @@ export async function listPrivileges(list: ListState) {
   const search: Prisma.PrivilegeWhereInput = list.q
     ? { OR: [{ name: contains(list.q) }, { code: contains(list.q) }, { description: contains(list.q) }] }
     : {};
-  const where = { ...search, ...statusWhere(list.tab) };
-  const [rows, total, tabs] = await Promise.all([
+  const where = search;
+  const [rows, total] = await Promise.all([
     db.privilege.findMany({
       where,
       orderBy: { [list.sort]: list.dir },
@@ -141,9 +124,8 @@ export async function listPrivileges(list: ListState) {
       ...pageArgs(list),
     }),
     db.privilege.count({ where }),
-    statusTabs((w) => db.privilege.count({ where: { ...search, ...w } })),
   ]);
-  return { rows, total, tabs };
+  return { rows, total, tabs: [] as FilterTab[] };
 }
 
 // ─── Module / Menu ───────────────────────────────────────────────────────────
@@ -154,8 +136,8 @@ export async function listModules(list: ListState) {
   const search: Prisma.ModuleWhereInput = list.q
     ? { OR: [{ title: contains(list.q) }, { code: contains(list.q) }, { path: contains(list.q) }] }
     : {};
-  const where = { ...search, ...statusWhere(list.tab) };
-  const [rows, total, tabs, last] = await Promise.all([
+  const where = search;
+  const [rows, total, last] = await Promise.all([
     db.module.findMany({
       where,
       orderBy: [{ [list.sort]: list.dir }, { title: "asc" }],
@@ -163,10 +145,9 @@ export async function listModules(list: ListState) {
       ...pageArgs(list),
     }),
     db.module.count({ where }),
-    statusTabs((w) => db.module.count({ where: { ...search, ...w } })),
     db.module.findFirst({ orderBy: { sortOrder: "desc" }, select: { sortOrder: true } }),
   ]);
-  return { rows, total, tabs, nextSortOrder: (last?.sortOrder ?? 0) + 1 };
+  return { rows, total, tabs: [] as FilterTab[], nextSortOrder: (last?.sortOrder ?? 0) + 1 };
 }
 
 export const getModuleWithMenus = (id: string) =>
@@ -218,8 +199,8 @@ export async function listBlockedIps(list: ListState) {
   const search: Prisma.BlockedIpWhereInput = list.q
     ? { OR: [{ ip: { contains: list.q } }, { reason: contains(list.q) }] }
     : {};
-  const where = { ...search, ...statusWhere(list.tab) };
-  const [rows, total, tabs] = await Promise.all([
+  const where = search;
+  const [rows, total] = await Promise.all([
     db.blockedIp.findMany({
       where,
       orderBy: { [list.sort]: list.dir },
@@ -227,9 +208,8 @@ export async function listBlockedIps(list: ListState) {
       ...pageArgs(list),
     }),
     db.blockedIp.count({ where }),
-    statusTabs((w) => db.blockedIp.count({ where: { ...search, ...w } }), ["Blocked", "Unblocked"]),
   ]);
-  return { rows, total, tabs };
+  return { rows, total, tabs: [] as FilterTab[] };
 }
 
 export const ACTIVITY_SORTS = ["at", "action"] as const;
@@ -367,10 +347,9 @@ const ITEM_TABS: Record<string, Prisma.ItemWhereInput> = {
   service: { type: "SERVICE", isActive: true },
   part: { type: "PART", isActive: true },
   accessory: { type: "ACCESSORY", isActive: true },
-  inactive: { isActive: false },
 };
 
-/** Tabs are the item types (active) plus Inactive. */
+/** Tabs are the item types. */
 export async function listItems(list: ListState) {
   const search: Prisma.ItemWhereInput = list.q
     ? {
@@ -395,7 +374,7 @@ export async function listItems(list: ListState) {
     db.item.count({ where: search }),
     ...Object.values(ITEM_TABS).map((w) => db.item.count({ where: { ...search, ...w } })),
   ]);
-  const labels = { service: "Services", part: "Spare parts", accessory: "Accessories", inactive: "Inactive" };
+  const labels = { service: "Services", part: "Spare parts", accessory: "Accessories" };
   const tabs: FilterTab[] = [
     { key: "", label: "All", count: all },
     ...Object.keys(ITEM_TABS).map((k, i) => ({ key: k, label: labels[k as keyof typeof labels], count: counts[i]! })),

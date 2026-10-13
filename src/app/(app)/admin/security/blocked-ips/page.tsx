@@ -1,5 +1,4 @@
 import { db } from "@/server/db";
-import { Badge } from "@/components/ui/badge";
 import { ListView } from "@/components/data/list-view";
 import { listState } from "@/lib/list";
 import { saveBlockedIp } from "@/modules/admin/actions/save";
@@ -69,10 +68,6 @@ export default async function BlockedIpsPage({ searchParams }: PageProps<"/admin
             cell: (r) => (r.blockedBy ? [r.blockedBy.firstName, r.blockedBy.lastName].filter(Boolean).join(" ") : "—"),
           },
           { header: "Date", sort: "createdAt", cell: (r) => formatDateTime(r.createdAt) },
-          {
-            header: "Status",
-            cell: (r) => <Badge tone={r.isActive ? "danger" : "neutral"}>{r.isActive ? "Blocked" : "Unblocked"}</Badge>,
-          },
           {
             header: "Action",
             cell: (r) =>

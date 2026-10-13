@@ -1,5 +1,5 @@
 import { db } from "@/server/db";
-import { ActiveBadge, Badge } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";
 import { ListView } from "@/components/data/list-view";
 import { listState } from "@/lib/list";
 import { saveBranch } from "@/modules/admin/actions/save";
@@ -143,7 +143,6 @@ export default async function BranchesPage({ searchParams }: PageProps<"/admin/c
           },
           { header: "Phone", cell: (r) => r.phone ?? "—" },
           { header: "Users", cell: (r) => r._count.users, align: "center" },
-          { header: "Status", cell: (r) => <ActiveBadge active={r.isActive} /> },
           {
             header: "Action",
             cell: (r) =>
