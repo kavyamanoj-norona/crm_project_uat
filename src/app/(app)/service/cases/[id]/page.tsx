@@ -34,6 +34,10 @@ import { AssignEngineerDialog } from "@/modules/service/components/assign-engine
 import { EstimateDialog } from "@/modules/service/components/estimate-dialog";
 import { FeedbackDialog } from "@/modules/service/components/feedback-dialog";
 import { ITEM_TYPE_LABELS, ITEM_TYPE_TONE } from "@/modules/admin/item-schema";
+import { PartRequestDialog } from "@/modules/service/components/part-request-dialog";
+import { ItemReturnDialog } from "@/modules/service/components/item-return-dialog";
+import { getWarrantyCover, type WarrantyCover } from "@/modules/service/warranty";
+import { requestItemReturn } from "@/modules/service/actions/item-return";
 import { StageActions } from "@/modules/service/components/stage-actions";
 import { STAGE_ICONS } from "@/modules/service/components/stage-icons";
 import { ChipBranchActions } from "@/modules/service/components/chip-branch-actions";
@@ -196,9 +200,47 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
         }),
       ])
     : [[], []];
+  const isClosed = c.status === "CLOSED";
+  // Open returns on a closed case, so a line already returned shows its status instead of the button.
+  const openReturns = isClosed
+    ? await db.caseItemReturn.findMany({
+        where: { caseId: c.id, isDelete: 0, status: { in: ["REQUESTED", "APPROVED"] } },
+        select: { caseItemId: true, status: true },
+      })
+    : [];
+  const cover = isClosed
+    ? await getWarrantyCover(c.id, c.items.map((l) => l.itemId))
+    : new Map<string, WarrantyCover>();
+  const warrantyFor = (itemId: string) => {
+    const w = cover.get(itemId);
+    if (!w?.days) return { covered: false, hint: "No warranty on this item" };
+    return w.covered
+      ? { covered: true, hint: `Under warranty until ${formatDate(w.endsAt)}` }
+      : { covered: false, hint: `Warranty ended on ${formatDate(w.endsAt)}` };
+  };
+  // Stock units (by USID) the Purchase Manager allocated to this case, for traceability.
+  const allocations = await db.stockUnit.findMany({
+    where: { allocatedCaseId: c.id },
+    orderBy: { allocatedAt: "desc" },
+    select: {
+      id: true,
+      usid: true,
+      allocatedAt: true,
+      status: true,
+      receivedAt: true,
+      receivedBy: { select: { firstName: true, lastName: true } },
+      item: { select: { name: true, code: true } },
+      billItem: { select: { bill: { select: { id: true, billNo: true } } } },
+      purchaseRequest: { select: { item: { select: { name: true } } } },
+      allocatedBy: { select: { firstName: true, lastName: true } },
+      attachments: { select: { id: true, url: true, fileName: true }, orderBy: { createdAt: "asc" } },
+    },
+  });
+  const returnStatus = new Map(openReturns.map((r) => [r.caseItemId, r.status]));
   const stockMap = new Map(stockItems.map((s) => [s.itemId, s.quantity]));
   // Items that already have an active (non-fulfilled, non-rejected) PR on this case
   const requestedItemIds = new Set(activePRs.map((pr) => pr.itemId));
+  const consumedItemIds = new Set(activePRs.filter((pr) => pr.status === "CONSUMED").map((pr) => pr.itemId));
 
   const estimate = estimateMode && (
     <EstimateDialog
@@ -446,6 +488,19 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
                   header: "Action",
                   cell: (l) => {
                     if (l.type !== "PART" && l.type !== "ACCESSORY") return null;
+                    if (isClosed) {
+                      const rs = returnStatus.get(l.id);
+                      if (rs) {
+                        return (
+                          <span className="inline-flex items-center rounded-lg border border-border bg-surface-muted px-3 py-1 text-xs font-medium text-text-muted">
+                            {rs === "APPROVED" ? "Return approved" : "Return requested"}
+                          </span>
+                        );
+                      }
+                      return permission.canEdit ? (
+                        <ItemReturnDialog itemName={l.name} warranty={warrantyFor(l.itemId)} action={requestItemReturn.bind(null, l.id)} />
+                      ) : null;
+                    }
                     const qty = stockMap.get(l.itemId) ?? 0;
                     if (qty > 0) {
                       return (
@@ -459,17 +514,11 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
                     if (requestedItemIds.has(l.itemId)) {
                       return (
                         <span className="inline-flex items-center rounded-lg border border-border bg-surface-muted px-3 py-1 text-xs font-medium text-text-muted">
-                          Requested
+                          {consumedItemIds.has(l.itemId) ? "Consumed" : "Requested"}
                         </span>
                       );
                     }
-                    return (
-                      <form action={requestPartForCase.bind(null, l.id)}>
-                        <button type="submit" className="inline-flex items-center rounded-lg border border-primary/30 px-3 py-1 text-xs font-medium text-red-50 bg-red-700">
-                          Request
-                        </button>
-                      </form>
-                    );
+                    return <PartRequestDialog itemName={l.name} action={requestPartForCase.bind(null, l.id)} />;
                   },
                 },
               ]}
@@ -517,6 +566,64 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
               />
             </div>
           </Card>
+
+          {allocations.length > 0 && (
+            <Card title="Consumed stock">
+              <DataTable
+                rows={allocations}
+                rowKey={(a) => a.id}
+                columns={[
+                  { header: "USID", cell: (a) => <span className="text-xs font-medium tabular-nums">{a.usid}</span> },
+                  {
+                    header: "Item used",
+                    cell: (a) => (
+                      <>
+                        <p className="font-medium">{a.item.name}</p>
+                        {a.purchaseRequest && a.purchaseRequest.item.name !== a.item.name && (
+                          <p className="text-xs text-text-muted">requested as {a.purchaseRequest?.item.name}</p>
+                        )}
+                      </>
+                    ),
+                  },
+                  { header: "Bill", cell: (a) => a.billItem?.bill.billNo ?? "Stock" },
+                  {
+                    header: "Photos",
+                    cell: (a) =>
+                  a.attachments.length === 0 ? (
+                      <span className="text-text-disabled">—</span>
+                    ) : (
+                      <div className="flex gap-1">
+                        {a.attachments.slice(0, 3).map((a) => (
+                          <a key={a.id} href={a.url} target="_blank" rel="noreferrer">
+                            {/* eslint-disable-next-line @next/next/no-img-element -- uploaded file, size unknown */}
+                            <img src={a.url} alt={a.fileName} className="size-10 rounded-md border border-border object-cover" />
+                          </a>
+                        ))}
+                        {a.attachments.length > 3 && <span className="self-center text-xs text-text-muted">+{a.attachments.length - 3}</span>}
+                      </div>
+                    ),
+                  },
+                  { header: "Allocated", cell: (a) => formatDateTime(a.allocatedAt) },
+                  { header: "By", cell: (a) => personName(a.allocatedBy) ?? "—" },
+                  {
+                    header: "Receipt",
+                    cell: (a) =>
+                      a.status === "RECEIVED" ? (
+                        <>
+                          <Badge tone="success">Received</Badge>
+                          <p className="mt-1 text-xs text-text-muted">
+                            {formatDateTime(a.receivedAt)}
+                            {a.receivedBy && ` · ${personName(a.receivedBy)}`}
+                          </p>
+                        </>
+                      ) : (
+                        <Badge tone="warning">Awaiting receipt</Badge>
+                      ),
+                  },
+                ]}
+              />
+            </Card>
+          )}
 
           <Card title="Device & intake">
             <div className="grid gap-x-8 gap-y-2.5 md:grid-cols-2">

@@ -57,7 +57,7 @@ export function FeedbackDialog({ action, initial }: FeedbackDialogProps) {
               aria-invalid={errors.customerBehaviour ? true : undefined}
             />
           </Field>
-          <Field label="Comment" htmlFor="comment" error={errors.comment} hint="Optional — shown on the case record">
+          <Field label="Comment" htmlFor="comment" error={errors.comment} hint="Shown on the case record">
             <Textarea
               id="comment"
               name="comment"

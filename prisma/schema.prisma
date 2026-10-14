@@ -27,7 +27,7 @@ model Company {
 
   branches Branch[]
   users    User[]
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete Int      @default(0) // 0 = active, 1 = soft-deleted
 
   @@map("company")
 }
@@ -63,6 +63,10 @@ model Branch {
 
   stockItems       StockItem[]
   purchaseRequests PurchaseRequest[]
+  purchaseBills    PurchaseBill[]
+  stockUnits       StockUnit[]       @relation("UnitLocation")
+  unitsAllocated   StockUnit[]       @relation("UnitAllocatedBranch")
+  unitEvents       StockUnitEvent[]  @relation("UnitEventBranch")
   transfersOut     StockTransfer[]   @relation("TransferFrom")
   transfersIn      StockTransfer[]   @relation("TransferTo")
 
@@ -70,7 +74,7 @@ model Branch {
   buybackRecords BuybackRecord[]
   refurbItems    RefurbItem[]
   salesTargets   SalesTarget[]
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete       Int             @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([companyId])
   @@map("branch")
@@ -86,7 +90,7 @@ model Domain {
 
   departments Department[]
   users       User[]
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete    Int          @default(0) // 0 = active, 1 = soft-deleted
 
   @@map("domain")
 }
@@ -99,9 +103,9 @@ model Department {
   createdAt DateTime @default(now()) @db.Timestamptz
   updatedAt DateTime @updatedAt @db.Timestamptz
 
-  domain Domain @relation(fields: [domainId], references: [id])
-  users  User[]
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  domain   Domain @relation(fields: [domainId], references: [id])
+  users    User[]
+  isDelete Int    @default(0) // 0 = active, 1 = soft-deleted
 
   @@unique([domainId, name])
   @@map("department")
@@ -126,7 +130,7 @@ model Privilege {
 
   users       User[]
   permissions PrivilegePermission[]
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete    Int                   @default(0) // 0 = active, 1 = soft-deleted
 
   @@map("privilege")
 }
@@ -209,6 +213,8 @@ model User {
   casesAssigned      Case[]              @relation("CaseEngineer")
   caseStatusMoves    CaseStatusHistory[]
   caseAttachments    CaseAttachment[]
+  caseItemReturns    CaseItemReturn[]
+  returnsReviewed    CaseItemReturn[]    @relation("ReturnReviewedBy")
   paymentsReceived   Payment[]
   itemsCreated       Item[]              @relation("ItemCreatedBy")
   itemsUpdated       Item[]              @relation("ItemUpdatedBy")
@@ -220,11 +226,16 @@ model User {
   tatConfigsCreated TatConfig[]    @relation("TatConfigCreatedBy")
   tatConfigsUpdated TatConfig[]    @relation("TatConfigUpdatedBy")
 
-  stockItemsUpdated        StockItem[]       @relation("StockItemUpdatedBy")
-  purchaseRequestsRaised   PurchaseRequest[] @relation("PRRequestedBy")
-  purchaseRequestsReviewed PurchaseRequest[] @relation("PRReviewedBy")
-  transfersCreated         StockTransfer[]   @relation("TransferCreatedBy")
-  transfersApproved        StockTransfer[]   @relation("TransferApprovedBy")
+  stockItemsUpdated        StockItem[]           @relation("StockItemUpdatedBy")
+  purchaseRequestsRaised   PurchaseRequest[]     @relation("PRRequestedBy")
+  purchaseRequestsReviewed PurchaseRequest[]     @relation("PRReviewedBy")
+  purchaseBillsCreated     PurchaseBill[]        @relation("BillCreatedBy")
+  stockUnitsAllocated      StockUnit[]           @relation("UnitAllocatedBy")
+  stockUnitsReceived       StockUnit[]           @relation("UnitReceivedBy")
+  stockUnitEvents          StockUnitEvent[]      @relation("UnitEventBy")
+  billPaymentsRecorded     PurchaseBillPayment[] @relation("BillPaymentBy")
+  transfersCreated         StockTransfer[]       @relation("TransferCreatedBy")
+  transfersApproved        StockTransfer[]       @relation("TransferApprovedBy")
 
   directSalesSold     DirectSale[]    @relation("DirectSaleSoldBy")
   buybacksRecorded    BuybackRecord[] @relation("BuybackRecordedBy")
@@ -239,7 +250,7 @@ model User {
   qcChecklistUpdated    QcChecklistItem[]      @relation("QcChecklistUpdatedBy")
   qcResponsesAnswered   CaseQcResponse[]       @relation("QcResponseAnsweredBy")
   labTransfersCompleted Case[]                 @relation("CaseLabTransferBy")
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete              Int                    @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([companyId])
   @@index([branchId])
@@ -276,7 +287,7 @@ model Module {
 
   menus        Menu[]
   defaultUsers User[]
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete     Int    @default(0) // 0 = active, 1 = soft-deleted
 
   @@map("module")
 }
@@ -299,7 +310,7 @@ model Menu {
   parent      Menu?                 @relation("MenuTree", fields: [parentId], references: [id])
   children    Menu[]                @relation("MenuTree")
   permissions PrivilegePermission[]
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete    Int                   @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([moduleId])
   @@index([parentId])
@@ -320,7 +331,7 @@ model PrivilegePermission {
 
   privilege Privilege @relation(fields: [privilegeId], references: [id])
   menu      Menu      @relation(fields: [menuId], references: [id])
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete  Int       @default(0) // 0 = active, 1 = soft-deleted
 
   @@unique([privilegeId, menuId])
   @@index([menuId])
@@ -352,7 +363,7 @@ model Rule {
   updatedAt   DateTime      @updatedAt @db.Timestamptz
 
   updatedBy User? @relation(fields: [updatedById], references: [id])
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete  Int   @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([category])
   @@map("rule")
@@ -392,12 +403,14 @@ model Item {
   updatedBy User?      @relation("ItemUpdatedBy", fields: [updatedById], references: [id])
   caseItems CaseItem[]
 
-  stockItems       StockItem[]
-  purchaseRequests PurchaseRequest[]
-  transferItems    StockTransferItem[]
+  stockItems        StockItem[]
+  purchaseRequests  PurchaseRequest[]
+  stockUnits        StockUnit[]
+  purchaseBillItems PurchaseBillItem[]
+  transferItems     StockTransferItem[]
 
   directSaleItems DirectSaleItem[]
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete        Int              @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([name])
   @@index([type, isActive])
@@ -413,7 +426,7 @@ model NumberSequence {
   key       String   @id
   value     Int      @default(0)
   updatedAt DateTime @updatedAt @db.Timestamptz
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete  Int      @default(0) // 0 = active, 1 = soft-deleted
 
   @@map("number_sequence")
 }
@@ -492,7 +505,7 @@ model Customer {
 
   directSales    DirectSale[]
   buybackRecords BuybackRecord[]
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete       Int             @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([name])
   @@index([createdAt])
@@ -608,6 +621,9 @@ model Case {
   items             CaseItem[]
   receivedItems     CaseReceivedItem[]
   attachments       CaseAttachment[]
+  itemReturns       CaseItemReturn[]
+  stockUnits        StockUnit[]
+  unitEvents        StockUnitEvent[]
   statusHistory     CaseStatusHistory[]
   payments          Payment[]
   whatsappMessages  WhatsAppMessage[]
@@ -619,7 +635,7 @@ model Case {
   labVendor         ChipLabVendor?         @relation("CaseLabVendor", fields: [labVendorId], references: [id])
   qcResponses       CaseQcResponse[]
   labTransferBy     User?                  @relation("CaseLabTransferBy", fields: [labTransferCompletedById], references: [id], onDelete: SetNull)
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete          Int                    @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([branchId, status, createdAt])
   @@index([branchId, stageChangedAt])
@@ -655,11 +671,12 @@ model CaseItem {
   removedAt       DateTime? @db.Timestamptz
   removedById     String?
 
-  case      Case  @relation(fields: [caseId], references: [id])
-  item      Item  @relation(fields: [itemId], references: [id])
-  addedBy   User? @relation("CaseItemAddedBy", fields: [addedById], references: [id])
-  removedBy User? @relation("CaseItemRemovedBy", fields: [removedById], references: [id])
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  case      Case             @relation(fields: [caseId], references: [id])
+  item      Item             @relation(fields: [itemId], references: [id])
+  addedBy   User?            @relation("CaseItemAddedBy", fields: [addedById], references: [id])
+  removedBy User?            @relation("CaseItemRemovedBy", fields: [removedById], references: [id])
+  returns   CaseItemReturn[]
+  isDelete  Int              @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([caseId, removedAt])
   @@index([itemId])
@@ -676,29 +693,79 @@ model CaseReceivedItem {
   sortOrder   Int           @default(0)
   createdAt   DateTime      @default(now()) @db.Timestamptz
 
-  case Case @relation(fields: [caseId], references: [id])
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  case     Case @relation(fields: [caseId], references: [id])
+  isDelete Int  @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([caseId])
   @@map("case_received_item")
 }
 
 model CaseAttachment {
-  id          String   @id @default(cuid())
-  caseId      String
-  kind        String   @default("INTAKE_PHOTO")
-  url         String
-  fileName    String
-  sizeBytes   Int
-  createdById String?
-  createdAt   DateTime @default(now()) @db.Timestamptz
+  id                String   @id @default(cuid())
+  caseId            String
+  kind              String   @default("INTAKE_PHOTO")
+  url               String
+  fileName          String
+  sizeBytes         Int
+  createdById       String?
+  returnId          String?
+  purchaseRequestId String?
+  stockUnitId       String? // photo of the stock unit, added by the Purchase Manager when allocating it
+  createdAt         DateTime @default(now()) @db.Timestamptz
 
-  case      Case  @relation(fields: [caseId], references: [id])
-  createdBy User? @relation(fields: [createdById], references: [id])
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  case            Case             @relation(fields: [caseId], references: [id])
+  stockUnit       StockUnit?       @relation(fields: [stockUnitId], references: [id])
+  createdBy       User?            @relation(fields: [createdById], references: [id])
+  itemReturn      CaseItemReturn?  @relation(fields: [returnId], references: [id])
+  purchaseRequest PurchaseRequest? @relation(fields: [purchaseRequestId], references: [id])
+  isDelete        Int              @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([caseId])
+  @@index([returnId])
+  @@index([purchaseRequestId])
+  @@index([stockUnitId])
   @@map("case_attachment")
+}
+
+enum ReturnStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  COMPLETED
+}
+
+// A part/accessory returned after the case was closed: mandatory notes + optional photos.
+enum ReturnType {
+  RETURN // customer gives the product back
+  WARRANTY_CLAIM // product has a fault inside its warranty period
+}
+
+model CaseItemReturn {
+  id             String       @id @default(cuid())
+  caseId         String
+  caseItemId     String
+  returnType     ReturnType   @default(RETURN)
+  notes          String
+  status         ReturnStatus @default(REQUESTED)
+  // Warranty claims: the end of cover (case closed + item warranty days), fixed when the claim is raised.
+  warrantyEndsAt DateTime?    @db.Timestamptz
+  createdById    String?
+  reviewedById   String?
+  reviewedAt     DateTime?    @db.Timestamptz
+  createdAt      DateTime     @default(now()) @db.Timestamptz
+
+  case        Case             @relation(fields: [caseId], references: [id])
+  caseItem    CaseItem         @relation(fields: [caseItemId], references: [id])
+  createdBy   User?            @relation(fields: [createdById], references: [id])
+  reviewedBy  User?            @relation("ReturnReviewedBy", fields: [reviewedById], references: [id])
+  attachments CaseAttachment[]
+  stockUnits  StockUnit[]
+  isDelete    Int              @default(0) // 0 = active, 1 = soft-deleted
+
+  @@index([caseId])
+  @@index([caseItemId, status])
+  @@index([returnType, status])
+  @@map("case_item_return")
 }
 
 // Append-only stage history; the case timeline reads from here.
@@ -713,7 +780,7 @@ model CaseStatusHistory {
 
   case      Case  @relation(fields: [caseId], references: [id])
   changedBy User? @relation(fields: [changedById], references: [id])
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete  Int   @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([caseId, at])
   @@map("case_status_history")
@@ -742,7 +809,7 @@ model CaseFeedback {
 
   case      Case  @relation(fields: [caseId], references: [id])
   createdBy User? @relation(fields: [createdById], references: [id])
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete  Int   @default(0) // 0 = active, 1 = soft-deleted
 
   @@map("case_feedback")
 }
@@ -778,7 +845,7 @@ model Payment {
   case       Case?    @relation(fields: [caseId], references: [id])
   customer   Customer @relation(fields: [customerId], references: [id])
   receivedBy User?    @relation(fields: [receivedById], references: [id])
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete   Int      @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([branchId, createdAt])
   @@index([caseId])
@@ -803,7 +870,7 @@ model TatConfig {
 
   createdBy User? @relation("TatConfigCreatedBy", fields: [createdById], references: [id])
   updatedBy User? @relation("TatConfigUpdatedBy", fields: [updatedById], references: [id])
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete  Int   @default(0) // 0 = active, 1 = soft-deleted
 
   @@map("tat_config")
 }
@@ -820,7 +887,7 @@ model BlockedIp {
   updatedAt   DateTime @updatedAt @db.Timestamptz
 
   blockedBy User? @relation(fields: [blockedById], references: [id])
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete  Int   @default(0) // 0 = active, 1 = soft-deleted
 
   @@map("blocked_ip")
 }
@@ -838,8 +905,8 @@ model UserActivityLog {
   ip        String?
   userAgent String?
 
-  user User? @relation(fields: [userId], references: [id])
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  user     User? @relation(fields: [userId], references: [id])
+  isDelete Int   @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([userId, at])
   @@index([at])
@@ -872,7 +939,7 @@ model WhatsAppMessage {
   case      Case     @relation(fields: [caseId], references: [id])
   customer  Customer @relation(fields: [customerId], references: [id])
   createdBy User?    @relation(fields: [createdById], references: [id])
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete  Int      @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([caseId, createdAt])
   @@map("whatsapp_message")
@@ -886,6 +953,7 @@ enum PurchaseRequestStatus {
   APPROVED // PM approved; awaiting arrival
   REJECTED // PM rejected
   FULFILLED // stock received at branch
+  CONSUMED // fully met by allocating stock units (USIDs) to cases, see StockUnit
 }
 
 enum TransferStatus {
@@ -910,7 +978,7 @@ model StockItem {
   branch    Branch @relation(fields: [branchId], references: [id])
   item      Item   @relation(fields: [itemId], references: [id])
   updatedBy User?  @relation("StockItemUpdatedBy", fields: [updatedById], references: [id])
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete  Int    @default(0) // 0 = active, 1 = soft-deleted
 
   @@unique([branchId, itemId])
   @@index([branchId])
@@ -926,6 +994,8 @@ model PurchaseRequest {
   caseId        String? // case that triggered the request
   quantity      Int                   @default(1)
   notes         String?
+  modelNo       String? // model number of the part (required when requested from a case)
+  consumedQty   Int                   @default(0) // units allocated so far from billed stock
   status        PurchaseRequestStatus @default(PENDING)
   slaBreachAt   DateTime?             @db.Timestamptz
   requestedById String?
@@ -934,12 +1004,14 @@ model PurchaseRequest {
   createdAt     DateTime              @default(now()) @db.Timestamptz
   updatedAt     DateTime              @updatedAt @db.Timestamptz
 
-  branch      Branch @relation(fields: [branchId], references: [id])
-  item        Item   @relation(fields: [itemId], references: [id])
-  case        Case?  @relation(fields: [caseId], references: [id])
-  requestedBy User?  @relation("PRRequestedBy", fields: [requestedById], references: [id])
-  reviewedBy  User?  @relation("PRReviewedBy", fields: [reviewedById], references: [id])
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  branch      Branch           @relation(fields: [branchId], references: [id])
+  item        Item             @relation(fields: [itemId], references: [id])
+  stockUnits  StockUnit[]
+  case        Case?            @relation(fields: [caseId], references: [id])
+  requestedBy User?            @relation("PRRequestedBy", fields: [requestedById], references: [id])
+  reviewedBy  User?            @relation("PRReviewedBy", fields: [reviewedById], references: [id])
+  attachments CaseAttachment[]
+  isDelete    Int              @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([branchId, status])
   @@index([itemId])
@@ -967,7 +1039,7 @@ model StockTransfer {
   createdBy  User?               @relation("TransferCreatedBy", fields: [createdById], references: [id])
   approvedBy User?               @relation("TransferApprovedBy", fields: [approvedById], references: [id])
   items      StockTransferItem[]
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete   Int                 @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([fromBranchId, status])
   @@index([toBranchId, status])
@@ -984,7 +1056,7 @@ model StockTransferItem {
 
   transfer StockTransfer @relation(fields: [transferId], references: [id])
   item     Item          @relation(fields: [itemId], references: [id])
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete Int           @default(0) // 0 = active, 1 = soft-deleted
 
   @@unique([transferId, itemId])
   @@index([transferId])
@@ -1010,7 +1082,7 @@ model DirectSale {
   customer Customer?        @relation(fields: [customerId], references: [id])
   soldBy   User             @relation("DirectSaleSoldBy", fields: [soldById], references: [id])
   items    DirectSaleItem[]
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete Int              @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([branchId, soldAt])
   @@map("direct_sale")
@@ -1025,9 +1097,9 @@ model DirectSaleItem {
   unitPricePaise Int
   totalPaise     Int
 
-  sale DirectSale @relation(fields: [saleId], references: [id])
-  item Item       @relation(fields: [itemId], references: [id])
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  sale     DirectSale @relation(fields: [saleId], references: [id])
+  item     Item       @relation(fields: [itemId], references: [id])
+  isDelete Int        @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([saleId])
   @@map("direct_sale_item")
@@ -1064,7 +1136,7 @@ model BuybackRecord {
   customer   Customer?   @relation(fields: [customerId], references: [id])
   recordedBy User        @relation("BuybackRecordedBy", fields: [recordedById], references: [id])
   refurbItem RefurbItem?
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete   Int         @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([branchId, recordedAt])
   @@map("buyback_record")
@@ -1094,9 +1166,9 @@ model RefurbItem {
   addedAt           DateTime     @default(now()) @db.Timestamptz
   isActive          Boolean      @default(true)
 
-  branch  Branch         @relation(fields: [branchId], references: [id])
-  buyback BuybackRecord? @relation(fields: [buybackId], references: [id])
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  branch   Branch         @relation(fields: [branchId], references: [id])
+  buyback  BuybackRecord? @relation(fields: [buybackId], references: [id])
+  isDelete Int            @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([branchId, status])
   @@map("refurb_item")
@@ -1125,7 +1197,7 @@ model SalesTarget {
 
   branch    Branch @relation(fields: [branchId], references: [id])
   createdBy User?  @relation("SalesTargetCreatedBy", fields: [createdById], references: [id])
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete  Int    @default(0) // 0 = active, 1 = soft-deleted
 
   @@unique([branchId, period, year, month, day])
   @@index([branchId, period, year])
@@ -1153,7 +1225,7 @@ model ChipLabVendor {
   updatedBy  User?              @relation("VendorUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
   outsources ChipLabOutsource[]
   labCases   Case[]             @relation("CaseLabVendor")
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete   Int                @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([isActive])
   @@map("chip_lab_vendor")
@@ -1177,7 +1249,7 @@ model ChipLabOutsource {
   case      Case          @relation(fields: [caseId], references: [id])
   vendor    ChipLabVendor @relation(fields: [vendorId], references: [id])
   createdBy User?         @relation("OutsourceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete  Int           @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([caseId])
   @@map("chip_lab_outsource")
@@ -1193,9 +1265,9 @@ model ChipLabVendorPayment {
   paidAt      DateTime @default(now()) @db.Timestamptz
   paidById    String?
 
-  case   Case  @relation(fields: [caseId], references: [id])
-  paidBy User? @relation("VendorPaymentBy", fields: [paidById], references: [id], onDelete: SetNull)
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  case     Case  @relation(fields: [caseId], references: [id])
+  paidBy   User? @relation("VendorPaymentBy", fields: [paidById], references: [id], onDelete: SetNull)
+  isDelete Int   @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([caseId])
   @@map("chip_lab_vendor_payment")
@@ -1216,7 +1288,7 @@ model QcChecklistItem {
   createdBy User?            @relation("QcChecklistCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   updatedBy User?            @relation("QcChecklistUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
   responses CaseQcResponse[]
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete  Int              @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([isActive])
   @@map("qc_checklist_item")
@@ -1241,7 +1313,7 @@ model CaseQcResponse {
   case          Case            @relation(fields: [caseId], references: [id])
   checklistItem QcChecklistItem @relation(fields: [checklistItemId], references: [id])
   answeredBy    User?           @relation("QcResponseAnsweredBy", fields: [answeredById], references: [id], onDelete: SetNull)
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete      Int             @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([caseId, stage, removedAt])
   @@map("case_qc_response")
@@ -1261,9 +1333,193 @@ model AiAgentRun {
   durationMs Int?
   error      String?
   createdAt  DateTime @default(now()) @db.Timestamptz
-  isDelete Int @default(0) // 0 = active, 1 = soft-deleted
+  isDelete   Int      @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([userId, createdAt])
   @@index([agentName, createdAt])
   @@map("ai_agent_run")
+}
+
+// ─── Inventory: purchase billing ─────────────────────────────────────────────
+
+enum BillPaymentStatus {
+  UNPAID
+  PARTIAL
+  PAID
+}
+
+// Who we buy stock from. Matched by GSTIN when the bill has one, otherwise by name.
+model Supplier {
+  id        String   @id @default(cuid())
+  name      String
+  gstin     String?  @unique
+  state     String? // "Kerala, Code : 32"
+  phone     String?
+  email     String?
+  address   String?
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  bills    PurchaseBill[]
+  isDelete Int            @default(0) // 0 = active, 1 = soft-deleted
+
+  @@index([name])
+  @@map("supplier")
+}
+
+// A confirmed supplier bill. Saving it adds the lines to branch stock and records
+// the payment, all in one transaction. Money is integer paise.
+model PurchaseBill {
+  id            String            @id @default(cuid())
+  code          String            @unique // "PB-EDP-2610-001"
+  branchId      String
+  supplierId    String
+  billNo        String // as printed on the bill
+  billNoNorm    String // upper-case letters+digits only, for duplicate checks
+  billDate      DateTime          @db.Date
+  subtotalPaise Int // Σ taxable amount
+  taxPaise      Int // Σ GST
+  roundOffPaise Int               @default(0)
+  totalPaise    Int
+  paidPaise     Int               @default(0)
+  paymentStatus BillPaymentStatus @default(UNPAID)
+  imageUrl      String?
+  imageHash     String? // sha256 of the uploaded bill image
+  notes         String?
+  createdById   String?
+  createdAt     DateTime          @default(now()) @db.Timestamptz
+  updatedAt     DateTime          @updatedAt @db.Timestamptz
+
+  branch    Branch                @relation(fields: [branchId], references: [id])
+  supplier  Supplier              @relation(fields: [supplierId], references: [id])
+  createdBy User?                 @relation("BillCreatedBy", fields: [createdById], references: [id])
+  items     PurchaseBillItem[]
+  payments  PurchaseBillPayment[]
+  isDelete  Int                   @default(0) // 0 = active, 1 = soft-deleted
+
+  @@unique([supplierId, billNoNorm])
+  @@index([branchId, billDate])
+  @@index([imageHash])
+  @@map("purchase_bill")
+}
+
+model PurchaseBillItem {
+  id             String   @id @default(cuid())
+  billId         String
+  itemId         String
+  description    String // name as printed on the bill
+  hsnSac         String?
+  quantity       Int
+  unitCostPaise  Int // rate per unit, before discount and GST
+  discountPaise  Int      @default(0) // line discount, off quantity × unitCost
+  gstPercent     Int
+  taxablePaise   Int // quantity × unitCost − discount
+  taxPaise       Int
+  lineTotalPaise Int
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now()) @db.Timestamptz
+
+  bill       PurchaseBill @relation(fields: [billId], references: [id])
+  item       Item         @relation(fields: [itemId], references: [id])
+  isDelete   Int          @default(0) // 0 = active, 1 = soft-deleted
+  stockUnits StockUnit[]
+
+  @@index([billId])
+  @@index([itemId])
+  @@map("purchase_bill_item")
+}
+
+model PurchaseBillPayment {
+  id          String      @id @default(cuid())
+  billId      String
+  amountPaise Int
+  mode        PaymentMode
+  referenceNo String?
+  note        String?
+  paidAt      DateTime    @default(now()) @db.Timestamptz
+  createdById String?
+  createdAt   DateTime    @default(now()) @db.Timestamptz
+
+  bill      PurchaseBill @relation(fields: [billId], references: [id])
+  createdBy User?        @relation("BillPaymentBy", fields: [createdById], references: [id])
+  isDelete  Int          @default(0) // 0 = active, 1 = soft-deleted
+
+  @@index([billId])
+  @@map("purchase_bill_payment")
+}
+
+enum StockUnitStatus {
+  AVAILABLE // in stock, can be allocated
+  ALLOCATED // allocated to a case at a branch, awaiting the branch's receipt; never allocated again
+  RECEIVED // the branch confirmed it received the unit
+}
+
+enum StockUnitAction {
+  ALLOCATED
+  RECEIVED
+}
+
+// One physical unit of purchased stock, with its own Unique Stock ID. Created when a supplier
+// bill is saved (one row per unit). The Purchase Manager allocates a specific USID to a case.
+model StockUnit {
+  id                String          @id @default(cuid())
+  usid              String          @unique // "USID-EDP-2610-00001"
+  itemId            String
+  billItemId        String? // null = opening / adjusted stock with no supplier bill
+  branchId          String // where the unit is held
+  status            StockUnitStatus @default(AVAILABLE)
+  // Set once, when the unit is allocated.
+  allocatedAt       DateTime?       @db.Timestamptz
+  allocatedById     String?
+  allocatedCaseId   String?
+  allocatedBranchId String? // the case's branch
+  purchaseRequestId String? // the request this allocation met, if any
+  // Set once, when the branch confirms receipt.
+  receivedAt        DateTime?       @db.Timestamptz
+  receivedById      String?
+  note              String?
+  createdAt         DateTime        @default(now()) @db.Timestamptz
+
+  item             Item              @relation(fields: [itemId], references: [id])
+  billItem         PurchaseBillItem? @relation(fields: [billItemId], references: [id])
+  branch           Branch            @relation("UnitLocation", fields: [branchId], references: [id])
+  allocatedBy      User?             @relation("UnitAllocatedBy", fields: [allocatedById], references: [id])
+  receivedBy       User?             @relation("UnitReceivedBy", fields: [receivedById], references: [id])
+  events           StockUnitEvent[]
+  allocatedCase    Case?             @relation(fields: [allocatedCaseId], references: [id])
+  allocatedBranch  Branch?           @relation("UnitAllocatedBranch", fields: [allocatedBranchId], references: [id])
+  purchaseRequest  PurchaseRequest?  @relation(fields: [purchaseRequestId], references: [id])
+  isDelete         Int               @default(0) // 0 = active, 1 = soft-deleted
+  caseItemReturn   CaseItemReturn?   @relation(fields: [caseItemReturnId], references: [id])
+  caseItemReturnId String?
+  attachments      CaseAttachment[]
+
+  @@index([status, itemId])
+  @@index([branchId, status])
+  @@index([allocatedCaseId])
+  @@index([billItemId])
+  @@index([purchaseRequestId])
+  @@map("stock_unit")
+}
+
+// Append-only history of a stock unit: each allocation and each receipt, with who/when/where.
+model StockUnitEvent {
+  id       String          @id @default(cuid())
+  unitId   String
+  action   StockUnitAction
+  userId   String?
+  caseId   String?
+  branchId String? // the branch it was allocated to / received at
+  note     String?
+  at       DateTime        @default(now()) @db.Timestamptz
+
+  unit     StockUnit @relation(fields: [unitId], references: [id])
+  user     User?     @relation("UnitEventBy", fields: [userId], references: [id])
+  case     Case?     @relation(fields: [caseId], references: [id])
+  branch   Branch?   @relation("UnitEventBranch", fields: [branchId], references: [id])
+  isDelete Int       @default(0) // 0 = active, 1 = soft-deleted
+
+  @@index([unitId, at])
+  @@index([caseId])
+  @@map("stock_unit_event")
 }

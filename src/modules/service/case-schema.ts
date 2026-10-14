@@ -436,6 +436,16 @@ export const feedbackSchema = z.object({
   customerBehaviour: z.enum(CUSTOMER_BEHAVIOURS, { error: "Select customer behaviour" }),
 });
 
+/** Return of a part/accessory on a closed case — notes are mandatory, photos optional. */
+export const RETURN_TYPES = ["RETURN", "WARRANTY_CLAIM"] as const;
+export type ReturnTypeValue = (typeof RETURN_TYPES)[number];
+export const RETURN_TYPE_LABELS: Record<ReturnTypeValue, string> = { RETURN: "Return", WARRANTY_CLAIM: "Warranty claim" };
+
+export const itemReturnSchema = z.object({
+  returnType: z.enum(RETURN_TYPES, { error: "Select the return type" }),
+  notes: requiredText("Notes").refine((v) => v.length <= 1000, "Keep the notes under 1000 characters"),
+});
+
 /** What the phone lookup returns to the intake form. */
 export type CustomerMatch = {
   id: string;

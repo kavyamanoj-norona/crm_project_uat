@@ -177,7 +177,7 @@ export function TatConfigRow({
           disabled={!canEdit}
           aria-invalid={errors.remarks ? true : undefined}
           className="h-8 px-2"
-          placeholder="Optional note…"
+          placeholder="Enter note"
         />
         {errors.remarks && (
           <p className="mt-0.5 text-[11px] text-danger">{errors.remarks[0]}</p>

@@ -50,7 +50,8 @@ export function Modal({ open, onClose, title, description, icon, size = "sm", fo
       onClick={(e) => e.target === ref.current && onClose()} // click on backdrop
       aria-labelledby={titleId}
       className={cn(
-        "m-auto w-[calc(100%-2rem)] rounded-2xl border border-border bg-surface p-0 text-text shadow-xl backdrop:bg-brand-navy/40 backdrop:backdrop-blur-[2px]",
+        // text-left / whitespace-normal: a dialog opened from a table cell would otherwise inherit its right alignment and no-wrap.
+        "m-auto w-[calc(100%-2rem)] rounded-2xl border border-border bg-surface p-0 text-left whitespace-normal text-text shadow-xl backdrop:bg-brand-navy/40 backdrop:backdrop-blur-[2px]",
         sizes[size],
         className,
       )}

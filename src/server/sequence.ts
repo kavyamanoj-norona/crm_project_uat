@@ -22,3 +22,17 @@ export async function peekSequence(key: string): Promise<number> {
   const row = await db.numberSequence.findUnique({ where: { key }, select: { value: true } });
   return (row?.value ?? 0) + 1;
 }
+
+/**
+ * Reserves `count` consecutive numbers of the counter `key` in one statement and returns the first.
+ * Use it when one save needs many numbers (e.g. a USID per purchased unit).
+ */
+export async function reserveSequence(tx: Tx, key: string, count: number): Promise<number> {
+  const rows = await tx.$queryRaw<{ value: number }[]>`
+    INSERT INTO "number_sequence" ("key", "value", "updatedAt")
+    VALUES (${key}, ${count}, now())
+    ON CONFLICT ("key") DO UPDATE
+      SET "value" = "number_sequence"."value" + ${count}, "updatedAt" = now()
+    RETURNING "value"`;
+  return Number(rows[0]!.value) - count + 1;
+}

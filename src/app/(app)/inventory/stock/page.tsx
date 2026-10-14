@@ -10,10 +10,12 @@ import { EntityForm, type FieldConfig } from "@/modules/admin/components/entity-
 import { AdminPage, param } from "@/modules/admin/components/admin-page";
 import { getBranchScope, listBranchOptions } from "@/server/branch-scope";
 import { requirePageAccess } from "@/server/rbac/guard";
+import { isPurchaseManager } from "@/modules/inventory/purchase-access";
 import { db } from "@/server/db";
 import { adjustStock, consumeStockItem } from "@/modules/inventory/actions/stock";
 import { INVENTORY_PATHS } from "@/modules/inventory/paths";
-import { STOCK_SORTS, listPhysicalItems, listStockPage } from "@/modules/inventory/queries";
+import { STOCK_SORTS, countAvailableUnits, listPhysicalItems, listStockPage, listStockUnitsPage } from "@/modules/inventory/queries";
+import { LinkButton } from "@/components/ui/button";
 
 export const metadata = { title: "Stock" };
 
@@ -30,8 +32,14 @@ export default async function StockPage({ searchParams }: PageProps<"/inventory/
   const scope = await getBranchScope(user);
   const canEdit = permission.canEdit;
 
-  const [{ rows, total, tabs, valuePaise }, physicalItems, branchOptions, editing] = await Promise.all([
-    listStockPage(list, scope.branchId),
+  // Head Office holds the purchased stock: its owners see it in every branch view, branch users never do.
+  const withHo = !user.privilege.isBranchBound;
+  const view = param(sp, "view") === "units" ? "units" : "items";
+
+  const [{ rows, total, tabs, valuePaise }, units, unitCounts, physicalItems, branchOptions, editing] = await Promise.all([
+    listStockPage(list, scope.branchId, withHo),
+    view === "units" ? listStockUnitsPage(list, scope.branchId, withHo) : Promise.resolve({ rows: [], total: 0, tabs: [] }),
+    countAvailableUnits(scope.branchId, withHo),
     listPhysicalItems(),
     listBranchOptions(),
     editId && canEdit
@@ -77,6 +85,76 @@ export default async function StockPage({ searchParams }: PageProps<"/inventory/
           : undefined
       }
     >
+      <div className="flex flex-wrap gap-2">
+        <LinkButton href={INVENTORY_PATHS.stock} variant={view === "items" ? "primary" : "secondary"} size="sm">
+          Items
+        </LinkButton>
+        <LinkButton href={`${INVENTORY_PATHS.stock}?view=units`} variant={view === "units" ? "primary" : "secondary"} size="sm">
+          Units (USIDs)
+        </LinkButton>
+      </div>
+      {view === "units" ? (
+      <ListView
+        list={list}
+        total={units.total}
+        tabs={units.tabs}
+        rows={units.rows}
+        rowKey={(u) => u.id}
+        searchPlaceholder="Search by USID, item, bill, supplier or case ID"
+        empty="No units yet. Each unit appears here with its USID when a supplier bill is saved under Billing."
+        columns={[
+          { header: "#", cell: (_, i) => i + 1 + (list.page - 1) * list.pageSize },
+          { header: "USID", cell: (u) => <span className="font-medium tabular-nums">{u.usid}</span> },
+          {
+            header: "Item",
+            cell: (u) => (
+              <>
+                <p className="font-medium">{u.item.name}</p>
+                <p className="text-xs text-text-muted">{u.item.code}</p>
+              </>
+            ),
+          },
+          {
+            header: "Bill",
+            cell: (u) =>
+              u.billItem ? (
+                <Link href={`${INVENTORY_PATHS.billing}/${u.billItem.bill.id}`} className="text-primary hover:underline">
+                  {u.billItem.bill.billNo}
+                </Link>
+              ) : (
+                <span className="text-text-muted">No bill</span>
+              ),
+          },
+          { header: "Supplier", cell: (u) => u.billItem?.bill.supplier.name ?? "—" },
+          { header: "Location", cell: (u) => `${u.branch.name} (${u.branch.code})` },
+          {
+            header: "Status",
+            cell: (u) =>
+              u.status === "AVAILABLE" ? (
+                <Badge tone="success">Available</Badge>
+              ) : u.status === "RECEIVED" ? (
+                <Badge tone="navy">Received</Badge>
+              ) : (
+                <Badge tone="primary">Allocated</Badge>
+              ),
+          },
+          {
+            header: "Allocated to",
+            cell: (u) =>
+              u.allocatedCase ? (
+                <>
+                  <Link href={`/service/cases/${u.allocatedCase.id}`} className="font-medium text-primary hover:underline">
+                    {u.allocatedCase.jobsheetNo}
+                  </Link>
+                  <p className="text-xs text-text-muted">{u.allocatedBranch?.code}</p>
+                </>
+              ) : (
+                "—"
+              ),
+          },
+        ]}
+      />
+      ) : (
       <ListView
         list={list}
         total={total}
@@ -131,6 +209,21 @@ export default async function StockPage({ searchParams }: PageProps<"/inventory/
             ),
           },
           {
+            header: "USIDs",
+            align: "right",
+            cell: (s) => {
+              const n = unitCounts.get(`${s.branchId}:${s.itemId}`) ?? 0;
+              if (n === 0 && s.quantity === 0) return <span className="text-text-disabled">—</span>;
+              if (n > s.quantity) return <Badge tone="danger">{n} (more than stock)</Badge>;
+              return (
+                <span className="tabular-nums">
+                  {n}
+                  {n < s.quantity && <span className="ml-1 text-xs text-text-muted">· {s.quantity - n} without USID</span>}
+                </span>
+              );
+            },
+          },
+          {
             header: "Action",
             cell: (s) => (
               <span className="flex items-center gap-1">
@@ -140,7 +233,7 @@ export default async function StockPage({ searchParams }: PageProps<"/inventory/
                   </Link>
                 )}
                 {s.quantity === 0 ? (
-                  <Link
+                  !isPurchaseManager(user) ? null : <Link
                     href={`${INVENTORY_PATHS.purchasing}?action=purchase-request&itemId=${s.item.id}`}
                     className="inline-flex items-center gap-1 rounded-lg border border-primary/30 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/5"
                   >
@@ -158,6 +251,7 @@ export default async function StockPage({ searchParams }: PageProps<"/inventory/
           },
         ]}
       />
+      )}
     </AdminPage>
   );
 }

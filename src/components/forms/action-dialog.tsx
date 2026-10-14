@@ -6,13 +6,16 @@ import { initialFormState, type FormState } from "@/lib/form";
 import { useFormFeedback } from "@/hooks/use-form-feedback";
 import { Button } from "@/components/ui/button";
 import { ModalButton } from "@/components/ui/modal-button";
+import type { ModalSize } from "@/components/ui/modal";
 
 type Errors = Record<string, string[] | undefined>;
 
 type ActionDialogProps = {
   /** Content of the button that opens the dialog. */
   trigger: React.ReactNode;
-  triggerVariant?: "primary" | "navy" | "secondary" | "danger" | "ghost";
+  triggerVariant?: "primary" | "navy" | "secondary" | "danger" | "success" | "ghost";
+  triggerSize?: "sm" | "md";
+  size?: ModalSize;
   title: string;
   description?: string;
   /** Server action (already bound to its record). Closes the dialog when it returns ok. */
@@ -26,9 +29,9 @@ type ActionDialogProps = {
 };
 
 /** A button that opens a small form in a modal — for actions that need a note or a choice. */
-export function ActionDialog({ trigger, triggerVariant = "secondary", title, description, ...form }: ActionDialogProps) {
+export function ActionDialog({ trigger, triggerVariant = "secondary", triggerSize, title, description, size, ...form }: ActionDialogProps) {
   return (
-    <ModalButton trigger={trigger} variant={triggerVariant} title={title} description={description}>
+    <ModalButton trigger={trigger} variant={triggerVariant} buttonSize={triggerSize} title={title} description={description} size={size}>
       {(close) => <DialogForm {...form} onDone={close} />}
     </ModalButton>
   );
@@ -41,7 +44,7 @@ function DialogForm({
   submitVariant = "primary",
   children,
   onDone,
-}: Omit<ActionDialogProps, "trigger" | "triggerVariant" | "title" | "description"> & { onDone: () => void }) {
+}: Omit<ActionDialogProps, "trigger" | "triggerVariant" | "triggerSize" | "size" | "title" | "description"> & { onDone: () => void }) {
   const [state, formAction, pending] = useActionState(action, initialFormState);
   const { errors, onSubmit, onChange } = useFormFeedback({ state, validate });
 

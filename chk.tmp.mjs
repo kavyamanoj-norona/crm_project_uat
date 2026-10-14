@@ -1,0 +1,11 @@
+import pg from "pg";
+import fs from "fs";
+const url = fs.readFileSync(".env", "utf8").match(/^DATABASE_URL="?([^"\n]+)"?/m)[1];
+const c = new pg.Client({ connectionString: url });
+await c.connect();
+const sel = `select p.code, pp."canView", pp."canCreate", pp."canEdit", pp."canApprove" from privilege_permission pp join privilege p on p.id = pp."privilegeId" join menu m on m.id = pp."menuId" where m.path = '/inventory/purchasing' order by p.code`;
+console.log("before", (await c.query(sel)).rows);
+const r = await c.query(`update privilege_permission pp set "canView"=false, "canCreate"=false, "canEdit"=false, "canDelete"=false, "canApprove"=false from privilege p, menu m where p.id = pp."privilegeId" and m.id = pp."menuId" and m.path = '/inventory/purchasing' and p.code <> 'PURCHASE_MANAGER' and p."isSuperAdmin" = false`);
+console.log("updated rows:", r.rowCount);
+console.log("after", (await c.query(sel)).rows);
+await c.end();

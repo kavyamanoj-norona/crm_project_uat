@@ -125,7 +125,7 @@ function TatConfigForm({
         label="Remarks"
         htmlFor="remarks"
         error={errors.remarks}
-        hint="Optional note visible to admins"
+        hint="Visible to admins"
       >
         <Input
           id="remarks"

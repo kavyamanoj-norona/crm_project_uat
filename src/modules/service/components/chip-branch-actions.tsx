@@ -39,7 +39,7 @@ export function ChipBranchActions({
           submitLabel="Transfer to lab"
         >
           {(errors) => (
-            <Field label="Note" htmlFor="note" error={errors.note} hint="Optional — shown on the timeline">
+            <Field label="Note" htmlFor="note" error={errors.note} hint="Shown on the timeline">
               <Textarea id="note" name="note" rows={2} placeholder="Enter note" />
             </Field>
           )}
@@ -60,7 +60,7 @@ export function ChipBranchActions({
           submitLabel={hasChipHistory ? "Confirm send-back" : "Confirm send to lab"}
         >
           {(errors) => (
-            <Field label="Reason / Note" htmlFor="note" error={errors.note} hint="Optional — shown on the timeline">
+            <Field label="Reason / Note" htmlFor="note" error={errors.note} hint="Shown on the timeline">
               <Textarea id="note" name="note" rows={2} placeholder="Enter reason" />
             </Field>
           )}

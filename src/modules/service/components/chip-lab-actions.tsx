@@ -64,12 +64,12 @@ export function ChipLabActions({ caseId, status, qc, transferCompleted }: ChipLa
         <ActionDialog
           trigger={<><ClipboardCheck className="size-4" /> Submit for Approval</>}
           title="Submit diagnosis for approval"
-          description="Optionally add a note for the customer/branch."
+          description="Add a note for the customer or branch."
           action={setLabPendingApproval.bind(null, caseId)}
           submitLabel="Submit"
         >
           {(errors) => (
-            <Field label="Note" htmlFor="note" error={errors.note} hint="Optional — shown on the timeline">
+            <Field label="Note" htmlFor="note" error={errors.note} hint="Shown on the timeline">
               <Textarea id="note" name="note" rows={2} placeholder="Enter note" />
             </Field>
           )}
@@ -106,7 +106,7 @@ export function ChipLabActions({ caseId, status, qc, transferCompleted }: ChipLa
           trigger={<><XCircle className="size-4" /> Non-Repairable</>}
           triggerVariant="danger"
           title="Mark as Non-Repairable"
-          description="This cannot be undone. A mandatory reason is required."
+          description="This cannot be undone."
           action={markNonRepairable.bind(null, caseId)}
           submitLabel="Confirm Non-Repairable"
           submitVariant="danger"
@@ -183,7 +183,7 @@ export function ChipLabActions({ caseId, status, qc, transferCompleted }: ChipLa
           submitLabel="Confirm transfer"
         >
           {(errors) => (
-            <Field label="Note" htmlFor="note" error={errors.note} hint="Optional — shown on the timeline">
+            <Field label="Note" htmlFor="note" error={errors.note} hint="Shown on the timeline">
               <Textarea id="note" name="note" rows={2} placeholder="Enter note" />
             </Field>
           )}

@@ -125,8 +125,14 @@ export const MODULES: ModuleDef[] = [
     entries: [
       { title: "Dashboard", path: "/inventory/dashboard", icon: "layout-dashboard" },
       { title: "Stock", path: "/inventory/stock", icon: "boxes", approve: [PM] },
-      { title: "Purchasing", path: "/inventory/purchasing", icon: "shopping-cart", approve: [PM] },
+      { title: "Purchasing", path: "/inventory/purchasing", icon: "shopping-cart", roles: [PM, BM, CHIP], approve: [PM] },
+      { title: "Billing", path: "/inventory/billing", icon: "receipt", approve: [PM] },
       { title: "Catalog", path: "/inventory/catalog", icon: "tags", roles: EVERYONE },
+      {
+        group: "Manage",
+        icon: "boxes",
+        items: [{ title: "Suppliers", path: "/inventory/suppliers", icon: "truck", approve: [PM] }],
+      },
     ],
   },
   {
@@ -191,6 +197,7 @@ export const MODULES: ModuleDef[] = [
 export const COMPANY = { code: "NTL", name: "Norona Tech LLP", email: "info@laptopclinic.in" };
 
 export const BRANCHES = [
+  { code: "HO", name: "Head Office", isVirtual: true }, // holds purchased stock until it is allocated to a branch case
   { code: "EDP", name: "Edappally", isVirtual: false },
   { code: "LAB", name: "Chip-Level Lab", isVirtual: true },
 ];

@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import Link from "next/link";
 import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -11,6 +12,8 @@ export type Column<T> = {
   sort?: string;
   className?: string;
   align?: "left" | "center" | "right";
+  /** Adds a red asterisk to the header: this column's field is mandatory. */
+  required?: boolean;
 };
 
 type DataTableProps<T> = {
@@ -27,6 +30,8 @@ type DataTableProps<T> = {
    * Pass false when inside TableCard so the unified container provides the border.
    */
   bordered?: boolean;
+  /** Optional full-width strip shown under a row (e.g. extra fields for that row). Return null for none. */
+  expand?: (row: T, index: number) => React.ReactNode;
 };
 
 const alignCls = { left: "text-left", center: "text-center", right: "text-right" };
@@ -37,7 +42,7 @@ const alignCls = { left: "text-left", center: "text-center", right: "text-right"
  * - Data rows: subtle column separators + row dividers
  * - Density follows the nearest `data-density="compact"` ancestor (see TableCard)
  */
-export function DataTable<T>({ columns, rows, rowKey, empty = "No records found.", highlight, list, bordered = true }: DataTableProps<T>) {
+export function DataTable<T>({ columns, rows, rowKey, empty = "No records found.", highlight, list, bordered = true, expand }: DataTableProps<T>) {
   const offset = list ? (list.page - 1) * list.pageSize : 0;
 
   return (
@@ -61,7 +66,14 @@ export function DataTable<T>({ columns, rows, rowKey, empty = "No records found.
                     : undefined
                 }
               >
-                {list && c.sort ? <SortHeader column={c} list={list} /> : c.header}
+                {list && c.sort ? (
+                  <SortHeader column={c} list={list} />
+                ) : (
+                  <>
+                    {c.header}
+                    {c.required && <span className="ml-0.5 text-danger">*</span>}
+                  </>
+                )}
               </th>
             ))}
           </tr>
@@ -74,28 +86,39 @@ export function DataTable<T>({ columns, rows, rowKey, empty = "No records found.
               </td>
             </tr>
           ) : (
-            rows.map((row, i) => (
-              <tr
-                key={rowKey(row)}
-                className={cn(
-                  "divide-x divide-border/40 transition-colors hover:bg-primary-soft",
-                  highlight?.(row) && "bg-primary-soft",
-                )}
-              >
-                {columns.map((c) => (
-                  <td
-                    key={c.header}
+            rows.map((row, i) => {
+              const extra = expand?.(row, offset + i);
+              return (
+                <Fragment key={rowKey(row)}>
+                  <tr
                     className={cn(
-                      "px-3 py-2.5 whitespace-nowrap group-data-[density=compact]/table:py-1.5",
-                      alignCls[c.align ?? (c.header === "#" ? "center" : "left")],
-                      c.className,
+                      "divide-x divide-border/40 transition-colors hover:bg-primary-soft",
+                      highlight?.(row) && "bg-primary-soft",
                     )}
                   >
-                    {c.cell(row, offset + i)}
-                  </td>
-                ))}
-              </tr>
-            ))
+                    {columns.map((c) => (
+                      <td
+                        key={c.header}
+                        className={cn(
+                          "px-3 py-2.5 whitespace-nowrap group-data-[density=compact]/table:py-1.5",
+                          alignCls[c.align ?? (c.header === "#" ? "center" : "left")],
+                          c.className,
+                        )}
+                      >
+                        {c.cell(row, offset + i)}
+                      </td>
+                    ))}
+                  </tr>
+                  {extra && (
+                    <tr>
+                      <td colSpan={columns.length} className="whitespace-normal px-3 pb-3 pt-0 text-left">
+                        {extra}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })
           )}
         </tbody>
       </table>

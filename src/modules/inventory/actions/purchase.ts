@@ -4,12 +4,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/server/db";
 import { toFieldErrors, pick, type FormState } from "@/lib/form";
-import { requireActionPermission } from "@/server/rbac/guard";
-import { getBranchScope } from "@/server/branch-scope";
+import { ForbiddenError, requireActionPermission } from "@/server/rbac/guard";
+import { branchWhere, getBranchScope } from "@/server/branch-scope";
+import { formPhotos, photoError, saveCasePhotos } from "@/server/case-photos";
 import { nextSequence } from "@/server/sequence";
 import type { PurchaseRequestStatus } from "@/generated/prisma/client";
 import { INVENTORY_PATHS } from "../paths";
-import { purchaseRequestSchema } from "../schemas";
+import { requirePurchaseManager } from "../purchase-access";
+import { partRequestSchema, purchaseRequestSchema } from "../schemas";
 
 const periodFmt = new Intl.DateTimeFormat("en-IN", {
   timeZone: "Asia/Kolkata",
@@ -22,6 +24,7 @@ function period() {
 }
 
 export async function raisePurchaseRequest(_prev: FormState, formData: FormData): Promise<FormState> {
+  requirePurchaseManager(await requireActionPermission(INVENTORY_PATHS.stock, "canCreate"));
   const raw = pick(formData, ["itemId", "quantity", "caseId", "notes"]);
   const parsed = purchaseRequestSchema.safeParse(raw);
   if (!parsed.success) return toFieldErrors(parsed.error, formData);
@@ -47,30 +50,50 @@ export async function raisePurchaseRequest(_prev: FormState, formData: FormData)
   redirect(`${INVENTORY_PATHS.purchasing}?saved=${Date.now()}`);
 }
 
-export async function requestPartForCase(caseItemId: string): Promise<void> {
-  const user = await requireActionPermission(INVENTORY_PATHS.stock, "canCreate");
-  const line = await db.caseItem.findUniqueOrThrow({
-    where: { id: caseItemId },
-    select: { itemId: true, quantity: true, caseId: true, case: { select: { branchId: true } } },
-  });
-  const { itemId, quantity, caseId, case: { branchId } } = line;
-  const branch = await db.branch.findUniqueOrThrow({ where: { id: branchId }, select: { code: true } });
+/** Part request from a case line: notes optional, at least one photo of the part is mandatory. */
+export async function requestPartForCase(caseItemId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const parsed = partRequestSchema.safeParse(pick(formData, ["modelNo", "notes"]));
+  if (!parsed.success) return toFieldErrors(parsed.error, formData);
 
-  await db.$transaction(async (tx) => {
-    const seq = await nextSequence(tx, `PR:${branch.code}:${period()}`);
-    const code = `PR-${branch.code.toUpperCase()}-${period()}-${String(seq).padStart(3, "0")}`;
-    await tx.purchaseRequest.create({
-      data: { code, branchId, itemId, quantity, caseId, requestedById: user.id },
+  const photos = formPhotos(formData);
+  const photoMsg = photos.length === 0 ? "Add at least one photo" : photoError(photos);
+  if (photoMsg) return { message: "Please fix the highlighted fields.", fieldErrors: { photos: [photoMsg] } };
+
+  try {
+    const user = await requireActionPermission(INVENTORY_PATHS.stock, "canCreate");
+    const scope = branchWhere(await getBranchScope(user));
+    const line = await db.caseItem.findFirst({
+      where: { id: caseItemId, removedAt: null, case: { ...scope } },
+      select: { itemId: true, quantity: true, caseId: true, case: { select: { branchId: true } } },
     });
-  });
+    if (!line) return { message: "Item not found." };
+    const { itemId, quantity, caseId, case: { branchId } } = line;
+    const branch = await db.branch.findUniqueOrThrow({ where: { id: branchId }, select: { code: true } });
 
-  revalidatePath(INVENTORY_PATHS.stock);
-  revalidatePath(INVENTORY_PATHS.purchasing);
-  revalidatePath(`/service/cases/${caseId}`);
+    const requestId = await db.$transaction(async (tx) => {
+      const seq = await nextSequence(tx, `PR:${branch.code}:${period()}`);
+      const code = `PR-${branch.code.toUpperCase()}-${period()}-${String(seq).padStart(3, "0")}`;
+      const pr = await tx.purchaseRequest.create({
+        data: { code, branchId, itemId, quantity, caseId, modelNo: parsed.data.modelNo, notes: parsed.data.notes, requestedById: user.id },
+        select: { id: true },
+      });
+      return pr.id;
+    });
+    await saveCasePhotos(caseId, photos, user.id, { kind: "PART_REQUEST_PHOTO", prefix: "request", purchaseRequestId: requestId });
+
+    revalidatePath(INVENTORY_PATHS.stock);
+    revalidatePath(INVENTORY_PATHS.purchasing);
+    revalidatePath(`/service/cases/${caseId}`);
+    return { ok: true, message: "Part requested." };
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { message: e.message };
+    throw e;
+  }
 }
 
 export async function receiveStock(purchaseRequestId: string): Promise<void> {
   const user = await requireActionPermission(INVENTORY_PATHS.stock, "canEdit");
+  requirePurchaseManager(user);
   const pr = await db.purchaseRequest.findUniqueOrThrow({
     where: { id: purchaseRequestId },
     select: { branchId: true, itemId: true, quantity: true, status: true },
@@ -96,6 +119,7 @@ export async function updatePurchaseRequestStatus(
 ): Promise<void> {
   const needsApprove = status === "APPROVED" || status === "REJECTED";
   const user = await requireActionPermission(INVENTORY_PATHS.stock, needsApprove ? "canApprove" : "canEdit");
+  requirePurchaseManager(user);
   await db.purchaseRequest.update({
     where: { id },
     data: {

@@ -7,7 +7,7 @@ import { Modal, type ModalSize } from "./modal";
 type ModalButtonProps = {
   /** Content of the button that opens the modal. */
   trigger: React.ReactNode;
-  variant?: "primary" | "navy" | "secondary" | "danger" | "ghost";
+  variant?: "primary" | "navy" | "secondary" | "danger" | "success" | "ghost";
   buttonSize?: "sm" | "md";
   className?: string;
   title: string;

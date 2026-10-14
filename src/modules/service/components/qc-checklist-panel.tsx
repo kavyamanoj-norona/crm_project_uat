@@ -185,7 +185,7 @@ function ChecklistStep({
               <Input
                 value={a.remarks}
                 onChange={(e) => set(i, { remarks: e.target.value })}
-                placeholder={a.passed === "no" ? "Enter remarks (required)" : "Enter remarks (optional)"}
+                placeholder="Enter remarks"
                 aria-label={`${item.title} remarks`}
                 aria-invalid={rowError ? true : undefined}
               />
@@ -295,7 +295,7 @@ function NextStep({
             Reason / Note
           </label>
           <Textarea id="qc-note" name="note" rows={2} placeholder="Enter reason" />
-          <p className="mt-1 text-xs text-text-muted">Optional — shown on the timeline</p>
+          <p className="mt-1 text-xs text-text-muted">Shown on the timeline</p>
         </div>
       )}
 
