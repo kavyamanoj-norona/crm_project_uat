@@ -123,7 +123,7 @@ async function seedNavigation(privilegeIds: Record<PrivilegeCode, string>) {
       const menu = await db.menu.upsert({ where: { code }, update: data, create: { code, ...data } });
 
       for (const privilegeCode of item.roles ?? m.roles) {
-        const readOnly = m.readOnly?.includes(privilegeCode) ?? false;
+        const readOnly = (item.readOnly ?? m.readOnly)?.includes(privilegeCode) ?? false;
         const flags = {
           canView: true,
           canCreate: !readOnly,

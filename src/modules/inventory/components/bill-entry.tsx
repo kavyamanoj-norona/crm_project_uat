@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useActionState, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Check, Loader2, Plus, RotateCcw, Sparkles, Pencil, Trash2 } from "lucide-react";
+import { AlertTriangle, Check, Loader2, Plus, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 import { initialFormState, type FormState } from "@/lib/form";
 import { formatPaise } from "@/lib/money";
 import { PhotoInput } from "@/components/forms/photo-input";
@@ -10,14 +10,10 @@ import { DataTable } from "@/components/data/data-table";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
+import { SearchSelect } from "@/components/forms/search-select";
 import {
-  BILL_PAYMENT_MODES,
-  BILL_PAYMENT_MODE_LABELS,
-  GST_RATES,
-  MAX_UNITS_PER_LINE,
   NEW_ITEM_TYPES,
   NEW_ITEM_TYPE_LABELS,
-  USID_PATTERN,
   billTotals,
   discountFromPercent,
   lineAmounts,
@@ -55,25 +51,15 @@ type BillEntryProps = {
   confirmAction: (prev: FormState, formData: FormData) => Promise<FormState>;
   catalog: CatalogItem[];
   suppliers: SupplierOption[];
-  generateAction: (count: number) => Promise<{ ok: boolean; usids: string[]; message?: string }>;
-  /** Returns the USIDs (of those given) that already exist in stock. */
-  checkAction: (usids: string[]) => Promise<string[]>;
+  /** The USID the first unit on this bill will get; the rest follow in order. */
+  nextUsid: string;
+  /** GST % choices from Inventory → Configuration. */
+  gstRates: number[];
 };
 
 type Notice = { tone: "info" | "error"; text: string; duplicate?: ScanResult["duplicate"] };
 
-/** Quantity as a usable unit count (1..max), or null while it is blank/invalid. */
-const unitCount = (quantity: string) => {
-  const n = /^\d+$/.test(quantity) ? Number(quantity) : 0;
-  return n >= 1 && n <= MAX_UNITS_PER_LINE ? n : null;
-};
-/** One USID slot per unit: keeps what was typed, adds blanks, drops extras. */
-const resizeUsids = (usids: string[], quantity: string) => {
-  const n = unitCount(quantity);
-  return n === null ? usids : Array.from({ length: n }, (_, k) => usids[k] ?? "");
-};
-
-const blankLine = (): BillFormValues["lines"][number] => ({ itemId: "", newItem: false, newName: "", newType: "PART", description: "", hsnSac: "", quantity: "1", usids: [""], rate: "", discountPct: "", discountAmt: "", gstPercent: "18" });
+const blankLine = (): BillFormValues["lines"][number] => ({ itemId: "", newItem: false, newName: "", newType: "PART", description: "", hsnSac: "", quantity: "1", rate: "", discountPct: "", discountAmt: "", gstPercent: "18" });
 
 /** Paise as a plain rupee string for an input: 25000 → "250", 25050 → "250.5". */
 const paiseToText = (p: number) => String(Number((p / 100).toFixed(2)));
@@ -101,24 +87,8 @@ const blankValues = (): BillFormValues => ({
   imageHash: "",
 });
 
-/** Label on the left, control on the right — for the compact side cards. */
-function InlineField({ label, htmlFor, required, error, children }: { label: string; htmlFor: string; required?: boolean; error?: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <div className="grid items-center gap-1.5 sm:grid-cols-[8rem_1fr] sm:gap-3">
-        <label htmlFor={htmlFor} className="text-[12.5px] font-bold text-brand-navy dark:text-text">
-          {label}
-          {required && <span className="ml-0.5 text-danger">*</span>}
-        </label>
-        {children}
-      </div>
-      {error && <p className="mt-1 text-xs text-danger sm:pl-[8.75rem]">{error}</p>}
-    </div>
-  );
-}
-
 /** One page: fill in the bill (or upload/capture the image and let it be read), review, confirm. */
-export function BillEntry({ scanAction, confirmAction, catalog, suppliers, generateAction, checkAction }: BillEntryProps) {
+export function BillEntry({ scanAction, confirmAction, catalog, suppliers, nextUsid, gstRates }: BillEntryProps) {
   const [v, setV] = useState<BillFormValues>(blankValues);
   const [printedTotal, setPrintedTotal] = useState<number | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -159,57 +129,9 @@ export function BillEntry({ scanAction, confirmAction, catalog, suppliers, gener
             next = { ...next, discountPct: amt === null || amt === 0 || gross === 0 ? "" : String(Number(((amt / gross) * 100).toFixed(2))) };
           }
         }
-        // Changing the quantity changes how many USID fields there are.
-        return patch.quantity !== undefined ? { ...next, usids: resizeUsids(next.usids, next.quantity) } : next;
+        return next;
       }),
     }));
-  const setUsid = (i: number, j: number, value: string) => {
-    setV((p) => ({ ...p, lines: p.lines.map((l, a) => (a === i ? { ...l, usids: l.usids.map((u, b) => (b === j ? value : u)) } : l)) }));
-    if (clientErrors) setClientErrors(null);
-  };
-
-  // Generating USIDs: the server hands out unique ones; they fill the chosen slots.
-  const [genBusy, setGenBusy] = useState(false);
-  const [genMessage, setGenMessage] = useState<string | null>(null);
-  const generate = async (slots: { line: number; slot: number }[]) => {
-    if (slots.length === 0) return;
-    setGenBusy(true);
-    setGenMessage(null);
-    const res = await generateAction(slots.length);
-    setGenBusy(false);
-    if (!res.ok) {
-      setGenMessage(res.message ?? "Couldn't generate USIDs.");
-      return;
-    }
-    setClientErrors(null);
-    setV((p) => ({
-      ...p,
-      lines: p.lines.map((l, i) => ({
-        ...l,
-        usids: l.usids.map((u, j) => {
-          const k = slots.findIndex((t) => t.line === i && t.slot === j);
-          return k >= 0 ? res.usids[k]! : u;
-        }),
-      })),
-    }));
-  };
-  // USIDs already in stock, learned when a field loses focus (and again when the bill is saved).
-  const [taken, setTaken] = useState<Set<string>>(new Set());
-  const checkUsid = async (value: string) => {
-    const u = value.trim().toUpperCase();
-    if (!USID_PATTERN.test(u) || taken.has(u)) return;
-    const existing = await checkAction([u]);
-    if (existing.includes(u)) setTaken((t) => new Set(t).add(u));
-  };
-  const emptySlots = (line?: number) =>
-    v.lines.flatMap((l, i) => (line !== undefined && line !== i ? [] : l.usids.flatMap((u, j) => (u.trim() === "" ? [{ line: i, slot: j }] : []))));
-  // The same USID typed twice on this bill, for instant feedback (the server checks the rest).
-  const usidCounts = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const l of v.lines) for (const u of l.usids) if (u.trim()) m.set(u.trim().toUpperCase(), (m.get(u.trim().toUpperCase()) ?? 0) + 1);
-    return m;
-  }, [v.lines]);
-
   /** The image picker reports its files; a new image is scanned and fills the form. */
   const onImage = (files: File[]) => {
     const id = ++scanId.current;
@@ -263,7 +185,7 @@ export function BillEntry({ scanAction, confirmAction, catalog, suppliers, gener
                 billDate: b.billDate,
                 roundOff: b.roundOff,
                 lines: b.lines.length
-                  ? b.lines.map((l) => ({ ...blankLine(), ...l, gstPercent: l.gstPercent || "18", usids: resizeUsids([], l.quantity) }))
+                  ? b.lines.map((l) => ({ ...blankLine(), ...l, gstPercent: l.gstPercent || "18" }))
                   : [blankLine()],
               }
             : {}),
@@ -306,16 +228,10 @@ export function BillEntry({ scanAction, confirmAction, catalog, suppliers, gener
   const sgst = totals.taxPaise - cgst;
 
   const mismatch = printedTotal !== null && printedTotal > 0 && Math.abs(printedTotal - totals.totalPaise) > 100;
-  const balance = totals.totalPaise - (parseRupees(v.paymentAmount) ?? 0);
 
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     const { errors: parsed } = parseBill(v);
     const found: Record<string, string[]> = { ...parsed };
-    v.lines.forEach((l, i) =>
-      l.usids.forEach((u, j) => {
-        if (taken.has(u.trim().toUpperCase())) found[`lines.${i}.usids.${j}`] = [`${u.trim().toUpperCase()} already exists in stock`];
-      }),
-    );
     if (Object.keys(found).length > 0) {
       e.preventDefault();
       setClientErrors(found);
@@ -323,7 +239,7 @@ export function BillEntry({ scanAction, confirmAction, catalog, suppliers, gener
   };
 
   const gstOptions = (cur: string) =>
-    [...new Set([...GST_RATES.map(String), ...(cur ? [cur] : [])])].map((g) => ({ value: g, label: `${g}%` }));
+    [...new Set([...gstRates.map(String), ...(cur ? [cur] : [])])].map((g) => ({ value: g, label: `${g}%` }));
 
   return (
     <form
@@ -350,13 +266,14 @@ export function BillEntry({ scanAction, confirmAction, catalog, suppliers, gener
           <Card title="Supplier">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <Field label="Supplier" htmlFor="supplierId" required error={err("supplierId")}>
-                <Select
+                <SearchSelect
                   id="supplierId"
                   value={supplierSelect}
-                  onChange={(e) => chooseSupplier(e.target.value)}
-                  options={[{ value: NEW, label: "+ Add new supplier" }, ...suppliers.map((x) => ({ value: x.id, label: x.gstin ? `${x.name} — ${x.gstin}` : x.name }))]}
+                  onChange={chooseSupplier}
+                  pinned={[{ value: NEW, label: "+ Add new supplier" }]}
+                  options={suppliers.map((x) => ({ value: x.id, label: x.gstin ? `${x.name} — ${x.gstin}` : x.name }))}
                   placeholder="Select supplier"
-                  aria-invalid={err("supplierId") ? true : undefined}
+                  invalid={Boolean(err("supplierId"))}
                 />
               </Field>
             </div>
@@ -455,52 +372,7 @@ export function BillEntry({ scanAction, confirmAction, catalog, suppliers, gener
                     <p className="mt-2 text-xs text-text-muted">HSN/SAC and GST come from this line. Set the selling price later in the item catalog.</p>
                   </div>
                 ) : null;
-                const usidPanel =
-                  unitCount(line.quantity) === null ? null : (
-                  <div className="flex flex-col gap-3 rounded-lg bg-primary-soft p-3 lg:flex-row lg:items-start">
-                    <div className="min-w-0 flex-1">
-                      {err(`lines.${i}.usids`) && <p className="mb-2 text-xs text-danger">{err(`lines.${i}.usids`)}</p>}
-                      <div className="grid max-h-72 gap-3 overflow-y-auto sm:grid-cols-2 lg:grid-cols-5">
-                        {line.usids.map((u, j) => {
-                          const norm = u.trim().toUpperCase();
-                          const message =
-                            norm !== "" && (usidCounts.get(norm) ?? 0) > 1
-                              ? "Duplicate USID on this bill"
-                              : norm !== "" && taken.has(norm)
-                                ? "Already exists in stock"
-                                : err(`lines.${i}.usids.${j}`);
-                          return (
-                            <Field key={j} label={`USID ${j + 1}`} htmlFor={`usid-${i}-${j}`} required error={message}>
-                              <Input
-                                id={`usid-${i}-${j}`}
-                                value={u}
-                                onChange={(e) => setUsid(i, j, e.target.value)}
-                                onBlur={(e) => void checkUsid(e.target.value)}
-                                placeholder="Enter USID"
-                                aria-invalid={message ? true : undefined}
-                              />
-                            </Field>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <Button
-                      variant="secondary"
-                      className="shrink-0 lg:mt-[1.65rem]"
-                      onClick={() => generate(emptySlots(i))}
-                      disabled={genBusy || emptySlots(i).length === 0}
-                    >
-                      {genBusy ? <Loader2 className="size-4 animate-spin" /> : <Pencil className="size-4" />} Generate
-                    </Button>
-                  </div>
-                  );
-                if (!newItemPanel && !usidPanel) return null;
-                return (
-                  <div className="space-y-3">
-                    {newItemPanel}
-                    {usidPanel}
-                  </div>
-                );
+                return newItemPanel;
               }}
               columns={[
                 { header: "#", cell: (r) => r.i + 1 },
@@ -509,24 +381,25 @@ export function BillEntry({ scanAction, confirmAction, catalog, suppliers, gener
                   required: true,
                   cell: ({ line, i }) => (
                     <div className="w-60">
-                      <Select
+                      <SearchSelect
                         aria-label={`Catalog item for line ${i + 1}`}
                         value={line.newItem ? NEW : line.itemId}
-                        onChange={(e) => {
-                          if (e.target.value === NEW) {
+                        onChange={(picked) => {
+                          if (picked === NEW) {
                             setLine(i, { itemId: "", newItem: true, newName: line.newName || line.description });
                             return;
                           }
-                          const item = catalog.find((c) => c.id === e.target.value);
+                          const item = catalog.find((c) => c.id === picked);
                           setLine(i, {
-                            itemId: e.target.value,
+                            itemId: picked,
                             newItem: false,
                             ...(item ? { gstPercent: String(item.gstPercent), hsnSac: line.hsnSac || item.hsnSac || "" } : {}),
                           });
                         }}
-                        options={[{ value: NEW, label: "+ Add new item" }, ...catalog.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))]}
+                        pinned={[{ value: NEW, label: "+ Add new item" }]}
+                        options={catalog.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))}
                         placeholder="Select item"
-                        aria-invalid={lineErr(i, "itemId") || lineErr(i, "newName") ? true : undefined}
+                        invalid={Boolean(lineErr(i, "itemId") || lineErr(i, "newName"))}
                       />
                       {lineErr(i, "itemId") && <p className="mt-1 text-xs text-danger">{lineErr(i, "itemId")}</p>}
                       {line.newItem && <p className="mt-1 text-xs text-primary">New item — fill in the details below</p>}
@@ -615,7 +488,10 @@ export function BillEntry({ scanAction, confirmAction, catalog, suppliers, gener
             />
             {err("lines") && <p className="mt-2 text-xs text-danger">{err("lines")}</p>}
 
-            {genMessage && <p className="mt-2 text-xs text-danger">{genMessage}</p>}
+            <p className="mt-3 rounded-lg bg-primary-soft px-3 py-2 text-xs text-text-muted">
+              USIDs are generated automatically when the bill is saved, in order, one per unit. The next one is{" "}
+              <span className="font-semibold tabular-nums text-text">{nextUsid}</span>.
+            </p>
           </Card>
         </div>
 
@@ -696,28 +572,6 @@ export function BillEntry({ scanAction, confirmAction, catalog, suppliers, gener
                 The bill shows a total of {formatPaise(printedTotal)} but these items add up to {formatPaise(totals.totalPaise)}. Check quantities, rates and GST.
               </p>
             )}
-          </Card>
-
-          <Card title="Payment">
-            <div className="space-y-4">
-              <InlineField label="Amount paid (₹)" htmlFor="paymentAmount" error={err("paymentAmount")}>
-                <Input id="paymentAmount" inputMode="decimal" value={v.paymentAmount} onChange={(e) => set("paymentAmount", e.target.value)} placeholder="Enter amount paid" aria-invalid={err("paymentAmount") ? true : undefined} />
-              </InlineField>
-              <InlineField label="Payment mode" htmlFor="paymentMode" required={(parseRupees(v.paymentAmount) ?? 0) > 0} error={err("paymentMode")}>
-                <Select
-                  id="paymentMode"
-                  value={v.paymentMode}
-                  onChange={(e) => set("paymentMode", e.target.value)}
-                  options={BILL_PAYMENT_MODES.map((m) => ({ value: m, label: BILL_PAYMENT_MODE_LABELS[m] }))}
-                  placeholder="Select payment mode"
-                  aria-invalid={err("paymentMode") ? true : undefined}
-                />
-              </InlineField>
-              <InlineField label="Reference number" htmlFor="paymentRef" error={err("paymentRef")}>
-                <Input id="paymentRef" value={v.paymentRef} onChange={(e) => set("paymentRef", e.target.value)} placeholder="Enter reference number" />
-              </InlineField>
-              <p className="text-xs text-text-muted sm:pl-[8.75rem]">Balance due {formatPaise(Math.max(0, balance))}</p>
-            </div>
           </Card>
 
           <Card title="Notes">

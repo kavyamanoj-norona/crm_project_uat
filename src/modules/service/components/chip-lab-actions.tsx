@@ -26,10 +26,12 @@ type ChipLabActionsProps = {
   /** Set while the QC checklist is incomplete: Transfer to Branch then opens the checklist first. */
   /** Lab has already completed the handover to the branch. */
   transferCompleted?: boolean;
+  /** When set, Quality Check is disabled and this explains why (parts still to consume or return). */
+  qcBlock?: string | null;
   qc?: { jobsheetNo: string; items: QcPanelItem[]; action: (prev: FormState, formData: FormData) => Promise<FormState> };
 };
 
-export function ChipLabActions({ caseId, status, qc, transferCompleted }: ChipLabActionsProps) {
+export function ChipLabActions({ caseId, status, qc, transferCompleted, qcBlock }: ChipLabActionsProps) {
   if (status === "CHIP_TRANSFER") {
     return (
       <div className="flex flex-wrap items-center gap-2">
@@ -131,13 +133,22 @@ export function ChipLabActions({ caseId, status, qc, transferCompleted }: ChipLa
   if (status === "CHIP_LAB_READY_DISPATCH") {
     return (
       <div className="flex flex-wrap items-center gap-2">
-        <ActionButton
-          action={startLabQualityCheck.bind(null, caseId)}
-          label="Send to quality check"
-          className={buttonClass("primary")}
-        >
-          <ClipboardCheck className="size-4" /> Quality Check
-        </ActionButton>
+        {qcBlock ? (
+          <span className="inline-flex flex-col items-start gap-0.5">
+            <button type="button" disabled title={qcBlock} className={buttonClass("primary") + " cursor-not-allowed opacity-50"}>
+              <ClipboardCheck className="size-4" /> Quality Check
+            </button>
+            <span className="max-w-xs text-[11px] text-text-muted">{qcBlock}</span>
+          </span>
+        ) : (
+          <ActionButton
+            action={startLabQualityCheck.bind(null, caseId)}
+            label="Send to quality check"
+            className={buttonClass("primary")}
+          >
+            <ClipboardCheck className="size-4" /> Quality Check
+          </ActionButton>
+        )}
       </div>
     );
   }

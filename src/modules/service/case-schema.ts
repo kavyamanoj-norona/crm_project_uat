@@ -16,8 +16,8 @@ export const PRODUCT_TYPES = ["LAPTOP", "PRINTER", "DESKTOP", "OTHER"] as const;
 export const WARRANTY_STATUSES = ["NON_WARRANTY", "WARRANTY", "RETURN"] as const;
 export const WARRANTY_LABELS = { NON_WARRANTY: "Non-warranty", WARRANTY: "Warranty", RETURN: "Return" };
 
-export const PAYMENT_MODES = ["UPI", "CASH", "CARD", "OTHER"] as const;
-export const PAYMENT_MODE_LABELS = { UPI: "UPI", CASH: "Cash", CARD: "Card", OTHER: "Other" };
+export const PAYMENT_MODES = ["CASH", "UPI", "CARD", "BANK_TRANSFER", "OTHER"] as const;
+export const PAYMENT_MODE_LABELS = { UPI: "UPI", CASH: "Cash", CARD: "Card", BANK_TRANSFER: "Bank transfer", OTHER: "Other" };
 
 export const ITEM_CONDITIONS = ["GOOD", "FAIR", "WORN", "DAMAGED"] as const;
 export type ItemConditionValue = (typeof ITEM_CONDITIONS)[number];
@@ -100,6 +100,20 @@ export function nextStage(status: CaseStatusValue): CaseStatusValue | null {
   const i = CASE_FLOW.indexOf(status);
   return i >= 0 && i < CASE_FLOW.length - 1 ? CASE_FLOW[i + 1]! : null;
 }
+
+/**
+ * Spare parts can be requested only after approval is complete: the normal track from Awaiting stock onwards,
+ * and in the chip-level lab from Servicing onwards (not while the case is still in intake, diagnosis or pending approval).
+ */
+const REQUESTABLE: CaseStatusValue[] = [
+  "AWAITING_STOCK",
+  "QUALITY_CHECK",
+  "READY_FOR_DELIVERY",
+  "CHIP_LAB_SERVICING",
+  "CHIP_LAB_READY_DISPATCH",
+  "CHIP_LAB_QUALITY_CHECK",
+];
+export const canRequestParts = (s: CaseStatusValue) => REQUESTABLE.includes(s);
 
 export const isOpenStatus = (s: CaseStatusValue) => s !== "CLOSED" && s !== "CANCELLED";
 
@@ -324,6 +338,19 @@ export const estimateSchema = z
       ctx.addIssue({ code: "custom", path: ["advanceMode"], message: "Select a payment mode for the advance" });
   });
 export type EstimateInput = z.output<typeof estimateSchema>;
+
+/**
+ * Stages in which a new item can still be added to a case. Adding one sends the case back to Diagnosis (it is
+ * already there during diagnosis), so the customer approves the new estimate before servicing continues.
+ */
+export const ADD_ITEM_STATUSES: CaseStatusValue[] = ["DIAGNOSIS", "PENDING_APPROVAL", "AWAITING_STOCK", "QUALITY_CHECK", "READY_FOR_DELIVERY"];
+export const LAB_ADD_ITEM_STATUSES: CaseStatusValue[] = [
+  "CHIP_LAB_DIAGNOSIS",
+  "CHIP_LAB_PENDING_APPROVAL",
+  "CHIP_LAB_SERVICING",
+  "CHIP_LAB_READY_DISPATCH",
+  "CHIP_LAB_QUALITY_CHECK",
+];
 
 /** Stages in which the items can still be changed (before the customer approves). */
 export const ESTIMATE_EDITABLE: CaseStatusValue[] = ["DIAGNOSIS", "PENDING_APPROVAL"];

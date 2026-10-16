@@ -34,7 +34,7 @@ export async function listBills(list: ListState & { sort: (typeof BILL_SORTS)[nu
       include: {
         supplier: { select: { name: true } },
         createdBy: { select: { firstName: true, lastName: true } },
-        _count: { select: { items: true } },
+        _count: { select: { items: { where: { isDelete: 0 } } } },
       },
     }),
     db.purchaseBill.count({ where }),
@@ -58,11 +58,14 @@ export async function getBill(id: string) {
       supplier: true,
       branch: { select: { code: true, name: true } },
       createdBy: { select: { firstName: true, lastName: true } },
+      // Nested reads are not filtered by the soft-delete extension, so hide removed lines and units here.
       items: {
+        where: { isDelete: 0 },
         orderBy: { sortOrder: "asc" },
         include: {
           item: { select: { code: true, name: true, unit: true } },
           stockUnits: {
+            where: { isDelete: 0 },
             orderBy: { usid: "asc" },
             select: {
               id: true,
@@ -111,10 +114,10 @@ export async function listSuppliersPage(list: ListState & { sort: (typeof SUPPLI
 
 export type SupplierPageRow = Awaited<ReturnType<typeof listSuppliersPage>>["rows"][number];
 
-/** Stock-keeping catalog items a bill line can be mapped to. */
+/** Every active stockable item (parts and accessories). Services are labour, not bought stock, so they are left out. */
 export async function listBillableItems() {
   return db.item.findMany({
-    where: { isActive: true, type: { in: ["PART", "ACCESSORY"] } },
+    where: { isActive: true, type: { not: "SERVICE" } },
     select: { id: true, code: true, name: true, gstPercent: true, hsnSac: true },
     orderBy: { name: "asc" },
   });

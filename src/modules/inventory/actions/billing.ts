@@ -10,7 +10,7 @@ import { getHeadOfficeBranch } from "../head-office";
 import { FieldError } from "@/server/prisma-errors";
 import { ForbiddenError, requireActionPermission } from "@/server/rbac/guard";
 import { logActivity } from "@/server/security/activity";
-import { nextSequence, reserveSequence } from "@/server/sequence";
+import { nextSequence } from "@/server/sequence";
 import { pick, toFieldErrors, type FormState } from "@/lib/form";
 import { scanBillImage } from "@/ai/bill-scanner";
 import { INVENTORY_PATHS } from "../paths";
@@ -24,6 +24,8 @@ import {
   type ScannedBill,
 } from "../billing-schema";
 import { findDuplicateBill, listBillableItems } from "../billing-queries";
+import { issueUsids } from "../usid";
+import { postPurchaseBill } from "@/modules/finance/posting";
 
 const IMAGE_TYPES: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "application/pdf": "pdf" };
 const IMAGE_MAX_BYTES = 8 * 1024 * 1024;
@@ -163,48 +165,6 @@ export async function scanBill(formData: FormData): Promise<ScanBillResult> {
   }
 }
 
-export type GenerateUsidsResult = { ok: boolean; usids: string[]; message?: string };
-
-/**
- * Hands out `count` new USIDs (USID-<yymm>-<number>) that are unique across all stock. They don't depend on any branch.
- * They are not saved until the bill is confirmed; an unused one is simply skipped, never reused.
- */
-export async function generateUsids(count: number): Promise<GenerateUsidsResult> {
-  try {
-    await requireActionPermission(INVENTORY_PATHS.billing, "canCreate");
-    if (!Number.isInteger(count) || count < 1 || count > 1000) return { ok: false, usids: [], message: "Enter a quantity between 1 and 1000 first." };
-    const out: string[] = [];
-    for (let attempt = 0; attempt < 5 && out.length < count; attempt++) {
-      const need = count - out.length;
-      const first = await db.$transaction((tx) => reserveSequence(tx, `USID:${period()}`, need));
-      const candidates = Array.from({ length: need }, (_, k) => `USID-${period()}-${String(first + k).padStart(5, "0")}`);
-      // A hand-typed USID may already use one of these numbers; skip those.
-      const taken = new Set(
-        (await db.stockUnit.findMany({ where: { usid: { in: candidates }, isDelete: { in: [0, 1] } }, select: { usid: true } })).map((t) => t.usid),
-      );
-      out.push(...candidates.filter((c) => !taken.has(c)));
-    }
-    return out.length === count ? { ok: true, usids: out } : { ok: false, usids: [], message: "Couldn't generate USIDs. Try again." };
-  } catch (e) {
-    if (e instanceof ForbiddenError) return { ok: false, usids: [], message: e.message };
-    throw e;
-  }
-}
-
-/** Which of these USIDs already exist in stock (including removed units). Used for instant feedback on the form. */
-export async function checkUsids(usids: string[]): Promise<string[]> {
-  try {
-    await requireActionPermission(INVENTORY_PATHS.billing, "canCreate");
-  } catch (e) {
-    if (e instanceof ForbiddenError) return [];
-    throw e;
-  }
-  const wanted = [...new Set(usids.map((u) => String(u).trim().toUpperCase()).filter(Boolean))].slice(0, 100);
-  if (wanted.length === 0) return [];
-  const rows = await db.stockUnit.findMany({ where: { usid: { in: wanted }, isDelete: { in: [0, 1] } }, select: { usid: true } });
-  return rows.map((r) => r.usid);
-}
-
 const isUnique = (e: unknown) => typeof e === "object" && e !== null && (e as { code?: string }).code === "P2002";
 
 /** Step 2: save the reviewed bill, add its lines to branch stock and record the payment — all or nothing. */
@@ -230,13 +190,13 @@ export async function confirmBill(_prev: FormState, formData: FormData): Promise
 
     const itemIds = [...new Set(data.lines.filter((l) => !l.newItem).map((l) => l.itemId))];
     const items = await db.item.findMany({
-      where: { id: { in: itemIds }, isActive: true, type: { in: ["PART", "ACCESSORY"] } },
+      where: { id: { in: itemIds }, isActive: true, type: { not: "SERVICE" } },
       select: { id: true, name: true },
     });
     const known = new Set(items.map((i) => i.id));
     const itemName = new Map(items.map((i) => [i.id, i.name]));
     data.lines.forEach((l, i) => {
-      if (!l.newItem && !known.has(l.itemId)) throw new FieldError(`lines.${i}.itemId`, "Select an active part or accessory from the catalog");
+      if (!l.newItem && !known.has(l.itemId)) throw new FieldError(`lines.${i}.itemId`, "Select an active part or accessory. Services can’t be bought on a bill");
     });
 
     const lines = data.lines.map((l, i) => ({
@@ -310,17 +270,6 @@ export async function confirmBill(_prev: FormState, formData: FormData): Promise
         if (id) l.itemId = id;
       });
 
-      // Every USID must be new: a USID belongs to exactly one physical unit, ever (including removed ones).
-      const wanted = lines.flatMap((l) => l.usids);
-      const taken = await tx.stockUnit.findMany({ where: { usid: { in: wanted }, isDelete: { in: [0, 1] } }, select: { usid: true } });
-      if (taken.length > 0) {
-        const takenSet = new Set(taken.map((t) => t.usid));
-        for (let i = 0; i < lines.length; i++) {
-          const j = lines[i]!.usids.findIndex((u) => takenSet.has(u));
-          if (j >= 0) throw new FieldError(`lines.${i}.usids.${j}`, `${lines[i]!.usids[j]} already exists in stock`);
-        }
-      }
-
       const dup = await tx.purchaseBill.findFirst({
         where: {
           OR: [{ supplierId: supplier.id, billNoNorm }, ...(data.imageHash ? [{ imageHash: data.imageHash }] : [])],
@@ -373,12 +322,22 @@ export async function confirmBill(_prev: FormState, formData: FormData): Promise
         select: { id: true, items: { select: { id: true, itemId: true, quantity: true, sortOrder: true }, orderBy: { sortOrder: "asc" } } },
       });
 
-      // One stock unit per purchased unit, each with the USID entered or generated for it. The Purchase
-      // Manager later allocates a specific USID to a case. The stock count below equals this unit count.
+      // One stock unit per purchased unit, each with the next sequential USID from the USID configuration
+      // (issued inside this transaction, so a failed save hands the numbers back). The Purchase Manager later
+      // allocates a specific USID to a case. The stock count below equals this unit count.
+      const totalUnits = lines.reduce((n, l) => n + l.quantity, 0);
+      const usids = await issueUsids(tx, totalUnits);
+      let at = 0;
       const units = bill.items.flatMap((bi, idx) =>
-        lines[idx]!.usids.map((usid) => ({ usid, itemId: bi.itemId, billItemId: bi.id, branchId })),
+        Array.from({ length: lines[idx]!.quantity }, () => ({ usid: usids[at++]!, itemId: bi.itemId, billItemId: bi.id, branchId })),
       );
       await tx.stockUnit.createMany({ data: units });
+      // The bill and its ledger entry (Dr Inventory + GST Input, Cr Accounts Payable) are saved together.
+      await postPurchaseBill(
+        tx,
+        { id: bill.id, code, branchId, supplierId: supplier.id, billNo: data.billNo, billDate: new Date(`${data.billDate}T00:00:00Z`), subtotalPaise, taxPaise, roundOffPaise: data.roundOff, totalPaise },
+        user.id,
+      );
 
       // Stock: add each item's total quantity (the same item can appear on several lines).
       const perItem = new Map<string, number>();

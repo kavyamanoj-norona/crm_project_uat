@@ -51,7 +51,7 @@ export function Modal({ open, onClose, title, description, icon, size = "sm", fo
       aria-labelledby={titleId}
       className={cn(
         // text-left / whitespace-normal: a dialog opened from a table cell would otherwise inherit its right alignment and no-wrap.
-        "m-auto w-[calc(100%-2rem)] rounded-2xl border border-border bg-surface p-0 text-left whitespace-normal text-text shadow-xl backdrop:bg-brand-navy/40 backdrop:backdrop-blur-[2px]",
+        "m-auto w-[calc(100%-2rem)] overflow-x-hidden rounded-2xl border border-border bg-surface p-0 text-left whitespace-normal break-words text-text shadow-xl backdrop:bg-brand-navy/40 backdrop:backdrop-blur-[2px]",
         sizes[size],
         className,
       )}
@@ -77,7 +77,7 @@ export function Modal({ open, onClose, title, description, icon, size = "sm", fo
               <X className="size-5" />
             </button>
           </div>
-          <div className="overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">{children}</div>
+          <div className="overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">{children}</div>
           {footer && <div className="flex flex-wrap justify-end gap-2 border-t border-border px-4 py-3 sm:px-6">{footer}</div>}
         </div>
       )}

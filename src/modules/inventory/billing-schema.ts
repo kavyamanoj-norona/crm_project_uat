@@ -11,6 +11,7 @@ export const BILL_PAYMENT_MODE_LABELS: Record<(typeof BILL_PAYMENT_MODES)[number
   OTHER: "Other",
 };
 
+/** The GST rates offered when nothing has been configured (Inventory → Configuration). */
 export const GST_RATES = [0, 5, 12, 18, 28] as const;
 
 /** "7,500" / "7500.50" → paise; "" → 0; invalid → null. `signed` allows a leading minus (round-off). */
@@ -99,8 +100,6 @@ export const billLineSchema = z.object({
     .regex(/^\d+$/, "Enter a whole number")
     .transform(Number)
     .refine((n) => n >= 1 && n <= MAX_UNITS_PER_LINE, `Quantity must be between 1 and ${MAX_UNITS_PER_LINE}`),
-  // One USID per physical unit, in order; the count must equal the quantity (checked on the whole bill).
-  usids: z.array(z.string()).transform((a) => a.map((v) => v.trim().toUpperCase())),
   rate: rupees("Rate", { positive: true }),
   // Discount as typed: the amount is what is saved; the percent is only a typing aid and is not posted.
   discountAmt: rupees("Discount"),
@@ -160,22 +159,6 @@ export const billSchema = z
     if (b.paymentAmount > 0 && !b.paymentMode)
       ctx.addIssue({ code: "custom", path: ["paymentMode"], message: "Select the payment mode" });
 
-    // Every unit has exactly one USID, and no USID is used twice on the bill.
-    const seen = new Map<string, string>();
-    b.lines.forEach((l, i) => {
-      if (l.usids.length !== l.quantity) {
-        ctx.addIssue({ code: "custom", path: ["lines", i, "usids"], message: `Enter ${l.quantity} USID${l.quantity === 1 ? "" : "s"} (one per unit)` });
-        return;
-      }
-      l.usids.forEach((u, j) => {
-        const at = ["lines", i, "usids", j];
-        if (!u) return void ctx.addIssue({ code: "custom", path: at, message: "Enter or generate a USID" });
-        if (!USID_PATTERN.test(u)) return void ctx.addIssue({ code: "custom", path: at, message: "Use 3–40 letters, digits or - _ / ." });
-        const first = seen.get(u);
-        if (first) return void ctx.addIssue({ code: "custom", path: at, message: `Already used (${first})` });
-        seen.set(u, `line ${i + 1}, unit ${j + 1}`);
-      });
-    });
   });
 
 export type BillInput = z.infer<typeof billSchema>;
@@ -200,7 +183,6 @@ export type BillFormValues = {
     description: string;
     hsnSac: string;
     quantity: string;
-    usids: string[];
     rate: string;
     discountPct: string;
     discountAmt: string;

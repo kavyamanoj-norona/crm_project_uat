@@ -151,7 +151,7 @@ export default async function OwnerDashboardPage({ searchParams }: PageProps) {
                 ].map((h) => (
                   <th
                     key={h}
-                    className="whitespace-nowrap px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-text-muted first:pl-5"
+                    className="whitespace-nowrap px-5 py-3 text-center text-[11px] font-semibold uppercase tracking-wider text-text-muted first:pl-5"
                   >
                     {h}
                   </th>

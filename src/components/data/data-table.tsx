@@ -32,6 +32,8 @@ type DataTableProps<T> = {
   bordered?: boolean;
   /** Optional full-width strip shown under a row (e.g. extra fields for that row). Return null for none. */
   expand?: (row: T, index: number) => React.ReactNode;
+  /** "blue" gives the header row the dark blue used by the Purchasing module. */
+  tone?: "default" | "blue";
 };
 
 const alignCls = { left: "text-left", center: "text-center", right: "text-right" };
@@ -42,22 +44,23 @@ const alignCls = { left: "text-left", center: "text-center", right: "text-right"
  * - Data rows: subtle column separators + row dividers
  * - Density follows the nearest `data-density="compact"` ancestor (see TableCard)
  */
-export function DataTable<T>({ columns, rows, rowKey, empty = "No records found.", highlight, list, bordered = true, expand }: DataTableProps<T>) {
+export function DataTable<T>({ columns, rows, rowKey, empty = "No records found.", highlight, list, bordered = true, expand, tone = "default" }: DataTableProps<T>) {
+  const blue = tone === "blue";
   const offset = list ? (list.page - 1) * list.pageSize : 0;
 
   return (
     <div className={cn("max-w-full overflow-x-auto overscroll-x-contain", bordered && "rounded-xl border border-border")}>
       <table className="w-full min-w-max text-sm">
-        <thead className="border-b border-border bg-surface-muted text-xs font-semibold text-text">
+        <thead className={cn("border-b text-xs font-semibold", blue ? "border-table-head-line bg-table-head text-table-head-text" : "border-border bg-surface-muted text-text")}>
           {/* divide-x gives every header cell a right border, auto-skipping the last */}
-          <tr className="divide-x divide-border">
+          <tr className={cn("divide-x", blue ? "divide-table-head-line" : "divide-border")}>
             {columns.map((c) => (
               <th
                 key={c.header}
                 scope="col"
                 className={cn(
                   "px-3 py-3 whitespace-nowrap",
-                  alignCls[c.align ?? (c.header === "#" ? "center" : "left")],
+                  "text-center", // headers are always centred; cells keep the column align
                   c.className,
                 )}
                 aria-sort={
@@ -67,11 +70,11 @@ export function DataTable<T>({ columns, rows, rowKey, empty = "No records found.
                 }
               >
                 {list && c.sort ? (
-                  <SortHeader column={c} list={list} />
+                  <SortHeader column={c} list={list} blue={blue} />
                 ) : (
                   <>
                     {c.header}
-                    {c.required && <span className="ml-0.5 text-danger">*</span>}
+                    {c.required && <span className={cn("ml-0.5", blue ? "text-danger" : "text-danger")}>*</span>}
                   </>
                 )}
               </th>
@@ -126,7 +129,7 @@ export function DataTable<T>({ columns, rows, rowKey, empty = "No records found.
   );
 }
 
-function SortHeader<T>({ column, list }: { column: Column<T>; list: ListState }) {
+function SortHeader<T>({ column, list, blue }: { column: Column<T>; list: ListState; blue: boolean }) {
   const active = list.sort === column.sort;
   const nextDir = active && list.dir === "asc" ? "desc" : "asc";
   const Icon = !active ? ChevronsUpDown : list.dir === "asc" ? ArrowUp : ArrowDown;
@@ -135,7 +138,7 @@ function SortHeader<T>({ column, list }: { column: Column<T>; list: ListState })
     <Link
       href={listHref(list, { sort: column.sort!, dir: nextDir })}
       scroll={false}
-      className="inline-flex w-full items-center justify-between gap-2 hover:text-primary"
+      className={cn("inline-flex w-full items-center justify-center gap-2", blue ? "hover:text-primary" : "hover:text-primary")}
     >
       {column.header}
       <Icon className={cn("size-3.5 shrink-0", active ? "text-primary" : "text-text-muted")} aria-hidden />

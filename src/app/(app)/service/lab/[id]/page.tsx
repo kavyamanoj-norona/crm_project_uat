@@ -21,13 +21,15 @@ import {
   WARRANTY_LABELS,
   type LabWorkType,
 } from "@/modules/service/case-schema";
-import { LAB_QUEUE_STATUSES, type CaseStatusValue } from "@/modules/service/case-schema";
+import { LAB_ADD_ITEM_STATUSES, LAB_QUEUE_STATUSES, canRequestParts, type CaseStatusValue } from "@/modules/service/case-schema";
 import { STAGE_ICONS } from "@/modules/service/components/stage-icons";
 import { ChipLabActions } from "@/modules/service/components/chip-lab-actions";
+import { AddItemDialog } from "@/modules/service/components/add-item-dialog";
+import { caseUsids, qcConsumptionBlock } from "@/modules/inventory/case-parts";
 import {
   consumeLabItem,
   recordVendorPayment,
-  requestPartForLabCase,
+  requestPartForLabCase, reorderPartForLabCase, returnPartForLabCase, addItemToLabCase,
   saveLabItems,
   saveLabWorkType,
 } from "@/modules/service/actions/chip-lab";
@@ -98,7 +100,14 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
     canEditItems ? listCatalogForPicker() : Promise.resolve([]),
     showWorkTypeForm ? listLabEngineers() : Promise.resolve([]),
     showWorkTypeForm ? listVendorOptions() : Promise.resolve([]),
-    canEditItems ? getLabStockInfo(c.id, user.branchId ?? c.branchId) : Promise.resolve({ stock: {}, requested: [] as string[] }),
+    canEditItems ? getLabStockInfo(c.id, c.branchId) : Promise.resolve({ stock: {}, consumable: {} as Record<string, never[]>, usids: {} as Record<string, string>, vendorReplacement: {} as Record<string, string>, settled: {} as Record<string, string>, received: [] as string[], requested: [] as string[], transferred: [] as string[] }),
+  ]);
+
+  // Add-item picker and the Quality Check gate (parts must be consumed or returned first).
+  const [addCatalog, qcBlock, usidByItem] = await Promise.all([
+    permission.canEdit && LAB_ADD_ITEM_STATUSES.includes(status) ? listCatalogForPicker() : Promise.resolve([] as Awaited<ReturnType<typeof listCatalogForPicker>>),
+    status === "CHIP_LAB_READY_DISPATCH" ? qcConsumptionBlock(c.id) : Promise.resolve(null),
+    caseUsids(c.id),
   ]);
 
   // What the customer still owes, and what we still owe the outsource vendor.
@@ -187,6 +196,7 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
                 caseId={c.id}
                 status={status}
                 transferCompleted={transferDone}
+                qcBlock={qcBlock}
                 qc={
                   qc && !qc.complete && qc.rows.length > 0
                     ? { jobsheetNo: c.jobsheetNo, items: qc.rows, action: saveQcAnswers.bind(null, c.id) }
@@ -294,7 +304,19 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
           )}
 
           {/* Billable items — inline editor at any active lab stage */}
-          <Card title="Billable items">
+          <Card
+            title="Billable items"
+            actions={
+              permission.canEdit && LAB_ADD_ITEM_STATUSES.includes(status) ? (
+                <AddItemDialog
+                  options={addCatalog.filter((i) => !c.items.some((l) => l.itemId === i.id)).map((i) => ({ value: i.id, label: `${i.code} — ${i.name}` }))}
+                  action={addItemToLabCase.bind(null, c.id)}
+                  backToDiagnosis={status !== "CHIP_LAB_DIAGNOSIS"}
+                  backLabel="Lab Diagnosis"
+                />
+              ) : undefined
+            }
+          >
             {canEditItems ? (
               <LabItemsSection
                 action={saveLabItems.bind(null, c.id)}
@@ -305,8 +327,12 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
                   ...labStock,
                   caseItemIds: Object.fromEntries(c.items.map((l) => [l.itemId, l.id])),
                 }}
+                canRequest={canRequestParts(status)}
                 requestAction={requestPartForLabCase}
+                reorderAction={reorderPartForLabCase}
+                returnAction={returnPartForLabCase}
                 consumeAction={consumeLabItem}
+                jobsheetNo={c.jobsheetNo}
               />
             ) : (
               <>
@@ -321,11 +347,11 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
                         <span className="flex items-center gap-2 font-medium">
                           {l.name}
                           <Badge tone={ITEM_TYPE_TONE[l.type]}>{ITEM_TYPE_LABELS[l.type]}</Badge>
+                          {usidByItem[l.itemId] && <Badge tone="navy" className="tabular-nums">{usidByItem[l.itemId]}</Badge>}
                         </span>
                       ),
                     },
                     { header: "Code", cell: (l) => <span className="text-text-muted">{l.code}</span> },
-                    { header: "Qty", align: "center", cell: (l) => l.quantity },
                     {
                       header: "Billed ₹",
                       align: "right",

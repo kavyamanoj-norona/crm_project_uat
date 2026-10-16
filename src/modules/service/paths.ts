@@ -7,7 +7,6 @@ export const SERVICE_PATHS = {
   newCase: "/service/new",
   uncollected: "/service/uncollected",
   lab: "/service/lab",
-  items: "/service/items",
   tatConfig: "/service/tat-config",
   ageing: "/service/ageing",
   vendors: "/service/lab/vendors",

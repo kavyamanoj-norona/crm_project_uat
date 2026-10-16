@@ -5,6 +5,8 @@ export const INVENTORY_PATHS = {
   stock: "/inventory/stock",
   purchasing: "/inventory/purchasing",
   billing: "/inventory/billing",
-  catalog: "/inventory/catalog",
+  items: "/inventory/items",
   suppliers: "/inventory/suppliers",
+  vendorReplacements: "/inventory/vendor-replacements",
+  configuration: "/inventory/configuration",
 } as const;

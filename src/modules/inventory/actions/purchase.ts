@@ -7,8 +7,11 @@ import { toFieldErrors, pick, type FormState } from "@/lib/form";
 import { ForbiddenError, requireActionPermission } from "@/server/rbac/guard";
 import { branchWhere, getBranchScope } from "@/server/branch-scope";
 import { formPhotos, photoError, saveCasePhotos } from "@/server/case-photos";
+import { logActivity } from "@/server/security/activity";
 import { nextSequence } from "@/server/sequence";
 import type { PurchaseRequestStatus } from "@/generated/prisma/client";
+import { canRequestParts, type CaseStatusValue } from "@/modules/service/case-schema";
+import { createReplacementRequest } from "../replacement";
 import { INVENTORY_PATHS } from "../paths";
 import { requirePurchaseManager } from "../purchase-access";
 import { partRequestSchema, purchaseRequestSchema } from "../schemas";
@@ -25,7 +28,7 @@ function period() {
 
 export async function raisePurchaseRequest(_prev: FormState, formData: FormData): Promise<FormState> {
   requirePurchaseManager(await requireActionPermission(INVENTORY_PATHS.stock, "canCreate"));
-  const raw = pick(formData, ["itemId", "quantity", "caseId", "notes"]);
+  const raw = pick(formData, ["itemId", "caseId", "notes"]);
   const parsed = purchaseRequestSchema.safeParse(raw);
   if (!parsed.success) return toFieldErrors(parsed.error, formData);
 
@@ -35,19 +38,47 @@ export async function raisePurchaseRequest(_prev: FormState, formData: FormData)
   if (!branchId) return { ok: false, message: "Select a branch first using the header switcher." };
 
   const branch = await db.branch.findUniqueOrThrow({ where: { id: branchId }, select: { code: true } });
-  const { itemId, quantity, caseId, notes } = parsed.data;
+  const { itemId, caseId, notes } = parsed.data;
 
   await db.$transaction(async (tx) => {
     const seq = await nextSequence(tx, `PR:${branch.code}:${period()}`);
     const code = `PR-${branch.code.toUpperCase()}-${period()}-${String(seq).padStart(3, "0")}`;
     await tx.purchaseRequest.create({
-      data: { code, branchId, itemId, quantity, caseId: caseId ?? null, notes: notes ?? null, requestedById: user.id },
+      // A request is always one item: each one is transferred, received and consumed on its own USID.
+      data: { code, branchId, itemId, quantity: 1, caseId: caseId ?? null, notes: notes ?? null, requestedById: user.id },
     });
   });
 
   revalidatePath(INVENTORY_PATHS.stock);
   revalidatePath(INVENTORY_PATHS.purchasing);
   redirect(`${INVENTORY_PATHS.purchasing}?saved=${Date.now()}`);
+}
+
+/**
+ * Reorder a part for the case because the unit already received is defective. The dialog confirms it; the reason is
+ * required and, with the person who confirmed, is shown to the Purchase Manager on the Replacement / Reorder request.
+ */
+export async function reorderPartForCase(caseItemId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (reason.length < 5) return { message: "Please fix the highlighted fields.", fieldErrors: { reason: ["Explain why it needs to be reordered"] } };
+  if (reason.length > 300) return { message: "Please fix the highlighted fields.", fieldErrors: { reason: ["Keep the reason under 300 characters"] } };
+  try {
+    const user = await requireActionPermission(INVENTORY_PATHS.stock, "canCreate");
+    const scope = branchWhere(await getBranchScope(user));
+    const line = await db.caseItem.findFirst({
+      where: { id: caseItemId, removedAt: null, case: { ...scope } },
+      select: { itemId: true, caseId: true },
+    });
+    if (!line) return { message: "Item not found." };
+    const res = await createReplacementRequest({ caseId: line.caseId, itemId: line.itemId, reason, userId: user.id });
+    if (!res.ok) return { message: res.message };
+    revalidatePath(INVENTORY_PATHS.purchasing);
+    revalidatePath(`/service/cases/${line.caseId}`);
+    return { ok: true, message: res.message };
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { message: e.message };
+    throw e;
+  }
 }
 
 /** Part request from a case line: notes optional, at least one photo of the part is mandatory. */
@@ -64,17 +95,18 @@ export async function requestPartForCase(caseItemId: string, _prev: FormState, f
     const scope = branchWhere(await getBranchScope(user));
     const line = await db.caseItem.findFirst({
       where: { id: caseItemId, removedAt: null, case: { ...scope } },
-      select: { itemId: true, quantity: true, caseId: true, case: { select: { branchId: true } } },
+      select: { itemId: true, quantity: true, caseId: true, case: { select: { branchId: true, status: true } } },
     });
     if (!line) return { message: "Item not found." };
-    const { itemId, quantity, caseId, case: { branchId } } = line;
+    if (!canRequestParts(line.case.status as CaseStatusValue)) return { message: "Parts can be requested once the approval is complete." };
+    const { itemId, caseId, case: { branchId } } = line;
     const branch = await db.branch.findUniqueOrThrow({ where: { id: branchId }, select: { code: true } });
 
     const requestId = await db.$transaction(async (tx) => {
       const seq = await nextSequence(tx, `PR:${branch.code}:${period()}`);
       const code = `PR-${branch.code.toUpperCase()}-${period()}-${String(seq).padStart(3, "0")}`;
       const pr = await tx.purchaseRequest.create({
-        data: { code, branchId, itemId, quantity, caseId, modelNo: parsed.data.modelNo, notes: parsed.data.notes, requestedById: user.id },
+        data: { code, branchId, itemId, quantity: 1, caseId, modelNo: parsed.data.modelNo, notes: parsed.data.notes, requestedById: user.id },
         select: { id: true },
       });
       return pr.id;
@@ -89,6 +121,41 @@ export async function requestPartForCase(caseItemId: string, _prev: FormState, f
     if (e instanceof ForbiddenError) return { message: e.message };
     throw e;
   }
+}
+
+/** Requests → Ordered: the Purchase Manager has ordered the item. Starts the Ordered turnaround clock. */
+export async function markRequestOrdered(id: string): Promise<void> {
+  const user = await requireActionPermission(INVENTORY_PATHS.stock, "canEdit");
+  requirePurchaseManager(user);
+  const done = await db.purchaseRequest.updateMany({
+    where: { id, status: { in: ["PENDING", "WITH_PM", "APPROVED", "SPARE_UNAVAILABLE"] } },
+    data: { status: "ORDERED", orderedAt: new Date(), orderedById: user.id },
+  });
+  if (done.count > 0) {
+    await logActivity({ action: "inventory.order", userId: user.id, entity: "PurchaseRequest", entityId: id, detail: "Marked as ordered" });
+  }
+  revalidatePath(INVENTORY_PATHS.purchasing);
+}
+
+/** Requests: the Purchase Manager cannot get the spare right now. Kept on the Requests tab with an optional remark. */
+export async function markSpareUnavailable(id: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const remark = String(formData.get("remarks") ?? "").trim();
+  if (remark.length > 300) return { message: "Please fix the highlighted fields.", fieldErrors: { remarks: ["Keep the remark under 300 characters"] } };
+  try {
+    const user = await requireActionPermission(INVENTORY_PATHS.stock, "canEdit");
+    requirePurchaseManager(user);
+    const done = await db.purchaseRequest.updateMany({
+      where: { id, status: { in: ["PENDING", "WITH_PM", "APPROVED"] } },
+      data: { status: "SPARE_UNAVAILABLE", pmRemarks: remark || null },
+    });
+    if (done.count === 0) return { message: "This request can no longer be changed." };
+    await logActivity({ action: "inventory.spare-unavailable", userId: user.id, entity: "PurchaseRequest", entityId: id, detail: remark || "Spare not available" });
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { message: e.message };
+    throw e;
+  }
+  revalidatePath(INVENTORY_PATHS.purchasing);
+  return { ok: true, message: "Marked as spare not available." };
 }
 
 export async function receiveStock(purchaseRequestId: string): Promise<void> {

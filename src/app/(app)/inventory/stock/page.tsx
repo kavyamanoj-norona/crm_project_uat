@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Pencil, ShoppingCart } from "lucide-react";
+import { Pencil } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ListView } from "@/components/data/list-view";
 import { listState } from "@/lib/list";
@@ -10,8 +10,8 @@ import { EntityForm, type FieldConfig } from "@/modules/admin/components/entity-
 import { AdminPage, param } from "@/modules/admin/components/admin-page";
 import { getBranchScope, listBranchOptions } from "@/server/branch-scope";
 import { requirePageAccess } from "@/server/rbac/guard";
-import { isPurchaseManager } from "@/modules/inventory/purchase-access";
 import { db } from "@/server/db";
+import { syncStockWithUnits } from "@/modules/inventory/stock-sync";
 import { adjustStock, consumeStockItem } from "@/modules/inventory/actions/stock";
 import { INVENTORY_PATHS } from "@/modules/inventory/paths";
 import { STOCK_SORTS, countAvailableUnits, listPhysicalItems, listStockPage, listStockUnitsPage } from "@/modules/inventory/queries";
@@ -29,6 +29,7 @@ export default async function StockPage({ searchParams }: PageProps<"/inventory/
   const editId = param(sp, "edit");
   const highlight = param(sp, "highlight") ?? editId;
 
+  await syncStockWithUnits();
   const scope = await getBranchScope(user);
   const canEdit = permission.canEdit;
 
@@ -53,7 +54,7 @@ export default async function StockPage({ searchParams }: PageProps<"/inventory/
 
   const stockAdjustFields: FieldConfig[] = [
     ...branchField,
-    { name: "itemId", label: "Item (part / accessory)", type: "select", required: true, placeholder: "Select item", options: physicalItems.map((i) => ({ value: i.id, label: `${i.code} — ${i.name}` })) },
+    { name: "itemId", label: "Item (part / accessory)", type: "select", searchable: true, required: true, placeholder: "Select item", options: physicalItems.map((i) => ({ value: i.id, label: `${i.code} — ${i.name}` })) },
     { name: "quantity", label: "Quantity", type: "number", required: true, placeholder: "Enter quantity" },
     { name: "unitCodes", label: "Unit codes", placeholder: "Enter unit codes (comma-separated)", hint: "Sticker IDs on physical units", span: 2 },
   ];
@@ -134,6 +135,12 @@ export default async function StockPage({ searchParams }: PageProps<"/inventory/
                 <Badge tone="success">Available</Badge>
               ) : u.status === "RECEIVED" ? (
                 <Badge tone="navy">Received</Badge>
+              ) : u.status === "RETURNED" ? (
+                <Badge tone="danger">Returned (damaged)</Badge>
+              ) : u.status === "AWAITING_VENDOR" ? (
+                <Badge tone="warning">With vendor</Badge>
+              ) : u.status === "CONSUMED" ? (
+                <Badge tone="neutral">Consumed</Badge>
               ) : (
                 <Badge tone="primary">Allocated</Badge>
               ),
@@ -232,14 +239,7 @@ export default async function StockPage({ searchParams }: PageProps<"/inventory/
                     <Pencil className="size-4" />
                   </Link>
                 )}
-                {s.quantity === 0 ? (
-                  !isPurchaseManager(user) ? null : <Link
-                    href={`${INVENTORY_PATHS.purchasing}?action=purchase-request&itemId=${s.item.id}`}
-                    className="inline-flex items-center gap-1 rounded-lg border border-primary/30 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/5"
-                  >
-                    <ShoppingCart className="size-3" /> Request
-                  </Link>
-                ) : canEdit ? (
+                {s.quantity > 0 && canEdit ? (
                   <form action={consumeStockItem.bind(null, s.id)}>
                     <button type="submit" className="rounded-lg border border-border px-3 py-1 text-xs font-medium hover:bg-surface-muted">
                       Consume

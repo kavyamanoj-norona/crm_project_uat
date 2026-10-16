@@ -6,7 +6,7 @@ import { ForbiddenError, requireActionPermission } from "@/server/rbac/guard";
 import { logActivity } from "@/server/security/activity";
 import type { ActionResult } from "@/lib/form";
 import { ADMIN_PATHS } from "../paths";
-import { SERVICE_PATHS } from "../../service/paths";
+import { INVENTORY_PATHS } from "../../inventory/paths";
 
 type SoftDeletable = {
   findUnique(args: { where: { id: string }; select: { id: true } }): Promise<{ id: string } | null>;
@@ -23,7 +23,7 @@ const TARGETS = {
   menu: { path: ADMIN_PATHS.modules, model: () => db.menu },
   blockedIp: { path: ADMIN_PATHS.blockedIps, model: () => db.blockedIp },
   rule: { path: ADMIN_PATHS.rules, model: () => db.rule },
-  item: { path: SERVICE_PATHS.items, model: () => db.item },
+  item: { path: INVENTORY_PATHS.items, model: () => db.item },
 } as const;
 
 export type ToggleTarget = keyof typeof TARGETS;

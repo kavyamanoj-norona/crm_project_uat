@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { postDirectSale } from "@/modules/finance/posting";
 import { revalidatePath } from "next/cache";
 import { db } from "@/server/db";
 import { requireActionPermission } from "@/server/rbac/guard";
@@ -79,7 +80,7 @@ export async function sellAccessory(_prev: FormState, formData: FormData): Promi
     const seq = await nextSequence(tx, seqKey);
     const saleNo = `DS-${branch.code}-${mm}-${String(seq).padStart(4, "0")}`;
 
-    await tx.directSale.create({
+    const sale = await tx.directSale.create({
       data: {
         saleNo,
         branchId: scope.branchId!,
@@ -93,6 +94,7 @@ export async function sellAccessory(_prev: FormState, formData: FormData): Promi
         },
       },
     });
+    await postDirectSale(tx, sale, user.id);
 
     await tx.stockItem.update({
       where: { id: stockItemId },
@@ -150,7 +152,7 @@ export async function sellRefurbItem(_prev: FormState, formData: FormData): Prom
     const seq = await nextSequence(tx, seqKey);
     const saleNo = `DS-${branch.code}-${mm}-${String(seq).padStart(4, "0")}`;
 
-    await tx.directSale.create({
+    const sale = await tx.directSale.create({
       data: {
         saleNo,
         branchId: scope.branchId!,
@@ -161,6 +163,7 @@ export async function sellRefurbItem(_prev: FormState, formData: FormData): Prom
         soldById: user.id,
       },
     });
+    await postDirectSale(tx, sale, user.id);
 
     await tx.refurbItem.update({
       where: { id: refurbItemId },

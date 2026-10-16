@@ -22,6 +22,7 @@ import {
   estimateSchema,
   feedbackSchema,
   isOpenStatus,
+  ADD_ITEM_STATUSES,
   nextStage,
   stageChangeSchema,
   transferToChipSchema,
@@ -29,6 +30,9 @@ import {
 } from "../case-schema";
 import { SERVICE_PATHS } from "../paths";
 import { listBranchStaff } from "../queries";
+import { markCaseUnitsConsumed } from "@/modules/inventory/unit-consume";
+import { qcConsumptionBlock } from "@/modules/inventory/case-parts";
+import { postCasePayment } from "@/modules/finance/posting";
 
 const STALE = "Someone else changed this case just now. Refresh to see its current stage.";
 
@@ -45,6 +49,8 @@ async function applyStage(caseId: string, from: CaseStatusValue, to: CaseStatusV
     });
     if (count === 0) return false;
     await tx.caseStatusHistory.create({ data: { caseId, fromStatus: from, toStatus: to, note, changedById: userId } });
+    // Spare parts received for this case are consumed once it is closed.
+    if (to === "CLOSED") await markCaseUnitsConsumed(tx, caseId, userId);
     return true;
   });
   if (moved) {
@@ -74,10 +80,89 @@ export async function moveCaseToNextStage(caseId: string): Promise<ActionResult>
       const blocked = await qcBlockReason(caseId, "QUALITY_CHECK");
       if (blocked) return { ok: false, message: blocked };
     }
+    // A case is closed only through its final bill (invoice + payment), never by a plain stage move.
+    if (to === "CLOSED") return { ok: false, message: "Use Move to Closed to generate the final bill and close the case." };
+    // Quality check only once every part on the case has been consumed (or returned unused).
+    if (to === "QUALITY_CHECK") {
+      const pending = await qcConsumptionBlock(caseId);
+      if (pending) return { ok: false, message: pending };
+    }
     if (!(await applyStage(caseId, row.status, to, null, user.id, scope))) return { ok: false, message: STALE };
     return { ok: true, message: `Moved to ${CASE_STATUS_LABELS[to]}.` };
   } catch (e) {
     if (e instanceof ForbiddenError) return { ok: false, message: e.message };
+    throw e;
+  }
+}
+
+/**
+ * Adds one item to a case that is already past diagnosis (or still in it). The item is added at its list price. Outside
+ * Diagnosis the case goes back to Diagnosis, so the customer approves the new estimate before servicing continues.
+ */
+export async function addItemToCase(caseId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const itemId = String(formData.get("itemId") ?? "").trim();
+  if (!itemId) return { message: "Please fix the highlighted fields.", fieldErrors: { itemId: ["Select an item"] } };
+  try {
+    const user = await requireActionPermission(SERVICE_PATHS.cases, "canEdit");
+    const scope = branchWhere(await getBranchScope(user));
+    const c = await db.case.findFirst({
+      where: { id: caseId, ...scope },
+      select: { status: true, jobsheetNo: true, items: { where: { removedAt: null }, select: { itemId: true, lineTotalPaise: true, sortOrder: true } } },
+    });
+    if (!c) return { message: "Case not found." };
+    if (!ADD_ITEM_STATUSES.includes(c.status)) return { message: "Items can't be added at this stage." };
+    if (c.items.some((i) => i.itemId === itemId)) return { message: "This item is already on the case.", fieldErrors: { itemId: ["Already on this case"] } };
+    const item = await db.item.findFirst({ where: { id: itemId, isActive: true } });
+    if (!item) return { message: "Item not found.", fieldErrors: { itemId: ["Select an item"] } };
+
+    const min = minPricePaise(item.pricePaise, item.maxDiscountPercent);
+    const backToDiagnosis = c.status !== "DIAGNOSIS";
+    const total = c.items.reduce((sum, i) => sum + i.lineTotalPaise, 0) + item.pricePaise;
+    const now = new Date();
+
+    const moved = await db.$transaction(async (tx) => {
+      const { count } = await tx.case.updateMany({
+        where: { id: caseId, status: c.status, ...scope },
+        data: { estimatedCostPaise: total, updatedById: user.id, ...(backToDiagnosis ? { status: "DIAGNOSIS", stageChangedAt: now } : {}) },
+      });
+      if (count === 0) return false;
+      await tx.caseItem.create({
+        data: {
+          caseId,
+          itemId: item.id,
+          code: item.code,
+          name: item.name,
+          type: item.type,
+          quantity: 1,
+          listPricePaise: item.pricePaise,
+          minPricePaise: min,
+          unitPricePaise: item.pricePaise,
+          gstPercent: item.gstPercent,
+          lineTotalPaise: item.pricePaise,
+          sortOrder: Math.max(-1, ...c.items.map((i) => i.sortOrder)) + 1,
+          addedById: user.id,
+        },
+      });
+      if (backToDiagnosis) {
+        await tx.caseStatusHistory.create({
+          data: { caseId, fromStatus: c.status, toStatus: "DIAGNOSIS", note: `Item added: ${item.name}. Back to diagnosis for customer approval.`, changedById: user.id, at: now },
+        });
+      }
+      return true;
+    });
+    if (!moved) return { message: STALE };
+
+    await logActivity({
+      action: "case.item.add",
+      userId: user.id,
+      entity: "Case",
+      entityId: caseId,
+      detail: `${item.name} added to ${c.jobsheetNo}${backToDiagnosis ? ` (${c.status} → DIAGNOSIS, needs customer approval)` : ""}`,
+    });
+    revalidatePath(SERVICE_PATHS.cases, "layout");
+    return { ok: true, message: backToDiagnosis ? "Item added. The case is back in Diagnosis for customer approval." : "Item added." };
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { message: e.message };
     throw e;
   }
 }
@@ -93,6 +178,12 @@ export async function changeCaseStage(caseId: string, _prev: FormState, formData
     if (!isOpenStatus(row.status)) return { message: "Closed and cancelled cases can't change stage." };
     if (row.status === "INTAKE") return { message: "Use Start diagnosis to assign an engineer and add items." };
     const { toStatus, note } = parsed.data;
+    if (toStatus === "CLOSED") return { message: "A case is closed with its final bill. Use Move to Closed.", fieldErrors: { toStatus: ["Use Move to Closed"] } };
+    const qcIdx = CASE_FLOW.indexOf("QUALITY_CHECK");
+    if (CASE_FLOW.indexOf(row.status) >= 0 && CASE_FLOW.indexOf(row.status) < qcIdx && CASE_FLOW.indexOf(toStatus) >= qcIdx) {
+      const pending = await qcConsumptionBlock(caseId);
+      if (pending) return { message: pending };
+    }
     if (toStatus === row.status) return { message: "The case is already in that stage.", fieldErrors: { toStatus: ["Pick a different stage"] } };
     // Moving forward out of Quality Check needs the checklist; stepping back doesn't.
     if (row.status === "QUALITY_CHECK" && CASE_FLOW.indexOf(toStatus) > CASE_FLOW.indexOf("QUALITY_CHECK")) {
@@ -400,16 +491,21 @@ export async function saveEstimate(caseId: string, mode: "start" | "edit", _prev
     if (!saved) return { message: STALE };
 
     if (data.advanceAmount && data.advanceMode) {
-      await db.payment.create({
-        data: {
-          branchId: c.branchId,
-          caseId,
-          customerId: c.customerId,
-          kind: "ADVANCE",
-          mode: data.advanceMode,
-          amountPaise: data.advanceAmount,
-          receivedById: user.id,
-        },
+      // The payment and its ledger entry (Dr Cash/Bank, Cr Customer Advances) are saved together.
+      await db.$transaction(async (tx) => {
+        const pay = await tx.payment.create({
+          data: {
+            branchId: c.branchId,
+            caseId,
+            customerId: c.customerId,
+            kind: "ADVANCE",
+            mode: data.advanceMode!,
+            amountPaise: data.advanceAmount!,
+            receivedById: user.id,
+          },
+          include: { case: { select: { jobsheetNo: true } } },
+        });
+        await postCasePayment(tx, pay, user.id);
       });
     }
 

@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Cpu, Eye, Inbox, PackageCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { LinkButton } from "@/components/ui/button";
+import { ActionButton } from "@/components/ui/action-button";
+import { LinkButton, buttonClass } from "@/components/ui/button";
 import { StatCard } from "@/components/data/stat-card";
 import { ListView } from "@/components/data/list-view";
 import { PageHeader } from "@/components/layout/page-header";
@@ -9,6 +10,7 @@ import { listState } from "@/lib/list";
 import { formatDate } from "@/lib/dates";
 import { formatPaise } from "@/lib/money";
 import { requirePageAccess } from "@/server/rbac/guard";
+import { acceptLabIncoming } from "@/modules/service/actions/chip-lab";
 import { SERVICE_PATHS } from "@/modules/service/paths";
 import { CASE_STATUS_LABELS, CASE_STATUS_TONE } from "@/modules/service/case-schema";
 import type { CaseStatusValue } from "@/modules/service/case-schema";
@@ -196,6 +198,12 @@ export default async function ChipLabPage({ searchParams }: PageProps<"/service/
                   <LinkButton href={`${SERVICE_PATHS.lab}/${c.id}`} variant="secondary" size="sm">
                     <Eye className="size-3.5" />
                   </LinkButton>
+                  {/* Only while the case is still on its way to the lab */}
+                  {c.status === "CHIP_TRANSFER" && (
+                    <ActionButton action={acceptLabIncoming.bind(null, c.id)} label="Mark as received" className={buttonClass("success", "sm")}>
+                      Received
+                    </ActionButton>
+                  )}
                 </div>
               ),
             },

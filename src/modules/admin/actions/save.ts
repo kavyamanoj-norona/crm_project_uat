@@ -9,7 +9,7 @@ import { FieldError, handleActionError } from "@/server/prisma-errors";
 import { requireActionPermission } from "@/server/rbac/guard";
 import { logActivity } from "@/server/security/activity";
 import { ADMIN_PATHS } from "../paths";
-import { SERVICE_PATHS } from "../../service/paths";
+import { INVENTORY_PATHS } from "../../inventory/paths";
 import {
   blockedIpSchema,
   branchSchema,
@@ -198,7 +198,7 @@ export async function saveRule(_prev: FormState, formData: FormData) {
 export async function saveItem(_prev: FormState, formData: FormData) {
   return save(formData, {
     entity: "Item",
-    path: SERVICE_PATHS.items,
+    path: INVENTORY_PATHS.items,
     schema: itemSchema,
     labels: { code: "Item code" },
     write: (data, id, userId) => {

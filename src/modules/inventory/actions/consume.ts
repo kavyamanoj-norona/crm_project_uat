@@ -15,7 +15,7 @@ import { allocateSchema } from "../schemas";
 /**
  * The Purchase Manager allocates one specific stock unit (by its USID) to a case in any branch.
  * The unit flips AVAILABLE → ALLOCATED only if it is still AVAILABLE, so the same USID can never
- * be allocated twice. Unit, branch stock, request and case link change together or not at all.
+ * be allocated twice. The request must be Ordered first; allocating its last unit marks it Transferred. Unit, branch stock, request and case link change together or not at all.
  */
 export async function allocateUnit(requestId: string, _prev: FormState, formData: FormData): Promise<FormState> {
   const parsed = allocateSchema.safeParse(pick(formData, ["unitId", "note"]));
@@ -38,7 +38,8 @@ export async function allocateUnit(requestId: string, _prev: FormState, formData
         select: { itemId: true, quantity: true, consumedQty: true, status: true, caseId: true, branchId: true },
       });
       if (!pr) throw new FieldError("form", "Request not found.");
-      if (!["PENDING", "WITH_PM", "APPROVED"].includes(pr.status)) throw new FieldError("form", "This request is already closed.");
+      if (["PENDING", "WITH_PM", "APPROVED", "SPARE_UNAVAILABLE"].includes(pr.status)) throw new FieldError("form", "Mark the request as ordered before transferring a unit.");
+      if (pr.status !== "ORDERED") throw new FieldError("form", "This request is already closed.");
       if (pr.consumedQty >= pr.quantity) throw new FieldError("form", "This request is already fully allocated.");
 
       // The unit goes to the case this request was raised for. Its branch is the one that must confirm receipt;
@@ -50,6 +51,7 @@ export async function allocateUnit(requestId: string, _prev: FormState, formData
 
       const unit = await tx.stockUnit.findUnique({ where: { id: unitId }, select: { usid: true, itemId: true, branchId: true, status: true } });
       if (!unit) throw new FieldError("unitId", "Select a stock unit");
+      if (unit.itemId !== pr.itemId) throw new FieldError("unitId", `${unit.usid} is not the requested item`);
       if (unit.status !== "AVAILABLE") throw new FieldError("unitId", `${unit.usid} is already allocated`);
 
       // The guard: only an AVAILABLE unit matches, so a second allocation of this USID updates nothing.
@@ -83,7 +85,7 @@ export async function allocateUnit(requestId: string, _prev: FormState, formData
         where: { id: requestId },
         data: {
           consumedQty: { increment: 1 },
-          ...(done ? { status: "CONSUMED", reviewedById: user.id, reviewedAt: new Date() } : {}),
+          ...(done ? { status: "TRANSFERRED", transferredAt: new Date() } : {}),
         },
       });
       return { usid: unit.usid, caseId: kase?.id ?? null, jobsheetNo: kase?.jobsheetNo ?? null, done };
@@ -97,13 +99,13 @@ export async function allocateUnit(requestId: string, _prev: FormState, formData
       userId: user.id,
       entity: result.caseId ? "Case" : "PurchaseRequest",
       entityId: result.caseId ?? requestId,
-      detail: `${result.usid} allocated${result.jobsheetNo ? ` to ${result.jobsheetNo}` : ""}${result.done ? " (request fulfilled)" : ""}`,
+      detail: `${result.usid} transferred${result.jobsheetNo ? ` to ${result.jobsheetNo}` : ""}${result.done ? " (request fully transferred)" : ""}`,
     });
     revalidatePath(INVENTORY_PATHS.purchasing);
     revalidatePath(INVENTORY_PATHS.stock);
     revalidatePath(INVENTORY_PATHS.billing, "layout");
     if (result.caseId) revalidatePath(`/service/cases/${result.caseId}`);
-    return { ok: true, message: `${result.usid} allocated${result.jobsheetNo ? ` to ${result.jobsheetNo}` : ""}.` };
+    return { ok: true, message: `${result.usid} transferred${result.jobsheetNo ? ` to ${result.jobsheetNo}` : ""}.` };
   } catch (e) {
     if (e instanceof ForbiddenError) return { message: e.message };
     if (e instanceof FieldError) return { message: e.message, fieldErrors: { [e.field]: [e.message] } };

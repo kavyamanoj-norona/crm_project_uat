@@ -1,5 +1,6 @@
 "use client";
 
+import { ShoppingCart } from "lucide-react";
 import { validateForm, type FormState } from "@/lib/form";
 import { ActionDialog } from "@/components/forms/action-dialog";
 import { PhotoInput } from "@/components/forms/photo-input";
@@ -15,8 +16,13 @@ type PartRequestDialogProps = {
 export function PartRequestDialog({ itemName, action }: PartRequestDialogProps) {
   return (
     <ActionDialog
-      trigger="Request"
+      trigger={
+        <>
+          <ShoppingCart className="size-3.5" /> Request
+        </>
+      }
       triggerVariant="danger"
+      triggerSize="sm"
       title={`Request ${itemName}`}
       description="Enter the model number and attach a photo of the part needed.."
       action={action}

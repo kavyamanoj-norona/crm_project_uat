@@ -15,10 +15,14 @@ import {
   labWorkTypeSchema,
   vendorPaymentSchema,
   type CaseStatusValue,
+  canRequestParts,
+  LAB_ADD_ITEM_STATUSES,
 } from "../case-schema";
 import { SERVICE_PATHS } from "../paths";
 import { qcBlockReason } from "../qc-response-queries";
 import { nextSequence } from "@/server/sequence";
+import { createReplacementRequest } from "@/modules/inventory/replacement";
+import { consumeCasePart, parseReturn, qcConsumptionBlock, returnCasePart } from "@/modules/inventory/case-parts";
 
 const STALE = "Someone else changed this case just now. Refresh to see its current stage.";
 
@@ -177,6 +181,9 @@ export async function startLabQualityCheck(caseId: string): Promise<ActionResult
     const row = await findLabCase(caseId);
     if (!row) return { ok: false, message: "Case not found in lab queue." };
     if (row.status !== "CHIP_LAB_READY_DISPATCH") return { ok: false, message: "Case must be in Ready to Dispatch stage." };
+    // Quality check only once every part on the case has been consumed (or returned unused).
+    const pending = await qcConsumptionBlock(caseId);
+    if (pending) return { ok: false, message: pending };
     if (!(await applyLabStage(caseId, "CHIP_LAB_READY_DISPATCH", "CHIP_LAB_QUALITY_CHECK", null, user.id)))
       return { ok: false, message: STALE };
     return { ok: true, message: "Moved to Quality Check." };
@@ -478,6 +485,8 @@ export async function requestPartForLabCase(caseItemId: string): Promise<ActionR
     if (!line) return { ok: false, message: "Only parts and accessories can be requested." };
     const lab = await requesterBranch(user.branchId, line.caseId);
     if (!lab) return { ok: false, message: "Your account has no branch to raise the request for." };
+    const stage = await db.case.findUnique({ where: { id: line.caseId }, select: { status: true } });
+    if (!stage || !canRequestParts(stage.status as CaseStatusValue)) return { ok: false, message: "Parts can be requested once the approval is complete." };
 
     const open = await db.purchaseRequest.findFirst({
       where: { caseId: line.caseId, itemId: line.itemId, status: { notIn: ["FULFILLED", "REJECTED"] } },
@@ -489,7 +498,7 @@ export async function requestPartForLabCase(caseItemId: string): Promise<ActionR
       const seq = await nextSequence(tx, `PR:${lab.code}:${period()}`);
       const code = `PR-${lab.code.toUpperCase()}-${period()}-${String(seq).padStart(3, "0")}`;
       await tx.purchaseRequest.create({
-        data: { code, branchId: lab.id, itemId: line.itemId, quantity: line.quantity, caseId: line.caseId, requestedById: user.id },
+        data: { code, branchId: lab.id, itemId: line.itemId, quantity: 1, caseId: line.caseId, requestedById: user.id },
       });
     });
     revalidatePath(SERVICE_PATHS.lab, "layout");
@@ -501,41 +510,134 @@ export async function requestPartForLabCase(caseItemId: string): Promise<ActionR
   }
 }
 
-/** Uses a part from the requester's branch stock for this case (decrements by the line quantity, capped at what's there). */
-export async function consumeLabItem(caseItemId: string): Promise<ActionResult> {
+/** Reorder a part for a lab case because the unit already received is defective (confirmed with a reason). */
+export async function reorderPartForLabCase(caseItemId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (reason.length < 5) return { message: "Please fix the highlighted fields.", fieldErrors: { reason: ["Explain why it needs to be reordered"] } };
+  if (reason.length > 300) return { message: "Please fix the highlighted fields.", fieldErrors: { reason: ["Keep the reason under 300 characters"] } };
   try {
     const user = await requireActionPermission(SERVICE_PATHS.lab, "canEdit");
     const line = await physicalLine(caseItemId);
-    const lab = line && (await requesterBranch(user.branchId, line.caseId));
-    if (!line || !lab) return { ok: false, message: "Item or stock not found." };
-
-    const used = await db.$transaction(async (tx) => {
-      const stock = await tx.stockItem.findUnique({
-        where: { branchId_itemId: { branchId: lab.id, itemId: line.itemId } },
-        select: { quantity: true },
-      });
-      if (!stock || stock.quantity <= 0) return 0;
-      const take = Math.min(line.quantity, stock.quantity);
-      await tx.stockItem.update({
-        where: { branchId_itemId: { branchId: lab.id, itemId: line.itemId } },
-        data: { quantity: { decrement: take }, updatedById: user.id },
-      });
-      return take;
-    });
-    if (used === 0) return { ok: false, message: "Out of stock." };
-
-    await logActivity({
-      action: "case.lab.consume",
-      userId: user.id,
-      entity: "Case",
-      entityId: line.caseId,
-      detail: `Used ${used} from lab stock (item ${line.itemId})`,
-    });
+    if (!line) return { message: "Only parts and accessories can be reordered." };
+    const res = await createReplacementRequest({ caseId: line.caseId, itemId: line.itemId, reason, userId: user.id });
+    if (!res.ok) return { message: res.message };
     revalidatePath(SERVICE_PATHS.lab, "layout");
     revalidatePath("/inventory", "layout");
-    return { ok: true, message: "Stock updated." };
+    return { ok: true, message: res.message };
   } catch (e) {
-    if (e instanceof ForbiddenError) return { ok: false, message: e.message };
+    if (e instanceof ForbiddenError) return { message: e.message };
+    throw e;
+  }
+}
+
+/**
+ * Uses a part for this case. The chip-level lab is a service provider, so the usage is always taken from, and
+ * recorded against, the case's own branch, whichever branch raised the request. A unit received for the case is
+ * consumed first (its USID becomes Consumed); this is what lets the case move on to Quality check.
+ */
+export async function consumeLabItem(caseItemId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const unitId = String(formData.get("unitId") ?? "");
+  if (!unitId) return { message: "Please fix the highlighted fields.", fieldErrors: { unitId: ["Select the USID to consume"] } };
+  try {
+    const user = await requireActionPermission(SERVICE_PATHS.lab, "canEdit");
+    const line = await physicalLine(caseItemId);
+    if (!line) return { message: "Item or stock not found." };
+    const res = await consumeCasePart({ caseId: line.caseId, itemId: line.itemId, unitId, userId: user.id });
+    if (!res.ok) return { message: res.message };
+    revalidatePath(SERVICE_PATHS.lab, "layout");
+    revalidatePath("/inventory", "layout");
+    return { ok: true, message: res.message };
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { message: e.message };
+    throw e;
+  }
+}
+
+/** Return a received part from a lab case to Head Office (unused or defective), with a reason and remarks. */
+export async function returnPartForLabCase(caseItemId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const parsed = parseReturn(formData);
+  if ("error" in parsed) return parsed.error;
+  try {
+    const user = await requireActionPermission(SERVICE_PATHS.lab, "canEdit");
+    const line = await physicalLine(caseItemId);
+    if (!line) return { message: "Item not found." };
+    const res = await returnCasePart({ caseId: line.caseId, itemId: line.itemId, reason: parsed.reason, remarks: parsed.remarks, userId: user.id });
+    if (!res.ok) return { message: res.message };
+    revalidatePath(SERVICE_PATHS.lab, "layout");
+    revalidatePath("/inventory", "layout");
+    return { ok: true, message: res.message };
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { message: e.message };
+    throw e;
+  }
+}
+
+/**
+ * Adds one item to a lab case at any active stage. Outside lab diagnosis the case goes back to Lab Diagnosis,
+ * so the customer approves the new estimate before servicing continues.
+ */
+export async function addItemToLabCase(caseId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const itemId = String(formData.get("itemId") ?? "").trim();
+  if (!itemId) return { message: "Please fix the highlighted fields.", fieldErrors: { itemId: ["Select an item"] } };
+  try {
+    const user = await requireActionPermission(SERVICE_PATHS.lab, "canEdit");
+    const c = await db.case.findFirst({
+      where: { id: caseId, status: { in: LAB_ADD_ITEM_STATUSES } },
+      select: { status: true, jobsheetNo: true, items: { where: { removedAt: null }, select: { itemId: true, lineTotalPaise: true, sortOrder: true } } },
+    });
+    if (!c) return { message: "Items can't be added at this stage." };
+    if (c.items.some((i) => i.itemId === itemId)) return { message: "This item is already on the case.", fieldErrors: { itemId: ["Already on this case"] } };
+    const item = await db.item.findFirst({ where: { id: itemId, isActive: true } });
+    if (!item) return { message: "Item not found.", fieldErrors: { itemId: ["Select an item"] } };
+
+    const min = minPricePaise(item.pricePaise, item.maxDiscountPercent);
+    const backToDiagnosis = c.status !== "CHIP_LAB_DIAGNOSIS";
+    const total = c.items.reduce((sum, i) => sum + i.lineTotalPaise, 0) + item.pricePaise;
+    const now = new Date();
+
+    const done = await db.$transaction(async (tx) => {
+      const { count } = await tx.case.updateMany({
+        where: { id: caseId, status: c.status },
+        data: { estimatedCostPaise: total, updatedById: user.id, ...(backToDiagnosis ? { status: "CHIP_LAB_DIAGNOSIS", stageChangedAt: now } : {}) },
+      });
+      if (count === 0) return false;
+      await tx.caseItem.create({
+        data: {
+          caseId,
+          itemId: item.id,
+          code: item.code,
+          name: item.name,
+          type: item.type,
+          quantity: 1,
+          listPricePaise: item.pricePaise,
+          minPricePaise: min,
+          unitPricePaise: item.pricePaise,
+          gstPercent: item.gstPercent,
+          lineTotalPaise: item.pricePaise,
+          sortOrder: Math.max(-1, ...c.items.map((i) => i.sortOrder)) + 1,
+          addedById: user.id,
+        },
+      });
+      if (backToDiagnosis) {
+        await tx.caseStatusHistory.create({
+          data: { caseId, fromStatus: c.status, toStatus: "CHIP_LAB_DIAGNOSIS", note: `Item added: ${item.name}. Back to lab diagnosis for customer approval.`, changedById: user.id, at: now },
+        });
+      }
+      return true;
+    });
+    if (!done) return { message: STALE };
+
+    await logActivity({
+      action: "case.item.add",
+      userId: user.id,
+      entity: "Case",
+      entityId: caseId,
+      detail: `${item.name} added to ${c.jobsheetNo}${backToDiagnosis ? ` (${c.status} → CHIP_LAB_DIAGNOSIS, needs customer approval)` : ""}`,
+    });
+    revalidatePath(SERVICE_PATHS.lab, "layout");
+    return { ok: true, message: backToDiagnosis ? "Item added. The case is back in Lab Diagnosis for customer approval." : "Item added." };
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { message: e.message };
     throw e;
   }
 }

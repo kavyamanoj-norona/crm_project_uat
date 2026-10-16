@@ -1,6 +1,7 @@
 "use server";
 
 import { mkdir, writeFile } from "node:fs/promises";
+import { postCasePayment } from "@/modules/finance/posting";
 import path from "node:path";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -140,7 +141,7 @@ export async function createCase(_prev: FormState, formData: FormData): Promise<
           select: { id: true, jobsheetNo: true },
         });
         if (data.advanceAmount && data.advanceMode) {
-          await tx.payment.create({
+          const pay = await tx.payment.create({
             data: {
               branchId: branch.id,
               caseId: created.id,
@@ -151,6 +152,7 @@ export async function createCase(_prev: FormState, formData: FormData): Promise<
               receivedById: actor.id,
             },
           });
+          await postCasePayment(tx, { ...pay, case: { jobsheetNo: created.jobsheetNo } }, actor.id);
         }
         return { ...created, customer };
       }),

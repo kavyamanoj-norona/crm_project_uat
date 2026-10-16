@@ -5,6 +5,7 @@ import { db } from "@/server/db";
 import { ForbiddenError, requireActionPermission } from "@/server/rbac/guard";
 import { logActivity } from "@/server/security/activity";
 import { INVENTORY_PATHS } from "../paths";
+import { noteReplacementReceivedByBranch } from "../vendor-replacement";
 
 /**
  * A branch user confirms that a unit allocated to their branch has arrived: ALLOCATED → RECEIVED,
@@ -35,6 +36,8 @@ export async function markUnitReceived(unitId: string): Promise<void> {
     return row;
   });
   if (!unit) return;
+  // A vendor replacement (same USID) closes when the branch receives it.
+  await noteReplacementReceivedByBranch(unitId, user.id);
 
   await logActivity({
     action: "inventory.receive",

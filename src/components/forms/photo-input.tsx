@@ -178,35 +178,40 @@ export function PhotoInput({ name, max = 8, maxEdge = 1600, invalid, allowUpload
       {allowUpload && dropzone ? (
         <div
           className={cn(
-            "flex flex-col items-center gap-3 rounded-lg border border-dashed bg-surface px-4 py-5 text-center",
+            "space-y-2.5 rounded-lg border border-dashed bg-surface p-3",
             invalid ? "border-danger" : "border-border",
           )}
         >
-          <Upload className="size-6 text-text-muted" />
-          <p className="text-sm font-medium text-text">{dropzone.title}</p>
-          <label
-            htmlFor={name}
-            className={cn(
-              "flex h-9 cursor-pointer items-center justify-center rounded-lg border border-primary bg-surface px-4 text-sm font-medium text-primary transition-colors hover:bg-primary-soft",
-              (busy || photos.length >= max) && "pointer-events-none opacity-60",
-            )}
-          >
-            {busy ? <Loader2 className="size-4 animate-spin" /> : "Choose file"}
-          </label>
-          <div className="flex w-full items-center gap-3 text-xs text-text-muted">
-            <span className="h-px flex-1 bg-border" />
-            or
-            <span className="h-px flex-1 bg-border" />
+          <div className="flex items-center gap-2.5">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary">
+              <Upload className="size-[18px]" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-medium leading-tight text-text">{dropzone.title}</p>
+              <p className="text-xs text-text-muted">Choose a file or take a photo</p>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={takePhoto}
-            disabled={busy || live || photos.length >= max}
-            className="flex h-9 w-full max-w-48 cursor-pointer items-center justify-center gap-2 rounded-lg border border-border bg-surface px-3 text-sm font-medium text-text transition-colors hover:border-primary disabled:pointer-events-none disabled:opacity-60"
-          >
-            <Camera className="size-4" />
-            Take photo
-          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <label
+              htmlFor={name}
+              className={cn(
+                "flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-primary bg-surface px-3 text-sm font-medium text-primary transition-colors hover:bg-primary-soft",
+                (busy || photos.length >= max) && "pointer-events-none opacity-60",
+              )}
+            >
+              {busy ? <Loader2 className="size-4 animate-spin" /> : <ImagePlus className="size-4" />}
+              Choose file
+            </label>
+            <button
+              type="button"
+              onClick={takePhoto}
+              disabled={busy || live || photos.length >= max}
+              className="flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-sm font-medium text-text transition-colors hover:border-primary disabled:pointer-events-none disabled:opacity-60"
+            >
+              <Camera className="size-4" />
+              Take photo
+            </button>
+          </div>
         </div>
       ) : (
         <div className={cn("flex gap-2", allowUpload && "flex-col sm:flex-row")}>

@@ -2,7 +2,9 @@ import { redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { LinkButton } from "@/components/ui/button";
 import { PageHeader } from "@/components/layout/page-header";
-import { checkUsids, confirmBill, generateUsids, scanBill } from "@/modules/inventory/actions/billing";
+import { confirmBill, scanBill } from "@/modules/inventory/actions/billing";
+import { getGstRates } from "@/modules/inventory/config";
+import { previewNextUsid } from "@/modules/inventory/usid";
 import { listBillableItems, listSuppliers } from "@/modules/inventory/billing-queries";
 import { BillEntry } from "@/modules/inventory/components/bill-entry";
 import { INVENTORY_PATHS } from "@/modules/inventory/paths";
@@ -14,7 +16,7 @@ export default async function NewBillPage() {
   const { permission } = await requirePageAccess(INVENTORY_PATHS.billing);
   if (!permission.canCreate) redirect("/forbidden");
 
-  const [catalog, suppliers] = await Promise.all([listBillableItems(), listSuppliers()]);
+  const [catalog, suppliers, nextUsid, gstRates] = await Promise.all([listBillableItems(), listSuppliers(), previewNextUsid(), getGstRates()]);
 
   return (
     <>
@@ -29,8 +31,8 @@ export default async function NewBillPage() {
       />
       <BillEntry
         scanAction={scanBill}
-        generateAction={generateUsids}
-        checkAction={checkUsids}
+        nextUsid={nextUsid}
+        gstRates={gstRates}
         confirmAction={confirmBill}
         catalog={catalog}
         suppliers={suppliers}

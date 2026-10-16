@@ -60,10 +60,13 @@ model Branch {
   cases     Case[]
   payments  Payment[]
   customers Customer[]
+  caseInvoices CaseInvoice[]
+  journalLines JournalLine[]
 
   stockItems       StockItem[]
   purchaseRequests PurchaseRequest[]
   purchaseBills    PurchaseBill[]
+  vendorReplacements VendorReplacement[]
   stockUnits       StockUnit[]       @relation("UnitLocation")
   unitsAllocated   StockUnit[]       @relation("UnitAllocatedBranch")
   unitEvents       StockUnitEvent[]  @relation("UnitEventBranch")
@@ -232,6 +235,10 @@ model User {
   purchaseBillsCreated     PurchaseBill[]        @relation("BillCreatedBy")
   stockUnitsAllocated      StockUnit[]           @relation("UnitAllocatedBy")
   stockUnitsReceived       StockUnit[]           @relation("UnitReceivedBy")
+  stockUnitsConsumed       StockUnit[]           @relation("UnitConsumedBy")
+  inventoryConfigsUpdated  InventoryConfig[]     @relation("InventoryConfigUpdatedBy")
+  caseItemUsages           CaseItemUsage[]       @relation("CaseItemUsageBy")
+  replacementsConfirmed    PurchaseRequest[]     @relation("PRReplacementConfirmedBy")
   stockUnitEvents          StockUnitEvent[]      @relation("UnitEventBy")
   billPaymentsRecorded     PurchaseBillPayment[] @relation("BillPaymentBy")
   transfersCreated         StockTransfer[]       @relation("TransferCreatedBy")
@@ -407,6 +414,7 @@ model Item {
   purchaseRequests  PurchaseRequest[]
   stockUnits        StockUnit[]
   purchaseBillItems PurchaseBillItem[]
+  vendorReplacements VendorReplacement[]
   transferItems     StockTransferItem[]
 
   directSaleItems DirectSaleItem[]
@@ -501,6 +509,7 @@ model Customer {
   cases            Case[]            @relation("CaseCustomer")
   accountCases     Case[]            @relation("CaseAccount")
   payments         Payment[]
+  caseInvoices     CaseInvoice[]
   whatsappMessages WhatsAppMessage[]
 
   directSales    DirectSale[]
@@ -569,6 +578,7 @@ enum PaymentMode {
   CASH
   CARD
   OTHER
+  BANK_TRANSFER
 }
 
 model Case {
@@ -626,10 +636,13 @@ model Case {
   unitEvents        StockUnitEvent[]
   statusHistory     CaseStatusHistory[]
   payments          Payment[]
+  invoice           CaseInvoice?
   whatsappMessages  WhatsAppMessage[]
   purchaseRequests  PurchaseRequest[]
   feedback          CaseFeedback?
   labOutsources     ChipLabOutsource[]
+  itemUsages        CaseItemUsage[]
+  vendorReplacements VendorReplacement[]
   labVendorPayments ChipLabVendorPayment[]
   labEngineer       User?                  @relation("CaseLabEngineer", fields: [labEngineerId], references: [id])
   labVendor         ChipLabVendor?         @relation("CaseLabVendor", fields: [labVendorId], references: [id])
@@ -839,11 +852,13 @@ model Payment {
   amountPaise  Int
   reference    String? // UPI / card reference
   receivedById String?
+  invoiceId    String? // the case invoice this payment settles (null for advances taken before billing)
   createdAt    DateTime    @default(now()) @db.Timestamptz
 
-  branch     Branch   @relation(fields: [branchId], references: [id])
-  case       Case?    @relation(fields: [caseId], references: [id])
-  customer   Customer @relation(fields: [customerId], references: [id])
+  branch     Branch       @relation(fields: [branchId], references: [id])
+  case       Case?        @relation(fields: [caseId], references: [id])
+  customer   Customer     @relation(fields: [customerId], references: [id])
+  invoice    CaseInvoice? @relation(fields: [invoiceId], references: [id])
   receivedBy User?    @relation(fields: [receivedById], references: [id])
   isDelete   Int      @default(0) // 0 = active, 1 = soft-deleted
 
@@ -953,7 +968,10 @@ enum PurchaseRequestStatus {
   APPROVED // PM approved; awaiting arrival
   REJECTED // PM rejected
   FULFILLED // stock received at branch
-  CONSUMED // fully met by allocating stock units (USIDs) to cases, see StockUnit
+  CONSUMED // legacy: now TRANSFERRED
+  ORDERED // PM ordered it from the supplier; ready to transfer a USID to the branch
+  TRANSFERRED // every unit allocated (transferred) to the branch case, see StockUnit
+  SPARE_UNAVAILABLE // PM could not source the spare; stays on the Requests tab until ordered or rejected
 }
 
 enum TransferStatus {
@@ -997,6 +1015,16 @@ model PurchaseRequest {
   modelNo       String? // model number of the part (required when requested from a case)
   consumedQty   Int                   @default(0) // units allocated so far from billed stock
   status        PurchaseRequestStatus @default(PENDING)
+  orderedAt     DateTime?             @db.Timestamptz // when the PM marked it ordered (starts the Ordered TAT)
+  orderedById   String?
+  pmRemarks     String? // Purchase Manager remark, e.g. why the spare is not available
+  // Replacement / Reorder: the earlier unit for this case was defective or not working, so it is ordered again.
+  isReplacement          Boolean   @default(false)
+  replacementOfId        String? // the request whose unit failed
+  replacementReason      String?
+  replacementConfirmedById String?
+  replacementConfirmedAt DateTime? @db.Timestamptz
+  transferredAt DateTime?             @db.Timestamptz // when the last unit was transferred
   slaBreachAt   DateTime?             @db.Timestamptz
   requestedById String?
   reviewedById  String?
@@ -1010,6 +1038,9 @@ model PurchaseRequest {
   case        Case?            @relation(fields: [caseId], references: [id])
   requestedBy User?            @relation("PRRequestedBy", fields: [requestedById], references: [id])
   reviewedBy  User?            @relation("PRReviewedBy", fields: [reviewedById], references: [id])
+  replacementOf          PurchaseRequest?  @relation("PRReorder", fields: [replacementOfId], references: [id])
+  reorders               PurchaseRequest[] @relation("PRReorder")
+  replacementConfirmedBy User?             @relation("PRReplacementConfirmedBy", fields: [replacementConfirmedById], references: [id])
   attachments CaseAttachment[]
   isDelete    Int              @default(0) // 0 = active, 1 = soft-deleted
 
@@ -1451,12 +1482,18 @@ model PurchaseBillPayment {
 enum StockUnitStatus {
   AVAILABLE // in stock, can be allocated
   ALLOCATED // allocated to a case at a branch, awaiting the branch's receipt; never allocated again
-  RECEIVED // the branch confirmed it received the unit
+  RECEIVED // the branch confirmed it received the unit (in branch stock, not yet used)
+  CONSUMED // the branch used the unit
+  RETURNED // courier / branch damage: back at Head Office, a replacement is bought, this unit is not reused
+  AWAITING_VENDOR // defective / not working: with Head Office, waiting for the vendor to replace it (same USID)
 }
 
 enum StockUnitAction {
   ALLOCATED
   RECEIVED
+  CONSUMED
+  RETURNED
+  REPLACED // the vendor replaced a defective unit; the same USID is available again
 }
 
 // One physical unit of purchased stock, with its own Unique Stock ID. Created when a supplier
@@ -1477,6 +1514,16 @@ model StockUnit {
   // Set once, when the branch confirms receipt.
   receivedAt        DateTime?       @db.Timestamptz
   receivedById      String?
+  // Set once, when the branch uses the unit.
+  consumedAt        DateTime?       @db.Timestamptz
+  consumedById      String?
+  // Set when a branch or the lab returns the unit (courier damage or defective).
+  returnType        String? // COURIER_DAMAGE | DEFECTIVE
+  returnRemarks     String?
+  returnedAt        DateTime?       @db.Timestamptz
+  returnedById      String?
+  returnReceivedAt  DateTime?       @db.Timestamptz // Head Office confirmed the returned unit has arrived
+  returnReceivedById String?
   note              String?
   createdAt         DateTime        @default(now()) @db.Timestamptz
 
@@ -1485,6 +1532,7 @@ model StockUnit {
   branch           Branch            @relation("UnitLocation", fields: [branchId], references: [id])
   allocatedBy      User?             @relation("UnitAllocatedBy", fields: [allocatedById], references: [id])
   receivedBy       User?             @relation("UnitReceivedBy", fields: [receivedById], references: [id])
+  consumedBy       User?             @relation("UnitConsumedBy", fields: [consumedById], references: [id])
   events           StockUnitEvent[]
   allocatedCase    Case?             @relation(fields: [allocatedCaseId], references: [id])
   allocatedBranch  Branch?           @relation("UnitAllocatedBranch", fields: [allocatedBranchId], references: [id])
@@ -1493,6 +1541,8 @@ model StockUnit {
   caseItemReturn   CaseItemReturn?   @relation(fields: [caseItemReturnId], references: [id])
   caseItemReturnId String?
   attachments      CaseAttachment[]
+  usages           CaseItemUsage[]
+  vendorReplacements VendorReplacement[]
 
   @@index([status, itemId])
   @@index([branchId, status])
@@ -1522,4 +1572,249 @@ model StockUnitEvent {
   @@index([unitId, at])
   @@index([caseId])
   @@map("stock_unit_event")
+}
+
+// Inventory configuration: a single row (id "default").
+// USID numbering: <prefix><number padded to width>, e.g. HG0001. Changing it only affects USIDs issued from then
+// on; existing USIDs never change. GST rates: the percentages offered on purchase bill lines.
+model InventoryConfig {
+  id          String   @id @default("default")
+  prefix      String // "HG"
+  width       Int // digits, leading zeros kept: 4 → 0001
+  nextNumber  Int // the number the next unit gets
+  gstRates    Int[] @default([0, 5, 12, 18, 28]) // GST % choices on billing items
+  updatedById String?
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+
+  updatedBy User? @relation("InventoryConfigUpdatedBy", fields: [updatedById], references: [id])
+  isDelete  Int   @default(0) // 0 = active, 1 = soft-deleted
+
+  @@map("inventory_config")
+}
+
+enum CaseItemUsageKind {
+  CONSUMED // the part was used on the case
+  RETURNED_UNUSED // received but not needed: back to Head Office stock
+  RETURNED_DEFECTIVE // received but defective / not working / wrong: sent back to Head Office, not reusable
+}
+
+// What happened to each part received for a case: used, or returned before the case closed. A case may move to Quality
+// check only when every part on it is CONSUMED or RETURNED_UNUSED. Survives edits of the case items (which re-insert lines).
+model CaseItemUsage {
+  id          String            @id @default(cuid())
+  caseId      String
+  itemId      String
+  kind        CaseItemUsageKind
+  stockUnitId String? // the USID, when the part came from a transferred unit
+  reason      String? // return reason
+  remarks     String?
+  userId      String?
+  at          DateTime          @default(now()) @db.Timestamptz
+
+  case      Case       @relation(fields: [caseId], references: [id])
+  stockUnit StockUnit? @relation(fields: [stockUnitId], references: [id])
+  user      User?      @relation("CaseItemUsageBy", fields: [userId], references: [id])
+  isDelete  Int        @default(0) // 0 = active, 1 = soft-deleted
+
+  @@index([caseId, itemId])
+  @@map("case_item_usage")
+}
+
+enum VendorReplacementStatus {
+  REQUESTED // defective unit returned; replacement asked from the vendor
+  READY // the vendor has the replacement ready (same USID)
+  TRANSFERRED // sent to the branch for the case, awaiting its receipt
+  RECEIVED // the branch received it
+}
+
+// A defective / not-working unit sent back for a vendor replacement. The replacement reuses the same USID: no new purchase
+// and no new stock entry. It can be requested, readied and transferred to the branch before the defective unit reaches Head
+// Office; the defective unit's own return (returnReceivedAt) is tracked separately here.
+model VendorReplacement {
+  id                 String                  @id @default(cuid())
+  code               String                  @unique // "VR-KZKD-2610-001"
+  unitId             String // the original USID, reused for the replacement
+  caseId             String?
+  branchId           String // the case's branch: where the replacement goes
+  itemId             String
+  vendorName         String?
+  remarks            String? // why it was returned
+  vendorRemarks      String?
+  status             VendorReplacementStatus @default(REQUESTED)
+  requestedById      String?
+  requestedAt        DateTime                @default(now()) @db.Timestamptz
+  vendorReadyAt      DateTime?               @db.Timestamptz
+  vendorReadyById    String?
+  transferredAt      DateTime?               @db.Timestamptz
+  transferredById    String?
+  receivedAt         DateTime?               @db.Timestamptz // the branch received the replacement
+  receivedById       String?
+  returnReceivedAt   DateTime?               @db.Timestamptz // Head Office received the defective unit
+  returnReceivedById String?
+  createdAt          DateTime                @default(now()) @db.Timestamptz
+  updatedAt          DateTime                @updatedAt @db.Timestamptz
+
+  unit     StockUnit @relation(fields: [unitId], references: [id])
+  case     Case?     @relation(fields: [caseId], references: [id])
+  branch   Branch    @relation(fields: [branchId], references: [id])
+  item     Item      @relation(fields: [itemId], references: [id])
+  isDelete Int       @default(0) // 0 = active, 1 = soft-deleted
+
+  @@index([status])
+  @@index([unitId])
+  @@index([caseId])
+  @@map("vendor_replacement")
+}
+
+// ─── Case billing ────────────────────────────────────────────────────────────
+
+// The final bill of a case, generated when it is closed. One per case (the unique caseId makes a second close impossible).
+// Prices follow the GST rule at the time (inclusive or exclusive); taxable + tax = total.
+model CaseInvoice {
+  id            String            @id @default(cuid())
+  invoiceNo     String            @unique // "INV-KZKD-2610-0001"
+  caseId        String            @unique
+  branchId      String
+  customerId    String
+  gstInclusive  Boolean           @default(true)
+  subtotalPaise Int // taxable amount
+  taxPaise      Int
+  totalPaise    Int
+  paidPaise     Int               @default(0) // advance applied + everything collected since
+  creditedPaise Int               @default(0) // reduced by credit notes (due = total − credited − paid)
+  paymentStatus BillPaymentStatus @default(UNPAID)
+  notes         String?
+  issuedById    String?
+  issuedAt      DateTime          @default(now()) @db.Timestamptz
+  createdAt     DateTime          @default(now()) @db.Timestamptz
+  updatedAt     DateTime          @updatedAt @db.Timestamptz
+
+  case        Case              @relation(fields: [caseId], references: [id])
+  branch      Branch            @relation(fields: [branchId], references: [id])
+  customer    Customer          @relation(fields: [customerId], references: [id])
+  lines       CaseInvoiceLine[]
+  payments    Payment[]
+  creditNotes CreditNote[]
+  isDelete    Int               @default(0) // 0 = active, 1 = soft-deleted
+
+  @@index([branchId, issuedAt])
+  @@index([customerId])
+  @@map("case_invoice")
+}
+
+model CaseInvoiceLine {
+  id             String  @id @default(cuid())
+  invoiceId      String
+  itemId         String?
+  code           String
+  name           String
+  type           String // SERVICE | PART | ACCESSORY
+  hsnSac         String?
+  quantity       Int
+  unitPricePaise Int
+  gstPercent     Int
+  taxablePaise   Int
+  taxPaise       Int
+  lineTotalPaise Int
+  addedAtBilling Boolean @default(false) // an accessory / product added in the closing bill, not a case item
+  sortOrder      Int     @default(0)
+
+  invoice  CaseInvoice @relation(fields: [invoiceId], references: [id])
+  isDelete Int         @default(0) // 0 = active, 1 = soft-deleted
+
+  @@index([invoiceId])
+  @@map("case_invoice_line")
+}
+
+// A credit note reduces an invoice (return, price correction): the amount is GST-inclusive.
+model CreditNote {
+  id          String   @id @default(cuid())
+  noteNo      String   @unique // "CN-KZKD-2610-001"
+  invoiceId   String
+  amountPaise Int
+  taxPaise    Int
+  reason      String
+  refundMode  PaymentMode? // set when the amount is refunded in cash / bank instead of reducing the customer's due
+  refundPaise Int      @default(0)
+  createdById String?
+  createdAt   DateTime @default(now()) @db.Timestamptz
+
+  invoice  CaseInvoice @relation(fields: [invoiceId], references: [id])
+  isDelete Int         @default(0) // 0 = active, 1 = soft-deleted
+
+  @@index([invoiceId])
+  @@map("credit_note")
+}
+
+// ─── Accounting (double entry) ───────────────────────────────────────────────
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+}
+
+// The chart of accounts. Branch-wise books use the branch on each journal line, not separate accounts.
+model Account {
+  id        String      @id @default(cuid())
+  code      String      @unique // "1000"
+  name      String
+  type      AccountType
+  subType   String? // CASH | BANK | RECEIVABLE | PAYABLE | INVENTORY | GST_INPUT | GST_OUTPUT | ADVANCE | INTERBRANCH …
+  isSystem  Boolean     @default(false) // posted to automatically; cannot be removed
+  isActive  Boolean     @default(true)
+  createdAt DateTime    @default(now()) @db.Timestamptz
+
+  lines    JournalLine[]
+  isDelete Int           @default(0) // 0 = active, 1 = soft-deleted
+
+  @@map("account")
+}
+
+// One balanced posting. Entries are never edited or deleted: a mistake is corrected by a reversal entry.
+// (sourceType, sourceId) is unique, so the same event can never be posted twice.
+model JournalEntry {
+  id          String   @id @default(cuid())
+  entryNo     String   @unique // "JV-2610-000123"
+  entryDate   DateTime @default(now()) @db.Timestamptz
+  branchId    String? // where it happened (null = Head Office level)
+  narration   String
+  sourceType  String // CASE_INVOICE | CASE_PAYMENT | PURCHASE_BILL | PURCHASE_PAYMENT | DIRECT_SALE | EXPENSE | TRANSFER | CREDIT_NOTE | COGS | MANUAL | REVERSAL
+  sourceId    String?
+  reversalOfId String?
+  createdById String?
+  createdAt   DateTime @default(now()) @db.Timestamptz
+
+  lines    JournalLine[]
+  isDelete Int           @default(0) // 0 = active, 1 = soft-deleted
+
+  @@unique([sourceType, sourceId])
+  @@index([entryDate])
+  @@index([branchId, entryDate])
+  @@map("journal_entry")
+}
+
+model JournalLine {
+  id          String  @id @default(cuid())
+  entryId     String
+  accountId   String
+  branchId    String
+  debitPaise  Int     @default(0)
+  creditPaise Int     @default(0)
+  partyType   String? // CUSTOMER | SUPPLIER
+  partyId     String?
+  memo        String?
+
+  entry    JournalEntry @relation(fields: [entryId], references: [id])
+  account  Account      @relation(fields: [accountId], references: [id])
+  branch   Branch       @relation(fields: [branchId], references: [id])
+  isDelete Int          @default(0) // 0 = active, 1 = soft-deleted
+
+  @@index([accountId, branchId])
+  @@index([entryId])
+  @@index([partyType, partyId])
+  @@map("journal_line")
 }

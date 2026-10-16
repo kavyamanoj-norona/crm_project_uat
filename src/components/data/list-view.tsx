@@ -18,6 +18,8 @@ type ListViewProps<T> = {
   empty?: string;
   /** Extra toolbar content, e.g. a date filter. */
   toolbar?: React.ReactNode;
+  /** "blue": dark blue table header and tab rail (Purchasing). */
+  tone?: "default" | "blue";
 };
 
 /**
@@ -35,12 +37,13 @@ export function ListView<T>({
   highlight,
   empty,
   toolbar,
+  tone = "default",
 }: ListViewProps<T>) {
   return (
     <TableCard
       toolbar={
         <>
-          {tabs && tabs.length > 1 && <FilterTabs list={list} tabs={tabs} />}
+          {tabs && tabs.length > 1 && <FilterTabs list={list} tabs={tabs} tone={tone} />}
           {searchPlaceholder !== undefined && (
             <SearchBox
               // remount when the URL's q changes from outside (e.g. back button)
@@ -64,6 +67,7 @@ export function ListView<T>({
         highlight={highlight}
         empty={list.q ? `Nothing matches “${list.q}”.` : empty}
         bordered={false}
+        tone={tone}
       />
       <Pagination list={list} total={total} />
     </TableCard>

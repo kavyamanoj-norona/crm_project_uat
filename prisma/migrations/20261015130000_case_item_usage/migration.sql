@@ -1,0 +1,3 @@
+-- AlterEnum
+ALTER TYPE "StockUnitStatus" ADD VALUE 'RETURNED';
+ALTER TYPE "StockUnitAction" ADD VALUE 'RETURNED';

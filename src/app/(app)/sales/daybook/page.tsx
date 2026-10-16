@@ -160,19 +160,19 @@ export default async function DaybookPage() {
             <table className="w-full min-w-[600px]">
               <thead>
                 <tr className="border-b border-border bg-surface-muted/40">
-                  <th className="py-2.5 pr-3 pl-5 text-left text-[11px] font-semibold tracking-wide text-text-muted uppercase w-14">
+                  <th className="py-2.5 pr-3 pl-5 text-center text-[11px] font-semibold tracking-wide text-text-muted uppercase w-14">
                     Time
                   </th>
-                  <th className="py-2.5 pr-3 text-left text-[11px] font-semibold tracking-wide text-text-muted uppercase">
+                  <th className="py-2.5 pr-3 text-center text-[11px] font-semibold tracking-wide text-text-muted uppercase">
                     Description
                   </th>
-                  <th className="py-2.5 pr-3 text-right text-[11px] font-semibold tracking-wide text-text-muted uppercase w-28">
+                  <th className="py-2.5 pr-3 text-center text-[11px] font-semibold tracking-wide text-text-muted uppercase w-28">
                     Money in
                   </th>
-                  <th className="py-2.5 pr-3 text-right text-[11px] font-semibold tracking-wide text-text-muted uppercase w-28">
+                  <th className="py-2.5 pr-3 text-center text-[11px] font-semibold tracking-wide text-text-muted uppercase w-28">
                     Money out
                   </th>
-                  <th className="py-2.5 pr-5 text-right text-[11px] font-semibold tracking-wide text-text-muted uppercase w-28">
+                  <th className="py-2.5 pr-5 text-center text-[11px] font-semibold tracking-wide text-text-muted uppercase w-28">
                     Balance
                   </th>
                 </tr>

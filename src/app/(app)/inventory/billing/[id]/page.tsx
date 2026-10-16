@@ -11,10 +11,8 @@ import { personName } from "@/components/data/who-when";
 import { formatDate, formatDateTime } from "@/lib/dates";
 import { formatPaise } from "@/lib/money";
 import { param } from "@/modules/admin/components/admin-page";
-import { addBillPayment } from "@/modules/inventory/actions/billing";
 import { BILL_PAYMENT_MODE_LABELS } from "@/modules/inventory/billing-schema";
 import { getBill } from "@/modules/inventory/billing-queries";
-import { BillPaymentDialog } from "@/modules/inventory/components/bill-payment-dialog";
 import { INVENTORY_PATHS } from "@/modules/inventory/paths";
 import { requirePageAccess } from "@/server/rbac/guard";
 
@@ -29,7 +27,7 @@ const STATUS = {
 type SearchParams = Record<string, string | string[] | undefined>;
 
 export default async function BillDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<SearchParams> }) {
-  const { permission } = await requirePageAccess(INVENTORY_PATHS.billing);
+  await requirePageAccess(INVENTORY_PATHS.billing);
   const [{ id }, sp] = await Promise.all([params, searchParams]);
   const bill = await getBill(id);
   if (!bill) notFound();
@@ -50,9 +48,6 @@ export default async function BillDetailPage({ params, searchParams }: { params:
             <LinkButton href={INVENTORY_PATHS.billing} variant="secondary">
               <ArrowLeft className="size-4" /> Back
             </LinkButton>
-            {permission.canEdit && due > 0 && (
-              <BillPaymentDialog billCode={bill.code} dueLabel={formatPaise(due)} action={addBillPayment.bind(null, bill.id)} />
-            )}
           </>
         }
       />
@@ -134,6 +129,12 @@ export default async function BillDetailPage({ params, searchParams }: { params:
                       <Badge tone="success">Available</Badge>
                     ) : u.status === "RECEIVED" ? (
                       <Badge tone="navy">Received</Badge>
+                    ) : u.status === "RETURNED" ? (
+                <Badge tone="danger">Returned (damaged)</Badge>
+              ) : u.status === "AWAITING_VENDOR" ? (
+                <Badge tone="warning">With vendor</Badge>
+              ) : u.status === "CONSUMED" ? (
+                      <Badge tone="neutral">Consumed</Badge>
                     ) : (
                       <Badge tone="primary">Allocated</Badge>
                     ),

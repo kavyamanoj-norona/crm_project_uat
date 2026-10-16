@@ -83,8 +83,8 @@ export function ApprovedModulesModal({ privilegeId, privilegeName, isSuperAdmin,
           <table className="w-full text-sm">
             <thead className="bg-surface-muted text-[11px] font-semibold uppercase tracking-wide text-text-muted">
               <tr>
-                <th className="w-10 px-4 py-3 text-left">#</th>
-                <th className="px-4 py-3 text-left">Name</th>
+                <th className="w-10 px-4 py-3 text-center">#</th>
+                <th className="px-4 py-3 text-center">Name</th>
                 <th className="px-4 py-3 text-center">Status</th>
               </tr>
             </thead>

@@ -8,6 +8,7 @@ import { requireActionPermission } from "@/server/rbac/guard";
 import { getBranchScope } from "@/server/branch-scope";
 import { INVENTORY_PATHS } from "../paths";
 import { stockAdjustSchema } from "../schemas";
+import { receivedUnitCount } from "../unit-consume";
 
 export async function adjustStock(_prev: FormState, formData: FormData): Promise<FormState> {
   const raw = pick(formData, ["itemId", "quantity", "unitCodes"]);
@@ -34,12 +35,12 @@ export async function adjustStock(_prev: FormState, formData: FormData): Promise
 
 export async function consumeStockItem(id: string): Promise<void> {
   const user = await requireActionPermission(INVENTORY_PATHS.stock, "canEdit");
-  const item = await db.stockItem.findUniqueOrThrow({ where: { id }, select: { quantity: true } });
-  if (item.quantity <= 0) return;
-  await db.stockItem.update({
-    where: { id },
-    data: { quantity: { decrement: 1 }, updatedById: user.id },
-  });
+  const item = await db.stockItem.findUniqueOrThrow({ where: { id }, select: { quantity: true, branchId: true, itemId: true } });
+  // Units received for a case are held until that case closes; only the rest of the stock can be consumed here.
+  const held = await receivedUnitCount(db, item.branchId, item.itemId);
+  if (item.quantity - held <= 0) return;
+  await db.stockItem.update({ where: { id }, data: { quantity: { decrement: 1 }, updatedById: user.id } });
+  revalidatePath(INVENTORY_PATHS.purchasing);
   revalidatePath(INVENTORY_PATHS.stock);
 }
 
@@ -55,10 +56,14 @@ export async function consumeItemFromCase(caseItemId: string): Promise<void> {
     select: { quantity: true },
   });
   if (!existing || existing.quantity <= 0) return;
+  const held = await receivedUnitCount(db, branchId, itemId);
+  const used = Math.min(quantity, existing.quantity - held);
+  if (used <= 0) return;
   await db.stockItem.update({
     where: { branchId_itemId: { branchId, itemId } },
-    data: { quantity: { decrement: Math.min(quantity, existing.quantity) }, updatedById: user.id },
+    data: { quantity: { decrement: used }, updatedById: user.id },
   });
+  revalidatePath(INVENTORY_PATHS.purchasing);
   revalidatePath(`/service/cases/${caseId}`);
   revalidatePath(INVENTORY_PATHS.stock);
 }

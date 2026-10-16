@@ -18,10 +18,13 @@ type StageActionsProps = {
   cancel: (prev: FormState, formData: FormData) => Promise<FormState>;
   /** Replaces the "Move to …" button, e.g. the Start diagnosis dialog at Intake. */
   primary?: React.ReactNode;
+  /** When set, "Move to Quality check" is disabled and this explains why (parts still to consume or return). */
+  qcBlock?: string | null;
 };
 
 /** Header buttons on the case page: Cancel · Change stage · Move to <next> →. */
-export function StageActions({ jobsheetNo, status, next, moveNext, changeStage, cancel, primary }: StageActionsProps) {
+export function StageActions({ jobsheetNo, status, next, moveNext, changeStage, cancel, primary, qcBlock }: StageActionsProps) {
+  const blocked = Boolean(qcBlock) && next === "QUALITY_CHECK";
   const others = CASE_FLOW.filter((s) => s !== status).map((s) => ({ value: s, label: CASE_STATUS_LABELS[s] }));
 
   return (
@@ -72,13 +75,24 @@ export function StageActions({ jobsheetNo, status, next, moveNext, changeStage, 
         </ActionDialog>
       )}
 
-      {primary ?? (next && (
+      {blocked && next ? (
+        <span className="inline-flex flex-col items-start gap-0.5">
+          <button type="button" disabled title={qcBlock ?? undefined} className={buttonClass("navy") + " cursor-not-allowed opacity-50"}>
+            <span className="inline-flex items-center gap-2">
+              Move to {CASE_STATUS_LABELS[next]} <ArrowRight className="size-4" />
+            </span>
+          </button>
+          <span className="max-w-xs text-[11px] text-text-muted">{qcBlock}</span>
+        </span>
+      ) : (
+        primary ?? (next && (
         <ActionButton action={moveNext} label={`Move to ${CASE_STATUS_LABELS[next]}`} className={buttonClass("navy")}>
           <span className="inline-flex items-center gap-2">
             Move to {CASE_STATUS_LABELS[next]} <ArrowRight className="size-4" />
           </span>
         </ActionButton>
-      ))}
+        ))
+      )}
     </div>
   );
 }

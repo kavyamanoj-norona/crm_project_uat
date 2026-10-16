@@ -21,11 +21,9 @@ export type AvailableUnit = {
   location: string;
 };
 
-type ConsumeDialogProps = {
+type TransferDialogProps = {
   requestedItemId: string;
   requestedItemName: string;
-  /** Units the request still needs. */
-  outstanding: number;
   units: AvailableUnit[];
   action: (prev: FormState, formData: FormData) => Promise<FormState>;
 };
@@ -111,24 +109,24 @@ function UnitPicker({ units, requestedItemId, error }: { units: AvailableUnit[];
   );
 }
 
-/** "Consume" on a purchase request: pick one stock unit by USID; it is allocated to the request's case. */
-export function ConsumeDialog({ requestedItemId, requestedItemName, outstanding, units, action }: ConsumeDialogProps) {
+/** "Transfer" on an ordered purchase request: pick one stock unit by USID; it is transferred to the request case (and branch). */
+export function TransferDialog({ requestedItemId, requestedItemName, units, action }: TransferDialogProps) {
   return (
     <ActionDialog
       trigger={
         <>
           <PackageCheck className="size-3.5" />
-          Consume
+          Transfer
         </>
       }
       triggerVariant="success"
       triggerSize="sm"
       size="xl"
-      title={`Consume for ${requestedItemName}`}
-      description={`${outstanding} still needed. Select the unit by its USID. Each USID can be allocated only once.`}
+      title={`Transfer for ${requestedItemName}`}
+      description="Select the unit by its USID. Each USID can be transferred only once."
       action={action}
       validate={(fd) => validateForm(allocateSchema, fd)}
-      submitLabel="Allocate to case"
+      submitLabel="Transfer to case"
     >
       {(errors) => (
         <>

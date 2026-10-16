@@ -1,5 +1,7 @@
 import "server-only";
 import { db } from "@/server/db";
+import { caseUsids, consumableUnits } from "@/modules/inventory/case-parts";
+import { openVendorReplacementsForCase } from "@/modules/inventory/queries";
 import { CaseStatus, type Prisma } from "@/generated/prisma/client";
 import { pageArgs, type ListState } from "@/lib/list";
 import { todayIst } from "@/lib/dates";
@@ -212,20 +214,45 @@ export async function getLabCaseFull(id: string) {
 export type LabCaseFullDetails = NonNullable<Awaited<ReturnType<typeof getLabCaseFull>>>;
 
 /**
- * Units on hand per item at the viewer's branch (where their requests are
- * tracked and received), and the items with a request still open for this case.
+ * Units on hand per item at the case's branch (the lab is a service provider: parts used on a case are always
+ * taken from, and recorded against, the case's own branch), and the items with a request still open for this case.
  */
 export async function getLabStockInfo(caseId: string, branchId: string) {
-  const [stock, open] = await Promise.all([
+  const [stock, open, usages, received, heldAtBranch] = await Promise.all([
     db.stockItem.findMany({ where: { branchId, quantity: { gt: 0 } }, select: { itemId: true, quantity: true } }),
     db.purchaseRequest.findMany({
       where: { caseId, status: { notIn: ["FULFILLED", "REJECTED"] } },
-      select: { itemId: true },
+      orderBy: { createdAt: "asc" },
+      select: { itemId: true, status: true },
     }),
+    db.caseItemUsage.findMany({ where: { caseId, kind: { in: ["CONSUMED", "RETURNED_UNUSED"] } }, select: { itemId: true, kind: true } }),
+    db.stockUnit.findMany({ where: { allocatedCaseId: caseId, status: "RECEIVED" }, select: { itemId: true } }),
+    db.stockUnit.groupBy({ by: ["itemId"], where: { branchId, status: "RECEIVED" }, _count: { _all: true } }),
   ]);
+  const held = new Map(heldAtBranch.map((h) => [h.itemId, h._count._all]));
+  const items = await db.caseItem.findMany({ where: { caseId, removedAt: null }, select: { itemId: true } });
+  const [consumable, usids, vendorReplacement] = await Promise.all([
+    consumableUnits(caseId, branchId, [...new Set(items.map((i) => i.itemId))]),
+    caseUsids(caseId),
+    openVendorReplacementsForCase(caseId),
+  ]);
+  // The latest request per item decides its state: a transferred one can be reordered if the unit is faulty.
+  const latest = new Map(open.map((r) => [r.itemId, r.status]));
   return {
-    stock: Object.fromEntries(stock.map((s) => [s.itemId, s.quantity])),
-    requested: open.map((r) => r.itemId),
+    // free stock: units received for cases are held for them, so they are not counted here
+    stock: Object.fromEntries(stock.map((s) => [s.itemId, Math.max(0, s.quantity - (held.get(s.itemId) ?? 0))])),
+    /** Items already used on this case (or returned unused). */
+    settled: Object.fromEntries(usages.map((u) => [u.itemId, u.kind])) as Record<string, string>,
+    /** Items with a received unit waiting to be used on this case. */
+    received: [...new Set(received.map((r) => r.itemId))],
+    /** Units received at the case's branch and unused, per item: the USIDs that can be consumed. */
+    consumable: consumable,
+    /** The USID allocated to the case for each item. */
+    usids: usids,
+    /** Open vendor replacements per item (defective unit being replaced under the same USID). */
+    vendorReplacement: vendorReplacement,
+    requested: [...latest.keys()],
+    transferred: [...latest].filter(([, st]) => st === "TRANSFERRED" || st === "CONSUMED").map(([id]) => id),
   };
 }
 

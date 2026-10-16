@@ -22,8 +22,17 @@ import { formatPhone } from "@/lib/phone";
 import { param } from "@/modules/admin/components/admin-page";
 import { CUSTOMER_PATHS } from "@/modules/customers/paths";
 import { LEAD_SOURCE_LABELS } from "@/modules/customers/schemas";
-import { assignEngineer, cancelCase, changeCaseStage, moveCaseToNextStage, receiveFromChipLab, revealDevicePassword, saveEstimate, saveCaseFeedback, sendBackToChipLab, submitDiagnosis, transferToChipLab } from "@/modules/service/actions/case";
-import { consumeItemFromCase } from "@/modules/inventory/actions/stock";
+import { closeCaseWithBill } from "@/modules/service/actions/close-case";
+import { closeBlockReason, closingAccessories, closingBill } from "@/modules/service/case-billing";
+import { CloseCaseDialog } from "@/modules/service/components/close-case-dialog";
+import { addItemToCase, assignEngineer, cancelCase, changeCaseStage, moveCaseToNextStage, receiveFromChipLab, revealDevicePassword, saveEstimate, saveCaseFeedback, sendBackToChipLab, submitDiagnosis, transferToChipLab } from "@/modules/service/actions/case";
+import { consumePartForCase, returnPartForCase } from "@/modules/inventory/actions/case-parts";
+import { caseUsids, consumableUnits, qcConsumptionBlock } from "@/modules/inventory/case-parts";
+import { openVendorReplacementsForCase } from "@/modules/inventory/queries";
+import { VR_STATUS_LABELS } from "@/modules/inventory/vendor-replacement-labels";
+import { ConsumeUsidDialog } from "@/modules/service/components/consume-usid-dialog";
+import { AddItemDialog } from "@/modules/service/components/add-item-dialog";
+import { ReturnPartDialog } from "@/modules/service/components/return-part-dialog";
 import { requestPartForCase } from "@/modules/inventory/actions/purchase";
 import { sendWhatsAppTemplate } from "@/modules/service/actions/whatsapp";
 import { quoteWhatsAppLink } from "@/server/notify/customer";
@@ -57,6 +66,9 @@ import {
   CUSTOMER_BEHAVIOUR_TONE,
   CUSTOMER_BEHAVIOURS,
   ESTIMATE_EDITABLE,
+  canRequestParts,
+  ADD_ITEM_STATUSES,
+  type CaseStatusValue,
   INTAKE_TYPE_LABELS,
   isChipLabStatus,
   isOpenStatus,
@@ -65,6 +77,8 @@ import {
   WARRANTY_LABELS,
 } from "@/modules/service/case-schema";
 import { SERVICE_PATHS } from "@/modules/service/paths";
+import { ReorderDialog } from "@/modules/service/components/reorder-dialog";
+import { reorderPartForCase } from "@/modules/inventory/actions/purchase";
 import { getCase, getCaseExtras, listBranchStaff, listCatalogForPicker, type CaseDetails } from "@/modules/service/queries";
 import { branchWhere, getBranchScope } from "@/server/branch-scope";
 import { getMenuPermission, requirePageAccess } from "@/server/rbac/guard";
@@ -196,11 +210,29 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
         }),
         db.purchaseRequest.findMany({
           where: { caseId: c.id, itemId: { in: physicalItemIds }, status: { notIn: ["FULFILLED", "REJECTED"] } },
+          // oldest first, so the latest request for an item decides what its row shows
+          orderBy: { createdAt: "asc" },
           select: { itemId: true, status: true },
         }),
       ])
     : [[], []];
   const isClosed = c.status === "CLOSED";
+  // What happened to each part on this case (used / returned) and which ones have a received unit waiting to be used.
+  const closing = c.status === "READY_FOR_DELIVERY";
+  const [usages, receivedForCase, qcBlock, addCatalog, unitsByItem, usidByItem, vendorByItem, closingData, closingAccessoryList, closeBlock] = await Promise.all([
+    db.caseItemUsage.findMany({ where: { caseId: c.id }, select: { itemId: true, kind: true } }),
+    db.stockUnit.findMany({ where: { allocatedCaseId: c.id, status: "RECEIVED" }, select: { itemId: true } }),
+    next === "QUALITY_CHECK" ? qcConsumptionBlock(c.id) : Promise.resolve(null),
+    permission.canEdit && ADD_ITEM_STATUSES.includes(c.status) ? listCatalogForPicker() : Promise.resolve([] as Awaited<ReturnType<typeof listCatalogForPicker>>),
+    consumableUnits(c.id, c.branchId, physicalItemIds),
+    caseUsids(c.id),
+    openVendorReplacementsForCase(c.id),
+    closing ? closingBill(c.id) : Promise.resolve(null),
+    closing ? closingAccessories(c.branchId) : Promise.resolve([]),
+    closing ? closeBlockReason(c.id, c.status) : Promise.resolve(null),
+  ]);
+  const settledParts = new Map(usages.filter((u) => u.kind === "CONSUMED" || u.kind === "RETURNED_UNUSED").map((u) => [u.itemId, u.kind]));
+  const receivedItemIds = new Set(receivedForCase.map((u) => u.itemId));
   // Open returns on a closed case, so a line already returned shows its status instead of the button.
   const openReturns = isClosed
     ? await db.caseItemReturn.findMany({
@@ -237,10 +269,15 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
     },
   });
   const returnStatus = new Map(openReturns.map((r) => [r.caseItemId, r.status]));
-  const stockMap = new Map(stockItems.map((s) => [s.itemId, s.quantity]));
+  // Units received for cases are held until their case closes, so they are not free stock to consume.
+  const heldUnits = physicalItemIds.length
+    ? await db.stockUnit.groupBy({ by: ["itemId"], where: { branchId: c.branchId, itemId: { in: physicalItemIds }, status: "RECEIVED" }, _count: { _all: true } })
+    : [];
+  const heldMap = new Map(heldUnits.map((h) => [h.itemId, h._count._all]));
+  const stockMap = new Map(stockItems.map((s) => [s.itemId, Math.max(0, s.quantity - (heldMap.get(s.itemId) ?? 0))]));
   // Items that already have an active (non-fulfilled, non-rejected) PR on this case
   const requestedItemIds = new Set(activePRs.map((pr) => pr.itemId));
-  const consumedItemIds = new Set(activePRs.filter((pr) => pr.status === "CONSUMED").map((pr) => pr.itemId));
+  const requestStage = new Map(activePRs.map((pr) => [pr.itemId, pr.status === "SPARE_UNAVAILABLE" ? "Spare not available" : pr.status === "ORDERED" ? "Ordered" : pr.status === "TRANSFERRED" || pr.status === "CONSUMED" ? "Transferred" : "Requested"]));
 
   const estimate = estimateMode && (
     <EstimateDialog
@@ -342,10 +379,32 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
                 status={c.status}
                 next={next}
                 moveNext={moveCaseToNextStage.bind(null, c.id)}
+                qcBlock={qcBlock}
                 changeStage={changeCaseStage.bind(null, c.id)}
                 cancel={cancelCase.bind(null, c.id)}
                 primary={
-                  estimateMode === "start"
+                  next === "CLOSED" && permission.canEdit && closingData
+                    ? closeBlock
+                      ? (
+                          <span className="inline-flex flex-col items-start gap-0.5">
+                            <button type="button" disabled title={closeBlock} className={buttonClass("navy") + " cursor-not-allowed opacity-50"}>
+                              Move to Closed <ArrowRight className="size-4" />
+                            </button>
+                            <span className="max-w-xs text-[11px] text-text-muted">{closeBlock}</span>
+                          </span>
+                        )
+                      : (
+                          <CloseCaseDialog
+                            jobsheetNo={c.jobsheetNo}
+                            customerName={closingData.customerName}
+                            gstInclusive={closingData.gstInclusive}
+                            lines={closingData.lines}
+                            advancePaise={closingData.advancePaise}
+                            accessories={closingAccessoryList}
+                            action={closeCaseWithBill.bind(null, c.id)}
+                          />
+                        )
+                    : estimateMode === "start"
                     ? estimate
                     : qcInModal && next && qc
                       ? (
@@ -444,6 +503,14 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
               <div className="flex items-center gap-3">
                 <span className="text-xs text-text-muted">Minimum selling price enforced per item</span>
                 {estimateMode === "edit" && estimate}
+                {permission.canEdit && ADD_ITEM_STATUSES.includes(c.status) && estimateMode !== "edit" && (
+                  <AddItemDialog
+                    options={addCatalog.filter((i) => !c.items.some((l) => l.itemId === i.id)).map((i) => ({ value: i.id, label: `${i.code} — ${i.name}` }))}
+                    action={addItemToCase.bind(null, c.id)}
+                    backToDiagnosis={c.status !== "DIAGNOSIS"}
+                    backLabel="Diagnosis"
+                  />
+                )}
               </div>
             }
           >
@@ -458,11 +525,11 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
                     <span className="flex items-center gap-2 font-medium">
                       {l.name}
                       <Badge tone={ITEM_TYPE_TONE[l.type]}>{ITEM_TYPE_LABELS[l.type]}</Badge>
+                      {usidByItem[l.itemId] && <Badge tone="navy" className="tabular-nums">{usidByItem[l.itemId]}</Badge>}
                     </span>
                   ),
                 },
                 { header: "Code", cell: (l) => <span className="text-text-muted">{l.code}</span> },
-                { header: "Qty", align: "center", cell: (l) => l.quantity },
                 { header: "Min ₹", align: "right", cell: (l) => formatPaise(l.minPricePaise, { symbol: false }) },
                 { header: "Billed ₹", align: "right", cell: (l) => <span className="font-semibold">{formatPaise(l.unitPricePaise, { symbol: false })}</span> },
                 { header: "Total ₹", align: "right", cell: (l) => <span className="font-semibold">{formatPaise(l.lineTotalPaise, { symbol: false })}</span> },
@@ -474,18 +541,8 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
                 //   },
                 // },
                 {
-                  header: "Stock",
-                  align: "center",
-                  cell: (l) => {
-                    if (l.type !== "PART" && l.type !== "ACCESSORY") return <span className="text-text-disabled">—</span>;
-                    const qty = stockMap.get(l.itemId) ?? 0;
-                    return qty === 0
-                      ? <Badge tone="danger">No Stock</Badge>
-                      : <span className="tabular-nums">{qty}</span>;
-                  },
-                },
-                {
                   header: "Action",
+                  align: "center",
                   cell: (l) => {
                     if (l.type !== "PART" && l.type !== "ACCESSORY") return null;
                     if (isClosed) {
@@ -501,23 +558,50 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
                         <ItemReturnDialog itemName={l.name} warranty={warrantyFor(l.itemId)} action={requestItemReturn.bind(null, l.id)} />
                       ) : null;
                     }
-                    const qty = stockMap.get(l.itemId) ?? 0;
-                    if (qty > 0) {
-                      return (
-                        <form action={consumeItemFromCase.bind(null, l.id)}>
-                          <button type="submit" className="rounded-lg border border-border px-3 py-1 text-xs font-medium bg-green-700 text-green-50">
-                            Consume
-                          </button>
-                        </form>
-                      );
+                    // Used on this case, or returned unused: nothing more to do for this part.
+                    const done = settledParts.get(l.itemId);
+                    if (done) {
+                      return <Badge tone={done === "CONSUMED" ? "success" : "neutral"}>{done === "CONSUMED" ? "Consumed" : "Returned"}</Badge>;
                     }
-                    if (requestedItemIds.has(l.itemId)) {
+                    const qty = stockMap.get(l.itemId) ?? 0;
+                    const received = receivedItemIds.has(l.itemId);
+                    const options = unitsByItem[l.itemId] ?? [];
+                    if (options.length > 0 || qty > 0) {
+                      // Consuming starts only after the customer has approved the estimate.
+                      if (!canRequestParts(c.status as CaseStatusValue)) return <span className="text-xs text-text-muted">After approval</span>;
                       return (
-                        <span className="inline-flex items-center rounded-lg border border-border bg-surface-muted px-3 py-1 text-xs font-medium text-text-muted">
-                          {consumedItemIds.has(l.itemId) ? "Consumed" : "Requested"}
+                        <span className="inline-flex items-center gap-2">
+                          <ConsumeUsidDialog
+                            itemName={l.name}
+                            jobsheetNo={c.jobsheetNo}
+                            options={options}
+                            allowStock={qty > 0}
+                            action={consumePartForCase.bind(null, l.id)}
+                          />
+                          {received && permission.canEdit && <ReturnPartDialog itemName={l.name} action={returnPartForCase.bind(null, l.id)} />}
                         </span>
                       );
                     }
+                    // A defective unit is being replaced by the vendor under the same USID.
+                    const vendor = vendorByItem[l.itemId];
+                    if (vendor) {
+                      return <Badge tone="violet">Vendor replacement · {VR_STATUS_LABELS[vendor as keyof typeof VR_STATUS_LABELS]}</Badge>;
+                    }
+                    if (requestedItemIds.has(l.itemId)) {
+                      const stage = requestStage.get(l.itemId) ?? "Requested";
+                      return (
+                        <span className="inline-flex items-center gap-2">
+                          <span className="inline-flex items-center rounded-lg border border-border bg-surface-muted px-3 py-1 text-xs font-medium text-text-muted">
+                            {stage}
+                          </span>
+                          {/* A unit was already transferred: if it is faulty the item can be ordered again, with a reason. */}
+                          {stage === "Transferred" && canRequestParts(c.status as CaseStatusValue) && (
+                            <ReorderDialog itemName={l.name} action={reorderPartForCase.bind(null, l.id)} />
+                          )}
+                        </span>
+                      );
+                    }
+                    if (!canRequestParts(c.status as CaseStatusValue)) return <span className="text-xs text-text-muted">After approval</span>;
                     return <PartRequestDialog itemName={l.name} action={requestPartForCase.bind(null, l.id)} />;
                   },
                 },
@@ -608,9 +692,9 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
                   {
                     header: "Receipt",
                     cell: (a) =>
-                      a.status === "RECEIVED" ? (
+                      a.status === "RECEIVED" || a.status === "CONSUMED" ? (
                         <>
-                          <Badge tone="success">Received</Badge>
+                          <Badge tone="success">{a.status === "CONSUMED" ? "Consumed" : "Received"}</Badge>
                           <p className="mt-1 text-xs text-text-muted">
                             {formatDateTime(a.receivedAt)}
                             {a.receivedBy && ` · ${personName(a.receivedBy)}`}

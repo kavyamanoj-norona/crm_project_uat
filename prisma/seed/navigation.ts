@@ -29,6 +29,8 @@ export type ItemDef = {
   path: string;
   icon: string;
   roles?: PrivilegeCode[];
+  /** Privileges that can view this item but not create/edit (overrides the module's readOnly list). */
+  readOnly?: PrivilegeCode[];
   approve?: PrivilegeCode[];
 };
 export type GroupDef = { group: string; icon?: string; items: ItemDef[] };
@@ -67,7 +69,6 @@ export const MODULES: ModuleDef[] = [
         group: "Manage",
         icon: "boxes",
         items: [
-          { title: "Items", path: "/service/items", icon: "package" },
           { title: "Vendors", path: "/service/lab/vendors", icon: "users", roles: [CHIP], approve: [CHIP] },
           { title: "QC Checklist", path: "/service/qc-checklist", icon: "clipboard-check", roles: [CHIP], approve: [CHIP] },
           { title: "TAT Configuration", path: "/service/tat-config", icon: "timer", roles: [] }, // Admin only
@@ -101,17 +102,48 @@ export const MODULES: ModuleDef[] = [
     path: "/finance",
     roles: [BM],
     entries: [
-      { title: "Invoices", path: "/finance/invoices", icon: "file-text" },
-      { title: "Receipts", path: "/finance/receipts", icon: "receipt" },
-      { title: "Credit Notes", path: "/finance/credit-notes", icon: "file-minus" },
-      { title: "Ledger", path: "/finance/ledger", icon: "book" },
-      { title: "Pending Dues", path: "/finance/pending-dues", icon: "clock" },
+      {
+        group: "Sales & Receipts",
+        icon: "receipt",
+        items: [
+          { title: "Invoices", path: "/finance/invoices", icon: "file-text" },
+          { title: "Receipts", path: "/finance/receipts", icon: "receipt" },
+          { title: "Credit Notes", path: "/finance/credit-notes", icon: "file-minus" },
+          { title: "Customer Dues", path: "/finance/pending-dues", icon: "clock" },
+        ],
+      },
+      {
+        group: "Purchases & Payables",
+        icon: "shopping-cart",
+        items: [{ title: "Supplier Payables", path: "/finance/payables", icon: "truck", roles: [] }], // Head Office (admin) only
+      },
+      {
+        group: "Expenses & Banking",
+        icon: "landmark",
+        items: [
+          { title: "Expenses", path: "/finance/expenses", icon: "wallet" },
+          { title: "Cash & Bank", path: "/finance/cash-bank", icon: "banknote" },
+          { title: "Inter-branch Transfers", path: "/finance/transfers", icon: "arrow-left-right", roles: [] }, // Head Office (admin) only
+        ],
+      },
+      {
+        group: "Accounting",
+        icon: "book",
+        items: [
+          { title: "Journal Entries", path: "/finance/journal", icon: "book-open", readOnly: [BM] },
+          { title: "Ledger", path: "/finance/ledger", icon: "book" },
+          { title: "Chart of Accounts", path: "/finance/accounts", icon: "list-tree", readOnly: [BM] },
+          { title: "Trial Balance", path: "/finance/trial-balance", icon: "scale" },
+          { title: "Reconciliation", path: "/finance/reconciliation", icon: "check-check", roles: [] }, // Head Office (admin) only
+        ],
+      },
       {
         group: "Reports",
         icon: "bar-chart-2",
         items: [
-          { title: "Income & Expense", path: "/finance/reports/income-expense", icon: "area-chart" },
           { title: "Profit & Loss", path: "/finance/reports/profit-loss", icon: "trending-up" },
+          { title: "Balance Sheet", path: "/finance/reports/balance-sheet", icon: "scale" },
+          { title: "Income & Expense", path: "/finance/reports/income-expense", icon: "area-chart" },
         ],
       },
     ],
@@ -127,11 +159,17 @@ export const MODULES: ModuleDef[] = [
       { title: "Stock", path: "/inventory/stock", icon: "boxes", approve: [PM] },
       { title: "Purchasing", path: "/inventory/purchasing", icon: "shopping-cart", roles: [PM, BM, CHIP], approve: [PM] },
       { title: "Billing", path: "/inventory/billing", icon: "receipt", approve: [PM] },
-      { title: "Catalog", path: "/inventory/catalog", icon: "tags", roles: EVERYONE },
+      { title: "Vendor Replacements", path: "/inventory/vendor-replacements", icon: "repeat", roles: [PM] },
       {
         group: "Manage",
         icon: "boxes",
-        items: [{ title: "Suppliers", path: "/inventory/suppliers", icon: "truck", approve: [PM] }],
+        items: [
+          // The one item catalog. Everyone can look items up; only the Purchase Manager (and admins) add or change them.
+          { title: "Items", path: "/inventory/items", icon: "package", roles: EVERYONE, readOnly: [BM, SALES, CS, CHIP] },
+          { title: "Suppliers", path: "/inventory/suppliers", icon: "truck", approve: [PM] },
+          // USID numbering and GST rates: Admin (sees everything) and the Purchase Manager only.
+          { title: "Configuration", path: "/inventory/configuration", icon: "settings", roles: [PM] },
+        ],
       },
     ],
   },

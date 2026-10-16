@@ -7,12 +7,15 @@ import { initialFormState, validateForm, type FormState } from "@/lib/form";
 import { useFormFeedback } from "@/hooks/use-form-feedback";
 import { Button, LinkButton } from "@/components/ui/button";
 import { Field, Input, Select, Switch, Textarea } from "@/components/ui/field";
+import { SearchSelectField } from "@/components/forms/search-select";
 import { FORM_SCHEMAS, type FormSchemaKey } from "../form-schemas";
 
 export type FieldConfig = {
   name: string;
   label: string;
   type?: "text" | "email" | "number" | "textarea" | "select" | "switch";
+  /** Selects only: a dropdown you can type into to filter, for long lists such as items. */
+  searchable?: boolean;
   required?: boolean;
   placeholder?: string;
   hint?: string;
@@ -107,6 +110,15 @@ export function EntityForm({ fields, schema, action, initial = {}, id, cancelHre
             >
               {f.type === "textarea" ? (
                 <Textarea {...common} defaultValue={value == null ? "" : String(value)} />
+              ) : f.type === "select" && f.searchable ? (
+                <SearchSelectField
+                  id={f.name}
+                  name={f.name}
+                  options={f.options ?? []}
+                  defaultValue={value == null ? "" : String(value)}
+                  placeholder={f.placeholder ?? "Select"}
+                  invalid={Boolean(error)}
+                />
               ) : f.type === "select" ? (
                 <Select {...common} options={f.options ?? []} defaultValue={value == null ? "" : String(value)} />
               ) : (

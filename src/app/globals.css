@@ -9,6 +9,9 @@
 :root {
   --brand-navy: #1f1c5b;
   --brand-navy-hover: #34317a;
+  --table-head: #dde6f2; /* soft steel blue: table header and the tab rail above it */
+  --table-head-line: #c5d2e6;
+  --table-head-text: #1f2a44;
   --primary: #29ace1; /* sky */
   --primary-hover: #1d9bd0;
   --primary-soft: #eaf7fd; /* sky-050 */
@@ -38,6 +41,9 @@
 [data-theme="dark"] {
   --sidebar: #141236;
   --sidebar-rail: #0f0d2b;
+  --table-head: #22304d;
+  --table-head-line: #33436a;
+  --table-head-text: #e5e9f2;
   --brand-navy-hover: #4a46a0;
   --primary: #3bb8ea;
   --primary-hover: #5cc6ef;
@@ -53,6 +59,9 @@
 }
 
 @theme inline {
+  --color-table-head: var(--table-head);
+  --color-table-head-line: var(--table-head-line);
+  --color-table-head-text: var(--table-head-text);
   --color-brand-navy: var(--brand-navy);
   --color-brand-navy-hover: var(--brand-navy-hover);
   --color-sidebar: var(--sidebar);
@@ -104,4 +113,17 @@ body {
 *:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
+}
+
+/* Dialogs never scroll sideways: tables inside them fit the dialog and their cells wrap (unlayered, so it wins over utilities). */
+dialog {
+  overflow-x: hidden;
+}
+dialog table {
+  min-width: 0;
+  width: 100%;
+}
+dialog th,
+dialog td {
+  white-space: normal;
 }

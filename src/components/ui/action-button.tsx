@@ -13,6 +13,8 @@ type ActionButtonProps = {
   label: string;
   /** Ask the user to confirm first (used for deletes). */
   confirm?: string;
+  /** Label of the confirm button in the "Are you sure?" popup (default "Delete", right for deletes only). */
+  confirmLabel?: string;
   className?: string;
   role?: "switch";
   checked?: boolean;
@@ -24,6 +26,7 @@ export function ActionButton({
   action,
   label,
   confirm,
+  confirmLabel,
   className,
   role,
   checked,
@@ -57,9 +60,9 @@ export function ActionButton({
         aria-checked={role === "switch" ? checked : undefined}
         aria-label={label}
         title={label}
-        className={cn("relative align-middle disabled:opacity-60", className)}
+        className={cn("relative inline-flex items-center justify-center whitespace-nowrap align-middle disabled:opacity-60", className)}
       >
-        <span className={cn(pending && "invisible")}>{children}</span>
+        <span className={cn("inline-flex items-center justify-center gap-2", pending && "invisible")}>{children}</span>
         {pending && (
           <Loader2 className="absolute inset-0 m-auto size-4 animate-spin text-text-muted" />
         )}
@@ -68,6 +71,7 @@ export function ActionButton({
         <ConfirmDialog
           open={asking}
           message={confirm}
+          confirmLabel={confirmLabel}
           onConfirm={run}
           onCancel={() => setAsking(false)}
         />

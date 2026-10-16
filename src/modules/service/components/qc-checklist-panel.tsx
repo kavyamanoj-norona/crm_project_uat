@@ -148,12 +148,10 @@ function ChecklistStep({
           const a = answers[i]!;
           const rowError = showErrors ? qcAnswerError(a) : null;
           return (
-            <li key={item.id} className="space-y-2 px-4 py-3">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium">{item.title}</p>
-                  {item.description && <p className="text-xs text-text-muted">{item.description}</p>}
-                </div>
+            <li key={item.id} className="px-4 py-2.5">
+              {/* One line per check: name · Yes / No · remarks (stacks on small screens) */}
+              <div className="grid items-center gap-2 md:grid-cols-[minmax(0,13rem)_auto_minmax(0,1fr)]">
+                <p className="min-w-0 text-sm font-medium">{item.title}</p>
                 <div className="flex gap-2" role="group" aria-label={`${item.title} answer`}>
                   <button
                     type="button"
@@ -180,16 +178,15 @@ function ChecklistStep({
                     <X className="size-3.5" /> No
                   </button>
                 </div>
+                <Input
+                  value={a.remarks}
+                  onChange={(e) => set(i, { remarks: e.target.value })}
+                  placeholder="Enter remarks"
+                  aria-label={`${item.title} remarks`}
+                  aria-invalid={rowError ? true : undefined}
+                />
               </div>
-
-              <Input
-                value={a.remarks}
-                onChange={(e) => set(i, { remarks: e.target.value })}
-                placeholder="Enter remarks"
-                aria-label={`${item.title} remarks`}
-                aria-invalid={rowError ? true : undefined}
-              />
-              {rowError && <p className="text-xs text-danger">{rowError}</p>}
+              {rowError && <p className="mt-1 text-xs text-danger md:pl-[13.5rem]">{rowError}</p>}
             </li>
           );
         })}
