@@ -6,7 +6,9 @@ import { branchWhere, getBranchScope } from "@/server/branch-scope";
 import { ForbiddenError, requireActionPermission } from "@/server/rbac/guard";
 import { logActivity } from "@/server/security/activity";
 import { pick, toFieldErrors, type FormState } from "@/lib/form";
-import { QC_STAGES, qcAnswersSchema, type QcStage } from "../qc-answer-schema";
+import { z } from "zod";
+import { QC_STAGES, qcAnswerSchema, qcAnswersSchema, type QcStage } from "../qc-answer-schema";
+import { qcBlockReason } from "../qc-response-queries";
 import { SERVICE_PATHS } from "../paths";
 
 const STALE = "Someone else changed this case just now. Refresh to see its current stage.";
@@ -17,9 +19,29 @@ const STALE = "Someone else changed this case just now. Refresh to see its curre
  * answered; "No" needs remarks. Append-only: old answers are retired, not edited.
  */
 export async function saveQcAnswers(caseId: string, _prev: FormState, formData: FormData): Promise<FormState> {
-  const parsed = qcAnswersSchema.safeParse(pick(formData, ["answers"]));
-  if (!parsed.success) return toFieldErrors(parsed.error, formData);
-  const answers = parsed.data.answers;
+  // "progress" (lab modal): keep the answers given so far; the rest can follow later. Default: every item must be answered.
+  const progress = formData.get("intent") === "progress";
+  const note = String(formData.get("note") ?? "").trim();
+  if (note.length > 300) return { message: "Please fix the highlighted fields.", fieldErrors: { note: ["Keep the notes under 300 characters"] } };
+
+  let answers: { itemId: string; passed: "yes" | "no"; remarks: string }[];
+  if (progress) {
+    let rows: unknown;
+    try {
+      rows = JSON.parse(String(formData.get("answers") ?? "[]"));
+    } catch {
+      return { message: "Answers could not be read. Reload the page and try again." };
+    }
+    const given = (Array.isArray(rows) ? rows : []).filter((r) => r && (r.passed === "yes" || r.passed === "no"));
+    const parsedRows = z.array(qcAnswerSchema).safeParse(given);
+    if (!parsedRows.success) return { message: parsedRows.error.issues[0]!.message, fieldErrors: { answers: [parsedRows.error.issues[0]!.message] } };
+    if (parsedRows.data.length === 0) return { message: "Answer at least one item to save progress.", fieldErrors: { answers: ["Answer at least one item to save progress"] } };
+    answers = parsedRows.data as typeof answers;
+  } else {
+    const parsed = qcAnswersSchema.safeParse(pick(formData, ["answers"]));
+    if (!parsed.success) return toFieldErrors(parsed.error, formData);
+    answers = parsed.data.answers as typeof answers;
+  }
 
   try {
     const probe = await db.case.findFirst({ where: { id: caseId, status: { in: [...QC_STAGES] } }, select: { status: true } });
@@ -35,14 +57,21 @@ export async function saveQcAnswers(caseId: string, _prev: FormState, formData: 
     const items = await db.qcChecklistItem.findMany({ where: { isActive: true }, select: { id: true, title: true } });
     const titles = new Map(items.map((i) => [i.id, i.title]));
     const answered = new Set(answers.map((a) => a.itemId));
-    if (answers.some((a) => !titles.has(a.itemId)) || items.some((i) => !answered.has(i.id)))
+    if (answers.some((a) => !titles.has(a.itemId)) || (!progress && items.some((i) => !answered.has(i.id))))
       return { message: "The checklist changed. Refresh and answer every item.", fieldErrors: { answers: ["Answer every checklist item"] } };
+
+    // The lab's QC gets a "Quality Check completed" timeline entry the first time the checklist becomes complete.
+    const labStage = stage === "CHIP_LAB_QUALITY_CHECK";
+    const wasComplete = labStage ? (await qcBlockReason(caseId, stage)) === null : true;
 
     const now = new Date();
     const saved = await db.$transaction(async (tx) => {
       const still = await tx.case.findFirst({ where: { id: caseId, status: stage }, select: { id: true } });
       if (!still) return false;
-      await tx.caseQcResponse.updateMany({ where: { caseId, stage, removedAt: null }, data: { removedAt: now } });
+      await tx.caseQcResponse.updateMany({
+        where: { caseId, stage, removedAt: null, ...(progress ? { checklistItemId: { in: [...answered] } } : {}) },
+        data: { removedAt: now },
+      });
       await tx.caseQcResponse.createMany({
         data: answers.map((a) => ({
           caseId,
@@ -54,6 +83,11 @@ export async function saveQcAnswers(caseId: string, _prev: FormState, formData: 
           answeredById: user.id,
         })),
       });
+      if (labStage && !progress && !wasComplete) {
+        await tx.caseStatusHistory.create({
+          data: { caseId, fromStatus: stage, toStatus: stage, note: note || null, changedById: user.id },
+        });
+      }
       return true;
     });
     if (!saved) return { message: STALE };
@@ -64,11 +98,11 @@ export async function saveQcAnswers(caseId: string, _prev: FormState, formData: 
       userId: user.id,
       entity: "Case",
       entityId: caseId,
-      detail: `QC checklist saved: ${answers.length - noCount} yes, ${noCount} no`,
+      detail: `QC checklist ${progress ? "progress saved" : "saved"}: ${answers.length - noCount} yes, ${noCount} no${note ? ` — ${note}` : ""}`,
     });
     revalidatePath(SERVICE_PATHS.cases, "layout");
     revalidatePath(SERVICE_PATHS.lab, "layout");
-    return { ok: true, message: "Quality Check checklist saved." };
+    return { ok: true, message: progress ? "Progress saved." : labStage && !wasComplete ? "Quality Check completed." : "Quality Check checklist saved." };
   } catch (e) {
     if (e instanceof ForbiddenError) return { message: e.message };
     throw e;

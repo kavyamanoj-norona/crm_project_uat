@@ -26,6 +26,7 @@ import {
 import { findDuplicateBill, listBillableItems } from "../billing-queries";
 import { issueUsids } from "../usid";
 import { postPurchaseBill } from "@/modules/finance/posting";
+import { warrantyEnd } from "../warranty-schema";
 
 const IMAGE_TYPES: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "application/pdf": "pdf" };
 const IMAGE_MAX_BYTES = 8 * 1024 * 1024;
@@ -199,6 +200,15 @@ export async function confirmBill(_prev: FormState, formData: FormData): Promise
       if (!l.newItem && !known.has(l.itemId)) throw new FieldError(`lines.${i}.itemId`, "Select an active part or accessory. Services can’t be bought on a bill");
     });
 
+    // Warranty periods picked on the lines must exist and be active; the months are copied onto each unit.
+    const warrantyIds = [...new Set(data.lines.map((l) => l.warrantyId).filter((w): w is string => Boolean(w)))];
+    const warranties = new Map(
+      (await db.warranty.findMany({ where: { id: { in: warrantyIds }, isActive: true, isDelete: 0 }, select: { id: true, name: true, durationValue: true, durationUnit: true } })).map((w) => [w.id, w]),
+    );
+    data.lines.forEach((l, i) => {
+      if (l.warrantyId && !warranties.has(l.warrantyId)) throw new FieldError(`lines.${i}.warrantyId`, "Select a warranty from the list");
+    });
+
     const lines = data.lines.map((l, i) => ({
       ...l,
       description: l.description ?? (l.newItem ? l.newName : itemName.get(l.itemId)) ?? "",
@@ -298,6 +308,8 @@ export async function confirmBill(_prev: FormState, formData: FormData): Promise
           paymentStatus: paid === 0 ? "UNPAID" : paid >= totalPaise ? "PAID" : "PARTIAL",
           imageUrl: data.imageUrl,
           imageHash: data.imageHash,
+          isOfficeUse: data.isOfficeUse,
+          officePurpose: data.isOfficeUse ? data.officePurpose : null,
           notes: data.notes,
           createdById: user.id,
           items: {
@@ -312,6 +324,7 @@ export async function confirmBill(_prev: FormState, formData: FormData): Promise
               taxablePaise: l.taxablePaise,
               taxPaise: l.taxPaise,
               lineTotalPaise: l.lineTotalPaise,
+              warrantyId: l.warrantyId,
               sortOrder: l.sortOrder,
             })),
           },
@@ -328,9 +341,21 @@ export async function confirmBill(_prev: FormState, formData: FormData): Promise
       const totalUnits = lines.reduce((n, l) => n + l.quantity, 0);
       const usids = await issueUsids(tx, totalUnits);
       let at = 0;
-      const units = bill.items.flatMap((bi, idx) =>
-        Array.from({ length: lines[idx]!.quantity }, () => ({ usid: usids[at++]!, itemId: bi.itemId, billItemId: bi.id, branchId })),
-      );
+      const billDate = new Date(`${data.billDate}T00:00:00Z`);
+      const units = bill.items.flatMap((bi, idx) => {
+        const wId = lines[idx]!.warrantyId;
+        const w = wId ? warranties.get(wId)! : null;
+        return Array.from({ length: lines[idx]!.quantity }, () => ({
+          usid: usids[at++]!,
+          itemId: bi.itemId,
+          billItemId: bi.id,
+          branchId,
+          isOfficeUse: data.isOfficeUse,
+          warrantyId: wId,
+          warrantyLabel: w?.name ?? null,
+          warrantyEndsAt: w ? warrantyEnd(billDate, w.durationValue, w.durationUnit) : null,
+        }));
+      });
       await tx.stockUnit.createMany({ data: units });
       // The bill and its ledger entry (Dr Inventory + GST Input, Cr Accounts Payable) are saved together.
       await postPurchaseBill(
@@ -340,8 +365,9 @@ export async function confirmBill(_prev: FormState, formData: FormData): Promise
       );
 
       // Stock: add each item's total quantity (the same item can appear on several lines).
+      // Office-use units are tracked by USID only: they never count in branch / spare-part stock.
       const perItem = new Map<string, number>();
-      for (const l of lines) perItem.set(l.itemId, (perItem.get(l.itemId) ?? 0) + l.quantity);
+      if (!data.isOfficeUse) for (const l of lines) perItem.set(l.itemId, (perItem.get(l.itemId) ?? 0) + l.quantity);
       for (const [itemId, qty] of perItem) {
         await tx.stockItem.upsert({
           where: { branchId_itemId: { branchId, itemId } },
@@ -359,7 +385,7 @@ export async function confirmBill(_prev: FormState, formData: FormData): Promise
       userId: user.id,
       entity: "PurchaseBill",
       entityId: billId,
-      detail: `Bill ${data.billNo} from ${supplierName}, ${lines.length} lines`,
+      detail: `Bill ${data.billNo} from ${supplierName}, ${lines.length} lines${data.isOfficeUse ? ` · Office use: ${data.officePurpose}` : ""}`,
     });
   } catch (e) {
     if (e instanceof ForbiddenError) return { message: e.message };

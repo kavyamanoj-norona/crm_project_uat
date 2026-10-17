@@ -120,7 +120,7 @@ function EstimateForm({
             aria-invalid={errors.engineerId ? true : undefined}
           />
         </Field>
-        <Field label="Expected delivery" htmlFor="expectedDeliveryDate" error={errors.expectedDeliveryDate}>
+        <Field label="Expected delivery" htmlFor="expectedDeliveryDate" required error={errors.expectedDeliveryDate}>
           <Input
             id="expectedDeliveryDate"
             name="expectedDeliveryDate"

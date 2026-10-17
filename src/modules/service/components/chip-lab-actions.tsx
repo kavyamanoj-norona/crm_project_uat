@@ -15,7 +15,7 @@ import {
   startLabServicing,
   markLabReadyToDispatch,
   startLabQualityCheck,
-  completeLabTransfer,
+  transferToBranch,
   markNonRepairable,
   dispatchToBranch,
 } from "@/modules/service/actions/chip-lab";
@@ -23,15 +23,12 @@ import {
 type ChipLabActionsProps = {
   caseId: string;
   status: CaseStatusValue;
-  /** Set while the QC checklist is incomplete: Transfer to Branch then opens the checklist first. */
-  /** Lab has already completed the handover to the branch. */
-  transferCompleted?: boolean;
   /** When set, Quality Check is disabled and this explains why (parts still to consume or return). */
   qcBlock?: string | null;
   qc?: { jobsheetNo: string; items: QcPanelItem[]; action: (prev: FormState, formData: FormData) => Promise<FormState> };
 };
 
-export function ChipLabActions({ caseId, status, qc, transferCompleted, qcBlock }: ChipLabActionsProps) {
+export function ChipLabActions({ caseId, status, qc, qcBlock }: ChipLabActionsProps) {
   if (status === "CHIP_TRANSFER") {
     return (
       <div className="flex flex-wrap items-center gap-2">
@@ -154,25 +151,23 @@ export function ChipLabActions({ caseId, status, qc, transferCompleted, qcBlock 
   }
 
   if (status === "CHIP_BRANCH_RECEIVED") {
-    if (transferCompleted) return null;
+    // Transfer to Branch already finished the lab's work: a disabled button, so it can't be repeated.
     return (
       <div className="flex flex-wrap items-center gap-2">
-        <ActionButton
-          action={completeLabTransfer.bind(null, caseId)}
-          label="Complete transfer to branch"
-          className={buttonClass("navy")}
-        >
-          <Truck className="size-4" /> Complete Transfer
-        </ActionButton>
+        <button type="button" disabled className={buttonClass("navy") + " cursor-not-allowed opacity-60"}>
+          <Truck className="size-4" /> Transferred to Branch
+        </button>
       </div>
     );
   }
 
+  // Quality check still to finish: one modal holds the checklist and the notes.
   if (status === "CHIP_LAB_QUALITY_CHECK" && qc) {
     return (
       <div className="flex flex-wrap items-center gap-2">
         <QcChecklistDialog
-          trigger={<><Truck className="size-4" /> Transfer to Branch</>}
+          lab
+          trigger={<><ClipboardCheck className="size-4" /> Complete Quality Check</>}
           triggerVariant="navy"
           jobsheetNo={qc.jobsheetNo}
           items={qc.items}
@@ -182,7 +177,18 @@ export function ChipLabActions({ caseId, status, qc, transferCompleted, qcBlock 
     );
   }
 
-  if (status === "CHIP_LAB_QUALITY_CHECK" || status === "NON_REPAIRABLE") {
+  // Quality check complete (or no checklist set up): transfer straight away, no further modal.
+  if (status === "CHIP_LAB_QUALITY_CHECK") {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <ActionButton action={transferToBranch.bind(null, caseId)} label="Transfer to branch" className={buttonClass("navy")}>
+          <Truck className="size-4" /> Transfer to Branch
+        </ActionButton>
+      </div>
+    );
+  }
+
+  if (status === "NON_REPAIRABLE") {
     return (
       <div className="flex flex-wrap items-center gap-2">
         <ActionDialog

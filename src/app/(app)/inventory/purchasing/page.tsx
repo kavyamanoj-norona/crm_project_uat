@@ -17,7 +17,7 @@ import { getBranchScope, listBranchOptions } from "@/server/branch-scope";
 import { requirePageAccess } from "@/server/rbac/guard";
 import { markRequestOrdered, markSpareUnavailable, raisePurchaseRequest } from "@/modules/inventory/actions/purchase";
 import { updateReturnStatus } from "@/modules/inventory/actions/returns";
-import { allocateUnit } from "@/modules/inventory/actions/consume";
+import { allocateUnit, allocateUnits } from "@/modules/inventory/actions/consume";
 import { markUnitReceived } from "@/modules/inventory/actions/receive";
 import { markReturnReceived } from "@/modules/inventory/actions/unit-returns";
 import { vendorReplacementReturnReceived } from "@/modules/inventory/actions/vendor-replacements";
@@ -26,6 +26,7 @@ import { ActionButton } from "@/components/ui/action-button";
 import { INVENTORY_PATHS } from "@/modules/inventory/paths";
 import { isPurchaseManager } from "@/modules/inventory/purchase-access";
 import { TransferDialog } from "@/modules/inventory/components/transfer-dialog";
+import { TransferManyDialog } from "@/modules/inventory/components/transfer-many-dialog";
 import { ReplacementTag, RequestDetails, ReturnDetails, UnitDetails, ViewButton } from "@/modules/inventory/components/purchasing-details";
 import {
   countOpenItemReturns,
@@ -128,7 +129,7 @@ function VendorReplacementBadge() {
   );
 }
 
-const TAB_KEYS = ["", "ordered", "transferred", "returns", "warranty", "consumed"] as const;
+const TAB_KEYS = ["", "ordered", "unavailable", "transferred", "returns", "warranty", "consumed"] as const;
 type TabKey = (typeof TAB_KEYS)[number];
 
 export default async function PurchasingPage({ searchParams }: PageProps<"/inventory/purchasing">) {
@@ -163,7 +164,7 @@ export default async function PurchasingPage({ searchParams }: PageProps<"/inven
   const [counts, openReturns, requests, returns, units, allItems, branchOptions, availableUnits] = await Promise.all([
     purchasingCounts(scope.branchId),
     countOpenItemReturns(scope.branchId),
-    tab === "" || tab === "ordered" ? listPurchaseRequestsByStage(list, tab === "ordered" ? "ordered" : "requests", scope.branchId) : Promise.resolve(noRequests),
+    tab === "" || tab === "ordered" || tab === "unavailable" ? listPurchaseRequestsByStage(list, tab === "ordered" ? "ordered" : tab === "unavailable" ? "unavailable" : "requests", scope.branchId) : Promise.resolve(noRequests),
     returnKind ? listItemReturns(tab === "returns" ? { ...list, page: 1, pageSize: 200 } : list, returnKind, scope.branchId) : Promise.resolve(noReturns),
     tab === "transferred"
       ? listTransferredUnits(list, scope.branchId, ["ALLOCATED"])
@@ -206,6 +207,12 @@ export default async function PurchasingPage({ searchParams }: PageProps<"/inven
       cell: (pr: RequestRow) => (
         <>
           <p className="font-medium text-sm">{pr.item.name}</p>
+          {pr.quantity > 1 && (
+            <p className="text-xs text-text-muted">
+              Qty <span className="font-semibold text-text">{pr.quantity}</span>
+              {pr.consumedQty > 0 && <> · {pr.consumedQty} transferred</>}
+            </p>
+          )}
           {pr.isReplacement && (
             <div className="mt-1 space-y-0.5">
               <ReplacementTag />
@@ -246,10 +253,7 @@ export default async function PurchasingPage({ searchParams }: PageProps<"/inven
     {
       header: "Raised",
       cell: (pr: RequestRow) => (
-        <span className="text-xs text-text-muted">
-          {formatDate(pr.createdAt)}
-          {pr.requestedBy && <> · {personName(pr.requestedBy)}</>}
-        </span>
+        <span className="text-xs text-text-muted">{formatDate(pr.createdAt)}</span>
       ),
     },
     ...(stage === "ordered"
@@ -303,10 +307,29 @@ export default async function PurchasingPage({ searchParams }: PageProps<"/inven
               )}
             </>
           )}
-          {isPM && canEdit && stage === "ordered" && !availableUnits.some((u) => u.itemId === pr.item.id) && (
-            <Badge tone="neutral">No stock</Badge>
+          {isPM && canEdit && stage === "ordered" && availableUnits.filter((u) => u.itemId === pr.item.id).length < pr.quantity - pr.consumedQty && (
+            <Badge tone="neutral">
+              {pr.quantity - pr.consumedQty > 1
+                ? `Need ${pr.quantity - pr.consumedQty} in stock (${availableUnits.filter((u) => u.itemId === pr.item.id).length} available)`
+                : "No stock"}
+            </Badge>
           )}
-          {isPM && canEdit && stage === "ordered" && availableUnits.some((u) => u.itemId === pr.item.id) && (
+          {isPM && canEdit && stage === "ordered" && pr.quantity - pr.consumedQty > 1 && availableUnits.filter((u) => u.itemId === pr.item.id).length >= pr.quantity - pr.consumedQty && (
+            <TransferManyDialog
+              requestedItemName={pr.item.name}
+              remaining={pr.quantity - pr.consumedQty}
+              units={availableUnits.filter((u) => u.itemId === pr.item.id).map((u) => ({
+                id: u.id,
+                usid: u.usid,
+                itemId: u.itemId,
+                itemName: u.item.name,
+                billNo: u.billItem?.bill.billNo ?? null,
+                location: u.branch.code,
+              }))}
+              action={allocateUnits.bind(null, pr.id)}
+            />
+          )}
+          {isPM && canEdit && stage === "ordered" && pr.quantity - pr.consumedQty <= 1 && availableUnits.some((u) => u.itemId === pr.item.id) && (
             <TransferDialog
               requestedItemId={pr.item.id}
               requestedItemName={pr.item.name}
@@ -355,6 +378,7 @@ export default async function PurchasingPage({ searchParams }: PageProps<"/inven
     { key: "returns", label: "Returns", count: openReturns.returns + counts.unitReturns },
     { key: "warranty", label: "Warranty", count: openReturns.warranty },
     { key: "consumed", label: "Consumed", count: counts.notConsumed },
+    { key: "unavailable", label: "Spare not available", count: counts.unavailable },
   ];
 
   type UnitReturnRow = (typeof unitReturns.rows)[number];
@@ -437,7 +461,7 @@ export default async function PurchasingPage({ searchParams }: PageProps<"/inven
       )}
 
       {/* Requests · Ordered */}
-      {(tab === "" || tab === "ordered") && (
+      {(tab === "" || tab === "ordered" || tab === "unavailable") && (
         <ListView
           list={list}
           total={requests.total}
@@ -446,7 +470,13 @@ export default async function PurchasingPage({ searchParams }: PageProps<"/inven
           rows={requests.rows}
           rowKey={(pr) => pr.id}
           searchPlaceholder="Search by item, model, case ID or code"
-          empty={tab === "ordered" ? "Nothing is waiting to be transferred. Mark a request as ordered first." : "No purchase requests waiting to be ordered."}
+          empty={
+            tab === "ordered"
+              ? "Nothing is waiting to be transferred. Mark a request as ordered first."
+              : tab === "unavailable"
+                ? "No spares are marked as not available."
+                : "No purchase requests waiting to be ordered."
+          }
           columns={requestColumns(tab === "ordered" ? "ordered" : "requests")}
         />
       )}

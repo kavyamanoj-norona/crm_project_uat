@@ -4,6 +4,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { pageArgs, type ListState } from "@/lib/list";
 import type { FilterTab } from "@/components/data/filter-tabs";
 import { normalizeBillNo } from "./billing-schema";
+import { warrantyApproxDays } from "./warranty-schema";
 
 export const BILL_SORTS = ["billDate", "totalPaise", "createdAt"] as const;
 
@@ -64,6 +65,7 @@ export async function getBill(id: string) {
         orderBy: { sortOrder: "asc" },
         include: {
           item: { select: { code: true, name: true, unit: true } },
+          warranty: { select: { name: true } },
           stockUnits: {
             where: { isDelete: 0 },
             orderBy: { usid: "asc" },
@@ -73,6 +75,11 @@ export async function getBill(id: string) {
               status: true,
               allocatedAt: true,
               receivedAt: true,
+              isOfficeUse: true,
+              warrantyEndsAt: true,
+              officeRemarks: true,
+              consumedAt: true,
+              officeEmployee: { select: { firstName: true, lastName: true } },
               allocatedCase: { select: { jobsheetNo: true } },
               allocatedBranch: { select: { code: true } },
             },
@@ -115,6 +122,14 @@ export async function listSuppliersPage(list: ListState & { sort: (typeof SUPPLI
 export type SupplierPageRow = Awaited<ReturnType<typeof listSuppliersPage>>["rows"][number];
 
 /** Every active stockable item (parts and accessories). Services are labour, not bought stock, so they are left out. */
+/** Active warranty periods for the dropdown on bill lines, shortest first. */
+export async function listWarranties() {
+  const rows = await db.warranty.findMany({ where: { isActive: true, isDelete: 0 }, select: { id: true, name: true, durationValue: true, durationUnit: true } });
+  return rows
+    .sort((a, b) => warrantyApproxDays(a.durationValue, a.durationUnit) - warrantyApproxDays(b.durationValue, b.durationUnit))
+    .map(({ id, name }) => ({ id, name }));
+}
+
 export async function listBillableItems() {
   return db.item.findMany({
     where: { isActive: true, type: { not: "SERVICE" } },

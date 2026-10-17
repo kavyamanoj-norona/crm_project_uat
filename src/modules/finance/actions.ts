@@ -11,10 +11,12 @@ import { nextSequence } from "@/server/sequence";
 import type { ActionResult, FormState } from "@/lib/form";
 import { formatPaise } from "@/lib/money";
 import { parseRupees } from "@/modules/inventory/billing-schema";
+import { settlementLines } from "./bank";
 import { ACCT, LedgerError, payAccount, postJournal, reverseJournal } from "./ledger";
 import { FINANCE_PATHS } from "./paths";
 import { postCasePayment, postPurchasePayment } from "./posting";
 import { postMissingEntries } from "./sync";
+import { closedCashDay } from "./daybook";
 
 const MODES = ["CASH", "UPI", "CARD", "BANK_TRANSFER"] as const;
 type Mode = (typeof MODES)[number];
@@ -74,31 +76,80 @@ export async function collectInvoicePayment(invoiceId: string, _prev: FormState,
   });
 }
 
-/** Pay a supplier against a purchase bill (Dr Accounts Payable, Cr Cash/Bank). */
-export async function paySupplierBill(billId: string, _prev: FormState, fd: FormData): Promise<FormState> {
+type PayableBill = { id: string; billNo: string; branchId: string; supplierId: string; totalPaise: number; paidPaise: number };
+
+/** Pays `amount` against one locked bill: the payment row, its ledger entry and the bill's paid total / status. */
+async function payBill(tx: Parameters<Parameters<typeof db.$transaction>[0]>[0], bill: PayableBill, amount: number, m: Mode, reference: string | null, userId: string) {
+  const pay = await tx.purchaseBillPayment.create({ data: { billId: bill.id, amountPaise: amount, mode: m, referenceNo: reference, createdById: userId } });
+  await postPurchasePayment(tx, pay, bill, userId);
+  const paid = bill.paidPaise + amount;
+  await tx.purchaseBill.update({ where: { id: bill.id }, data: { paidPaise: paid, paymentStatus: paid >= bill.totalPaise ? "PAID" : "PARTIAL" } });
+}
+
+const billSelect = { id: true, billNo: true, branchId: true, supplierId: true, totalPaise: true, paidPaise: true } as const;
+
+/** Locks the bills so two people paying the same bill at once can't both succeed, then re-reads them. */
+async function lockBills(tx: Parameters<Parameters<typeof db.$transaction>[0]>[0], where: { id?: { in: string[] }; supplierId?: string }) {
+  const ids = (await tx.purchaseBill.findMany({ where: { ...where, isDelete: 0 }, select: { id: true }, orderBy: { id: "asc" } })).map((b) => b.id);
+  for (const id of ids) await tx.$queryRaw`SELECT "id" FROM "purchase_bill" WHERE "id" = ${id} FOR UPDATE`;
+  return tx.purchaseBill.findMany({ where: { id: { in: ids } }, select: billSelect, orderBy: [{ billDate: "asc" }, { id: "asc" }] });
+}
+
+/** Pay the full outstanding amount of each selected bill of one supplier, in one payment mode. */
+export async function paySelectedBills(_prev: FormState, fd: FormData): Promise<FormState> {
+  return guard(async () => {
+    const m = mode(fd);
+    const ids = [...new Set(text(fd, "billIds", 4000).split(",").filter(Boolean))];
+    if (!m) return fail("mode", "Select the payment mode");
+    if (ids.length === 0 || ids.length > 50) return { message: "Select between 1 and 50 bills to pay." };
+    const user = await requireActionPermission(FINANCE_PATHS.payables, "canEdit");
+    const reference = text(fd, "reference", 60) || null;
+
+    const result = await db.$transaction(async (tx) => {
+      const bills = await lockBills(tx, { id: { in: ids } });
+      if (bills.length !== ids.length) throw new FieldError("mode", "One of the selected bills was not found.");
+      if (new Set(bills.map((b) => b.supplierId)).size !== 1) throw new FieldError("mode", "Select bills of one supplier at a time.");
+      const due = bills.filter((b) => b.totalPaise > b.paidPaise);
+      if (due.length === 0) throw new FieldError("mode", "The selected bills are already paid.");
+      for (const b of due) await payBill(tx, b, b.totalPaise - b.paidPaise, m, reference, user.id);
+      return { count: due.length, paise: due.reduce((s, b) => s + b.totalPaise - b.paidPaise, 0), supplierId: due[0]!.supplierId };
+    });
+    await logActivity({ action: "finance.supplier-payment", userId: user.id, entity: "Supplier", entityId: result.supplierId, detail: `${formatPaise(result.paise)} paid (${m}) against ${result.count} bills` });
+    revalidatePath("/inventory/billing", "layout");
+    refresh();
+    return { ok: true, message: `${formatPaise(result.paise)} paid against ${result.count} ${result.count === 1 ? "bill" : "bills"}.` };
+  });
+}
+
+/** Record an amount paid to a supplier; it settles the oldest unpaid bills first. */
+export async function recordSupplierPayment(supplierId: string, _prev: FormState, fd: FormData): Promise<FormState> {
   return guard(async () => {
     const m = mode(fd);
     const amount = money(fd, "amount");
     if (!m) return fail("mode", "Select the payment mode");
     if (amount <= 0) return fail("amount", "Enter the amount paid");
     const user = await requireActionPermission(FINANCE_PATHS.payables, "canEdit");
+    const reference = text(fd, "reference", 60) || null;
 
-    const billNo = await db.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT "id" FROM "purchase_bill" WHERE "id" = ${billId} FOR UPDATE`;
-      const bill = await tx.purchaseBill.findUnique({ where: { id: billId }, select: { id: true, billNo: true, branchId: true, supplierId: true, totalPaise: true, paidPaise: true } });
-      if (!bill) throw new FieldError("amount", "Bill not found");
-      const due = bill.totalPaise - bill.paidPaise;
-      if (amount > due) throw new FieldError("amount", `Only ${formatPaise(due)} is still due`);
-      const pay = await tx.purchaseBillPayment.create({ data: { billId, amountPaise: amount, mode: m, referenceNo: text(fd, "reference", 60) || null, createdById: user.id } });
-      await postPurchasePayment(tx, pay, bill, user.id);
-      const paid = bill.paidPaise + amount;
-      await tx.purchaseBill.update({ where: { id: billId }, data: { paidPaise: paid, paymentStatus: paid >= bill.totalPaise ? "PAID" : "PARTIAL" } });
-      return bill.billNo;
+    const result = await db.$transaction(async (tx) => {
+      const bills = (await lockBills(tx, { supplierId })).filter((b) => b.totalPaise > b.paidPaise);
+      const owed = bills.reduce((s, b) => s + b.totalPaise - b.paidPaise, 0);
+      if (amount > owed) throw new FieldError("amount", owed === 0 ? "This supplier has nothing due." : `Only ${formatPaise(owed)} is still due.`);
+      let left = amount;
+      let count = 0;
+      for (const b of bills) {
+        if (left === 0) break;
+        const part = Math.min(left, b.totalPaise - b.paidPaise);
+        await payBill(tx, b, part, m, reference, user.id);
+        left -= part;
+        count++;
+      }
+      return { count };
     });
-    await logActivity({ action: "finance.supplier-payment", userId: user.id, entity: "PurchaseBill", entityId: billId, detail: `${formatPaise(amount)} paid (${m}) for bill ${billNo}` });
+    await logActivity({ action: "finance.supplier-payment", userId: user.id, entity: "Supplier", entityId: supplierId, detail: `${formatPaise(amount)} paid (${m}) across ${result.count} bills, oldest first` });
     revalidatePath("/inventory/billing", "layout");
     refresh();
-    return { ok: true, message: `${formatPaise(amount)} paid.` };
+    return { ok: true, message: `${formatPaise(amount)} recorded across ${result.count} ${result.count === 1 ? "bill" : "bills"}.` };
   });
 }
 
@@ -119,8 +170,10 @@ export async function addExpense(_prev: FormState, fd: FormData): Promise<FormSt
     if (!branchId) return fail("branchId", "Select the branch");
     const account = await db.account.findFirst({ where: { id: accountId, type: "EXPENSE", isActive: true }, select: { code: true, name: true } });
     if (!account) return fail("accountId", "Select a valid expense category");
+    const closedMsg = await closedCashDay([{ account: payAccount(m), branchId }], new Date(`${date}T12:00:00+05:30`));
+    if (closedMsg) return fail("date", closedMsg);
 
-    const entry = await db.$transaction((tx) =>
+    const entry = await db.$transaction(async (tx) =>
       postJournal(tx, {
         sourceType: "EXPENSE",
         sourceId: randomUUID(),
@@ -130,50 +183,13 @@ export async function addExpense(_prev: FormState, fd: FormData): Promise<FormSt
         narration: `${account.name}${text(fd, "remarks") ? `: ${text(fd, "remarks")}` : ""} (${m})`,
         lines: [
           { account: account.code, branchId, debit: amount },
-          { account: payAccount(m), branchId, credit: amount },
+          ...(await settlementLines(tx, { mode: m, branchId, paise: amount, dir: "out" })),
         ],
       }),
     );
     await logActivity({ action: "finance.expense", userId: user.id, entity: "JournalEntry", entityId: entry.id, detail: `${entry.entryNo}: expense ${formatPaise(amount)} (${account.name})` });
     refresh();
     return { ok: true, message: `Expense recorded (${entry.entryNo}).` };
-  });
-}
-
-/** Move money between branches (or to Head Office). Each side balances through the inter-branch account. */
-export async function addTransfer(_prev: FormState, fd: FormData): Promise<FormState> {
-  return guard(async () => {
-    const m = mode(fd);
-    const amount = money(fd, "amount");
-    const from = text(fd, "fromBranchId", 40);
-    const to = text(fd, "toBranchId", 40);
-    if (!from) return fail("fromBranchId", "Select the sending branch");
-    if (!to) return fail("toBranchId", "Select the receiving branch");
-    if (from === to) return fail("toBranchId", "Choose a different branch");
-    if (!m) return fail("mode", "Select cash or bank");
-    if (amount <= 0) return fail("amount", "Enter the amount");
-    const user = await requireActionPermission(FINANCE_PATHS.transfers, "canCreate");
-
-    const entry = await db.$transaction(async (tx) => {
-      const [a, b] = await Promise.all([tx.branch.findUnique({ where: { id: from }, select: { code: true } }), tx.branch.findUnique({ where: { id: to }, select: { code: true } })]);
-      if (!a || !b) throw new FieldError("toBranchId", "Branch not found");
-      return postJournal(tx, {
-        sourceType: "TRANSFER",
-        sourceId: randomUUID(),
-        branchId: from,
-        userId: user.id,
-        narration: `Transfer ${a.code} → ${b.code} (${m})${text(fd, "remarks") ? `: ${text(fd, "remarks")}` : ""}`,
-        lines: [
-          { account: ACCT.INTERBRANCH, branchId: from, debit: amount, memo: `Due from ${b.code}` },
-          { account: payAccount(m), branchId: from, credit: amount },
-          { account: payAccount(m), branchId: to, debit: amount },
-          { account: ACCT.INTERBRANCH, branchId: to, credit: amount, memo: `Due to ${a.code}` },
-        ],
-      });
-    });
-    await logActivity({ action: "finance.transfer", userId: user.id, entity: "JournalEntry", entityId: entry.id, detail: `${entry.entryNo}: ${formatPaise(amount)} moved between branches (${m})` });
-    refresh();
-    return { ok: true, message: `Transfer recorded (${entry.entryNo}).` };
   });
 }
 
@@ -198,6 +214,8 @@ export async function addManualJournal(_prev: FormState, fd: FormData): Promise<
       if (!c || !r.branchId) throw new FieldError("lines", "Every line needs an account and a branch");
       return { account: c, branchId: r.branchId, debit: parseRupees(r.debit) ?? 0, credit: parseRupees(r.credit) ?? 0 };
     });
+    const closedMsg = await closedCashDay(lines, new Date(`${date}T12:00:00+05:30`));
+    if (closedMsg) return fail("date", closedMsg);
     const entry = await db.$transaction((tx) =>
       postJournal(tx, { sourceType: "MANUAL", sourceId: randomUUID(), branchId: lines[0]?.branchId, date: new Date(`${date}T12:00:00+05:30`), userId: user.id, narration, lines }),
     );
@@ -260,7 +278,7 @@ export async function addCreditNote(_prev: FormState, fd: FormData): Promise<For
           { account: ACCT.SALES_RETURNS, branchId: inv.branchId, debit: amount - tax },
           { account: ACCT.GST_OUTPUT, branchId: inv.branchId, debit: tax },
           { account: ACCT.RECEIVABLE, branchId: inv.branchId, credit: amount - refund, partyType: "CUSTOMER", partyId: inv.customerId },
-          ...(refund > 0 && m ? [{ account: payAccount(m), branchId: inv.branchId, credit: refund }] : []),
+          ...(refund > 0 && m ? await settlementLines(tx, { mode: m, branchId: inv.branchId, paise: refund, dir: "out" }) : []),
         ],
       });
       const credited = inv.creditedPaise + amount;
@@ -300,7 +318,9 @@ export async function addAccount(_prev: FormState, fd: FormData): Promise<FormSt
     if (!["ASSET", "LIABILITY", "EQUITY", "INCOME", "EXPENSE"].includes(type)) return fail("type", "Select the account type");
     const user = await requireActionPermission(FINANCE_PATHS.accounts, "canCreate");
     if (await db.account.findFirst({ where: { code } })) return fail("code", "This code is already used");
-    const acc = await db.account.create({ data: { code, name, type: type as "ASSET", subType: type === "EXPENSE" ? "EXPENSE" : null } });
+    // An asset marked as a bank account is offered as a Head Office bank in the Daybook deposit form.
+    const isBank = type === "ASSET" && fd.get("isBank") === "on";
+    const acc = await db.account.create({ data: { code, name, type: type as "ASSET", subType: type === "EXPENSE" ? "EXPENSE" : isBank ? "BANK" : null } });
     await logActivity({ action: "finance.account", userId: user.id, entity: "Account", entityId: acc.id, detail: `Account ${code} ${name} (${type}) added` });
     refresh();
     return { ok: true, message: `Account ${code} added.` };

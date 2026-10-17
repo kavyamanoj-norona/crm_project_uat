@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "@/server/db";
+import { moveBankToHeadOffice } from "./bank";
 import { postCaseInvoice, postCasePayment, postCogs, postDirectSale, postPurchaseBill, postPurchasePayment } from "./posting";
 
 /**
@@ -7,7 +8,7 @@ import { postCaseInvoice, postCasePayment, postCogs, postDirectSale, postPurchas
  * to post). Each entry is keyed by its source, so running it again, or two people running it at once, never doubles anything.
  */
 export async function postMissingEntries(userId: string | null) {
-  const done = { invoices: 0, bills: 0, payments: 0, billPayments: 0, sales: 0, cogs: 0 };
+  const done = { invoices: 0, bills: 0, payments: 0, billPayments: 0, sales: 0, cogs: 0, bankMoved: 0 };
   const posted = async (type: string) => new Set((await db.journalEntry.findMany({ where: { sourceType: type }, select: { sourceId: true } })).map((e) => e.sourceId));
 
   const [hasInv, hasBill, hasPay, hasBillPay, hasSale, hasCogs] = await Promise.all([
@@ -50,5 +51,7 @@ export async function postMissingEntries(userId: string | null) {
     await db.$transaction((tx) => postCogs(tx, { unitId: u.id, usid: u.usid, branchId: u.branchId, costPaise: Math.round(u.billItem!.taxablePaise / u.billItem!.quantity), jobsheetNo: u.allocatedCase?.jobsheetNo }, userId));
     done.cogs++;
   }
+  // Bank money earlier postings left on a branch moves to the Head Office bank.
+  done.bankMoved = await moveBankToHeadOffice(userId);
   return done;
 }

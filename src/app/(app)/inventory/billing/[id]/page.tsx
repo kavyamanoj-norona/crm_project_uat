@@ -40,7 +40,12 @@ export default async function BillDetailPage({ params, searchParams }: { params:
       <FlashToast flag={param(sp, "saved")} message="Bill saved. Stock and payment updated." />
       <PageHeader
         title={bill.billNo}
-        badges={<Badge tone={status.tone}>{status.label}</Badge>}
+        badges={
+          <>
+            <Badge tone={status.tone}>{status.label}</Badge>
+            {bill.isOfficeUse && <Badge tone="violet">Office use</Badge>}
+          </>
+        }
         subtitle={`${bill.code} · ${bill.supplier.name} · ${formatDate(bill.billDate)}`}
         breadcrumbs={["Inventory", "Billing", bill.billNo]}
         actions={
@@ -64,7 +69,9 @@ export default async function BillDetailPage({ params, searchParams }: { params:
                   header: "Item",
                   cell: (l) => (
                     <>
-                      <p className="font-medium">{l.item.name}</p>
+                      <p className="flex items-center gap-2 font-medium">
+                        {l.item.name} {bill.isOfficeUse && <Badge tone="violet">Office use</Badge>}
+                      </p>
                       <p className="text-xs text-text-muted">
                         {l.item.code}
                         {l.description !== l.item.name && ` · billed as "${l.description}"`}
@@ -73,6 +80,7 @@ export default async function BillDetailPage({ params, searchParams }: { params:
                   ),
                 },
                 { header: "HSN/SAC", cell: (l) => l.hsnSac ?? "—" },
+                { header: "Warranty", cell: (l) => l.warranty?.name ?? "—" },
                 { header: "Qty", align: "center", cell: (l) => l.quantity },
                 {
                   header: "Allocated",
@@ -121,12 +129,21 @@ export default async function BillDetailPage({ params, searchParams }: { params:
               empty="No stock units for this bill."
               columns={[
                 { header: "USID", cell: (u) => <span className="font-medium tabular-nums">{u.usid}</span> },
-                { header: "Item", cell: (u) => u.itemName },
+                {
+                  header: "Item",
+                  cell: (u) => (
+                    <span className="flex items-center gap-2">
+                      {u.itemName} {u.isOfficeUse && <Badge tone="violet">Office use</Badge>}
+                    </span>
+                  ),
+                },
                 {
                   header: "Status",
                   cell: (u) =>
                     u.status === "AVAILABLE" ? (
                       <Badge tone="success">Available</Badge>
+                    ) : u.status === "OFFICE_CONSUMED" ? (
+                      <Badge tone="violet">Office consumed</Badge>
                     ) : u.status === "RECEIVED" ? (
                       <Badge tone="navy">Received</Badge>
                     ) : u.status === "RETURNED" ? (
@@ -150,6 +167,11 @@ export default async function BillDetailPage({ params, searchParams }: { params:
                     ) : (
                       "—"
                     ),
+                },
+                { header: "Warranty until", cell: (u) => (u.warrantyEndsAt ? formatDate(u.warrantyEndsAt) : "—") },
+                {
+                  header: "Office employee",
+                  cell: (u) => (u.officeEmployee ? personName(u.officeEmployee) : "—"),
                 },
                 { header: "Allocated on", cell: (u) => (u.allocatedAt ? formatDateTime(u.allocatedAt) : "—") },
                 { header: "Received on", cell: (u) => (u.receivedAt ? formatDateTime(u.receivedAt) : "—") },
@@ -196,6 +218,7 @@ export default async function BillDetailPage({ params, searchParams }: { params:
             <KvList
               items={[
                 ["Code", bill.code],
+                ...(bill.isOfficeUse ? ([["Office use", bill.officePurpose]] as [string, React.ReactNode][]) : []),
                 ["Entered by", personName(bill.createdBy) ?? "—"],
                 ["Entered on", formatDateTime(bill.createdAt)],
                 ["Notes", bill.notes],

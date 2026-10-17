@@ -17,7 +17,18 @@ export type ClosingLine = {
   gstPercent: number;
 };
 
-export type ClosingAccessory = { id: string; code: string; name: string; pricePaise: number; minPricePaise: number; gstPercent: number; stock: number };
+/** `stock` is everything the branch holds; `units` are the received USIDs among it, `loose` the rest (no USID). */
+export type ClosingAccessory = {
+  id: string;
+  code: string;
+  name: string;
+  pricePaise: number;
+  minPricePaise: number;
+  gstPercent: number;
+  stock: number;
+  loose: number;
+  units: { id: string; usid: string }[];
+};
 
 /**
  * What the customer is billed for when the case closes: every service on the case, and every spare part or accessory that
@@ -76,19 +87,29 @@ export async function closingAccessories(branchId: string): Promise<ClosingAcces
     select: { id: true, code: true, name: true, pricePaise: true, maxDiscountPercent: true, gstPercent: true },
   });
   const stock = await db.stockItem.findMany({ where: { branchId, itemId: { in: items.map((i) => i.id) } }, select: { itemId: true, quantity: true } });
-  const held = await db.stockUnit.groupBy({ by: ["itemId"], where: { branchId, status: "RECEIVED", itemId: { in: items.map((i) => i.id) } }, _count: { _all: true } });
+  // Received units are physically in the branch (not reserved), so they are sellable and picked by USID.
+  const received = await db.stockUnit.findMany({
+    where: { branchId, status: "RECEIVED", itemId: { in: items.map((i) => i.id) } },
+    orderBy: [{ receivedAt: "asc" }, { usid: "asc" }],
+    select: { id: true, usid: true, itemId: true },
+  });
   const have = new Map(stock.map((s) => [s.itemId, s.quantity]));
-  const reserved = new Map(held.map((h) => [h.itemId, h._count._all]));
   return items
-    .map((i) => ({
-      id: i.id,
-      code: i.code,
-      name: i.name,
-      pricePaise: i.pricePaise,
-      minPricePaise: minPricePaise(i.pricePaise, i.maxDiscountPercent),
-      gstPercent: i.gstPercent,
-      stock: Math.max(0, (have.get(i.id) ?? 0) - (reserved.get(i.id) ?? 0)),
-    }))
+    .map((i) => {
+      const units = received.filter((u) => u.itemId === i.id).map((u) => ({ id: u.id, usid: u.usid }));
+      const total = have.get(i.id) ?? 0;
+      return {
+        id: i.id,
+        code: i.code,
+        name: i.name,
+        pricePaise: i.pricePaise,
+        minPricePaise: minPricePaise(i.pricePaise, i.maxDiscountPercent),
+        gstPercent: i.gstPercent,
+        stock: total,
+        loose: Math.max(0, total - units.length),
+        units,
+      };
+    })
     .filter((i) => i.stock > 0);
 }
 

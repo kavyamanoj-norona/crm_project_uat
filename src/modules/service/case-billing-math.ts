@@ -37,7 +37,8 @@ export const CLOSING_PAYMENT_LABELS: Record<(typeof CLOSING_PAYMENT_MODES)[numbe
 
 /** The payload the closing dialog posts: accessories added to the bill and the payments collected now. */
 export type ClosingPayload = {
-  accessories: { itemId: string; quantity: number; unitPricePaise: number }[];
+  /** `unitIds` are the USIDs picked from received stock; any quantity beyond them comes from stock without a USID. */
+  accessories: { itemId: string; quantity: number; unitPricePaise: number; unitIds: string[] }[];
   payments: { mode: (typeof CLOSING_PAYMENT_MODES)[number]; amountPaise: number; reference: string }[];
   notes: string;
   /** The user confirmed closing with part of the bill still unpaid. */

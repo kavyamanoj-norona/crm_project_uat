@@ -58,6 +58,9 @@ export function SupplierForm({ action, initial, id }: SupplierFormProps) {
         <Field label="Email" htmlFor="email" error={errors.email}>
           <Input {...f("email")} type="email" autoComplete="off" placeholder="Enter email" />
         </Field>
+        <Field label="Payment terms (days)" htmlFor="paymentTermDays" error={errors.paymentTermDays} hint="Days after the bill date that a bill falls due. Leave blank if not agreed.">
+          <Input {...f("paymentTermDays")} inputMode="numeric" placeholder="Enter payment terms in days" />
+        </Field>
         <Field label="Address" htmlFor="address" error={errors.address} className="sm:col-span-2 lg:col-span-3">
           <Textarea {...f("address")} placeholder="Enter address" />
         </Field>

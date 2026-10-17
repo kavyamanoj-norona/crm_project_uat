@@ -75,10 +75,10 @@ export async function listAllActiveItems() {
 const requestBranch = (branchId: string | null): Prisma.PurchaseRequestWhereInput =>
   branchId ? { OR: [{ branchId }, { case: { branchId } }] } : {};
 
-export async function listPurchaseRequestsByStage(list: ListState, stage: "requests" | "ordered", branchId: string | null) {
+export async function listPurchaseRequestsByStage(list: ListState, stage: "requests" | "ordered" | "unavailable", branchId: string | null) {
   const where: Prisma.PurchaseRequestWhereInput = {
     AND: [requestBranch(branchId)],
-    status: stage === "ordered" ? "ORDERED" : { in: ["PENDING", "WITH_PM", "APPROVED", "SPARE_UNAVAILABLE"] },
+    status: stage === "ordered" ? "ORDERED" : stage === "unavailable" ? "SPARE_UNAVAILABLE" : { in: ["PENDING", "WITH_PM", "APPROVED"] },
     ...(list.q
       ? {
           OR: [
@@ -101,7 +101,7 @@ export async function listPurchaseRequestsByStage(list: ListState, stage: "reque
       requestedBy: { select: { firstName: true, lastName: true } },
       replacementConfirmedBy: { select: { firstName: true, lastName: true } },
       replacementOf: { select: { code: true } },
-      attachments: { select: { id: true, url: true, fileName: true }, orderBy: { createdAt: "asc" } },
+      attachments: { select: { id: true, url: true, fileName: true, kind: true }, orderBy: { createdAt: "asc" } },
       stockUnits: {
         select: { id: true, usid: true, status: true, receivedAt: true, item: { select: { name: true } }, allocatedCase: { select: { jobsheetNo: true } } },
         orderBy: { allocatedAt: "asc" },
@@ -118,8 +118,9 @@ export async function listPurchaseRequestsByStage(list: ListState, stage: "reque
 
 /** Tab counts for Purchasing, limited to one branch when given. */
 export async function purchasingCounts(branchId: string | null) {
-  const [requests, ordered, inTransit, notConsumed, unitReturns] = await Promise.all([
-    db.purchaseRequest.count({ where: { AND: [requestBranch(branchId)], status: { in: ["PENDING", "WITH_PM", "APPROVED", "SPARE_UNAVAILABLE"] } } }),
+  const [requests, unavailable, ordered, inTransit, notConsumed, unitReturns] = await Promise.all([
+    db.purchaseRequest.count({ where: { AND: [requestBranch(branchId)], status: { in: ["PENDING", "WITH_PM", "APPROVED"] } } }),
+    db.purchaseRequest.count({ where: { AND: [requestBranch(branchId)], status: "SPARE_UNAVAILABLE" } }),
     db.purchaseRequest.count({ where: { AND: [requestBranch(branchId)], status: "ORDERED" } }),
     db.stockUnit.count({ where: { ...(branchId ? { allocatedBranchId: branchId } : {}), status: "ALLOCATED" } }),
     db.stockUnit.count({ where: { ...(branchId ? { allocatedBranchId: branchId } : {}), status: "RECEIVED" } }),
@@ -128,7 +129,7 @@ export async function purchasingCounts(branchId: string | null) {
       async (n) => n + (await db.vendorReplacement.count({ where: { ...(branchId ? { branchId } : {}), OR: [{ returnReceivedAt: null }, { status: { not: "RECEIVED" } }] } })),
     ),
   ]);
-  return { requests, ordered, inTransit, notConsumed, unitReturns };
+  return { requests, unavailable, ordered, inTransit, notConsumed, unitReturns };
 }
 
 export type StockRow = Awaited<ReturnType<typeof listStock>>[number];
@@ -227,7 +228,7 @@ export async function listItemReturns(list: ListState, returnType: "RETURN" | "W
       include: {
       case: { select: { id: true, jobsheetNo: true, customer: { select: { name: true } }, branch: { select: { code: true, name: true } } } },
       caseItem: { select: { itemId: true, name: true, code: true, quantity: true } },
-      attachments: { select: { id: true, url: true, fileName: true } },
+      attachments: { select: { id: true, url: true, fileName: true, kind: true } },
       createdBy: { select: { firstName: true, lastName: true } },
       reviewedBy: { select: { firstName: true, lastName: true } },
     },
@@ -284,7 +285,7 @@ export async function listTransferredUnits(list: ListState, branchId: string | n
         billItem: { select: { bill: { select: { code: true, billNo: true, supplier: { select: { name: true } } } } } },
         purchaseRequest: { select: { code: true, modelNo: true, notes: true, pmRemarks: true } },
         vendorReplacements: { where: { status: { in: ["TRANSFERRED", "RECEIVED"] } }, select: { code: true }, take: 1 },
-        attachments: { select: { id: true, url: true, fileName: true }, orderBy: { createdAt: "asc" } },
+        attachments: { select: { id: true, url: true, fileName: true, kind: true }, orderBy: { createdAt: "asc" } },
       },
     }),
     db.stockUnit.count({ where }),
@@ -310,7 +311,7 @@ export async function listUnitReturns(branchId: string | null) {
       consumedBy: { select: { firstName: true, lastName: true } },
       billItem: { select: { bill: { select: { code: true, billNo: true, supplier: { select: { name: true } } } } } },
       purchaseRequest: { select: { id: true, code: true, modelNo: true, notes: true, pmRemarks: true } },
-      attachments: { select: { id: true, url: true, fileName: true }, orderBy: { createdAt: "asc" } },
+      attachments: { select: { id: true, url: true, fileName: true, kind: true }, orderBy: { createdAt: "asc" } },
     },
   });
   const originals = rows.map((r) => r.purchaseRequest?.id).filter((id): id is string => Boolean(id));
@@ -337,7 +338,7 @@ const unitDetailInclude = {
   consumedBy: { select: { firstName: true, lastName: true } },
   billItem: { select: { bill: { select: { code: true, billNo: true, supplier: { select: { name: true } } } } } },
   purchaseRequest: { select: { id: true, code: true, modelNo: true, notes: true, pmRemarks: true } },
-  attachments: { select: { id: true, url: true, fileName: true }, orderBy: { createdAt: "asc" } },
+  attachments: { select: { id: true, url: true, fileName: true, kind: true }, orderBy: { createdAt: "asc" } },
 } as const;
 
 /**
@@ -431,7 +432,8 @@ export async function consumedUsidsFor(pairs: { caseId: string; itemId: string }
 /** Units that can still be allocated, for the Consume dialog. */
 export async function listAvailableUnits() {
   return db.stockUnit.findMany({
-    where: { status: "AVAILABLE" },
+    // Office-use units are never transferred to cases or branches.
+    where: { status: "AVAILABLE", isOfficeUse: false },
     orderBy: [{ itemId: "asc" }, { usid: "asc" }],
     take: 1000,
     select: {
@@ -464,9 +466,19 @@ export async function listStockUnitsPage(list: ListState, branchId: string | nul
       }
     : {};
   const status = (UNIT_TAB_STATUS as readonly string[]).includes(list.tab) ? (list.tab as (typeof UNIT_TAB_STATUS)[number]) : null;
-  const where: Prisma.StockUnitWhereInput = { AND: [scope, search, status ? { status } : {}] };
+  // Office-use units sit under their own tab (still on the shelf) and are kept out of the spare-part status tabs.
+  const officeTab = list.tab === "OFFICE";
+  const where: Prisma.StockUnitWhereInput = {
+    AND: [
+      scope,
+      search,
+      // Office-consumed units have their own Stock view, so they never show here.
+      { status: { not: "OFFICE_CONSUMED" } },
+      officeTab ? { isOfficeUse: true } : status ? { status, isOfficeUse: false } : {},
+    ],
+  };
 
-  const [rows, total, groups] = await Promise.all([
+  const [rows, total, groups, officeCount] = await Promise.all([
     db.stockUnit.findMany({
       where,
       orderBy: [{ createdAt: "desc" }, { usid: "asc" }],
@@ -477,21 +489,57 @@ export async function listStockUnitsPage(list: ListState, branchId: string | nul
         billItem: { select: { bill: { select: { id: true, billNo: true, supplier: { select: { name: true } } } } } },
         allocatedCase: { select: { id: true, jobsheetNo: true } },
         allocatedBranch: { select: { code: true } },
+        warranty: { select: { name: true } },
       },
     }),
     db.stockUnit.count({ where }),
-    db.stockUnit.groupBy({ by: ["status"], where: { AND: [scope, search] }, _count: { _all: true } }),
+    db.stockUnit.groupBy({ by: ["status"], where: { AND: [scope, search, { isOfficeUse: false }] }, _count: { _all: true } }),
+    db.stockUnit.count({ where: { AND: [scope, search, { isOfficeUse: true, status: { not: "OFFICE_CONSUMED" } }] } }),
   ]);
   const n = (s: string) => groups.find((g) => g.status === s)?._count._all ?? 0;
   const tabs: FilterTab[] = [
-    { key: "", label: "All", count: groups.reduce((s, g) => s + g._count._all, 0) },
+    { key: "", label: "All", count: groups.reduce((s, g) => s + g._count._all, 0) + officeCount },
     { key: "AVAILABLE", label: "Available", count: n("AVAILABLE") },
     { key: "ALLOCATED", label: "Allocated", count: n("ALLOCATED") },
     { key: "RECEIVED", label: "Received", count: n("RECEIVED") },
     { key: "CONSUMED", label: "Consumed", count: n("CONSUMED") },
     { key: "RETURNED", label: "Returned", count: n("RETURNED") + n("AWAITING_VENDOR") },
+    { key: "OFFICE", label: "Office use", count: officeCount },
   ];
   return { rows, total, tabs };
+}
+
+/** Office-use units that have been handed to an employee: who, what for, which bill and warranty. */
+export async function listOfficeConsumedPage(list: ListState) {
+  const search: Prisma.StockUnitWhereInput = list.q
+    ? {
+        OR: [
+          { usid: containsI(list.q) },
+          { item: { name: containsI(list.q) } },
+          { item: { code: containsI(list.q) } },
+          { officeRemarks: containsI(list.q) },
+          { officeEmployee: { OR: [{ firstName: containsI(list.q) }, { lastName: containsI(list.q) }] } },
+          { billItem: { bill: { billNo: containsI(list.q) } } },
+        ],
+      }
+    : {};
+  const where: Prisma.StockUnitWhereInput = { AND: [{ status: "OFFICE_CONSUMED" }, search] };
+  const [rows, total] = await Promise.all([
+    db.stockUnit.findMany({
+      where,
+      orderBy: [{ consumedAt: "desc" }, { usid: "asc" }],
+      ...pageArgs(list),
+      include: {
+        item: { select: { code: true, name: true } },
+        billItem: { select: { bill: { select: { id: true, billNo: true, officePurpose: true, supplier: { select: { name: true } } } } } },
+        warranty: { select: { name: true } },
+        officeEmployee: { select: { firstName: true, lastName: true } },
+        consumedBy: { select: { firstName: true, lastName: true } },
+      },
+    }),
+    db.stockUnit.count({ where }),
+  ]);
+  return { rows, total };
 }
 
 /** On-hand units per branch + item, so the Stock table can show how its count compares with registered USIDs. */
@@ -500,7 +548,7 @@ export async function countAvailableUnits(branchId: string | null, includeHeadOf
   const groups = await db.stockUnit.groupBy({
     by: ["branchId", "itemId"],
     // Units on hand: available at Head Office, or received at a branch and not yet used.
-    where: { status: { in: ["AVAILABLE", "RECEIVED"] }, ...(inBranches ? { branchId: inBranches } : {}) },
+    where: { status: { in: ["AVAILABLE", "RECEIVED"] }, isOfficeUse: false, ...(inBranches ? { branchId: inBranches } : {}) },
     _count: { _all: true },
   });
   return new Map(groups.map((g) => [`${g.branchId}:${g.itemId}`, g._count._all]));

@@ -10,7 +10,7 @@ import { nextSequence } from "@/server/sequence";
 import type { FormState } from "@/lib/form";
 import { formatPaise } from "@/lib/money";
 import { markCaseUnitsConsumed } from "@/modules/inventory/unit-consume";
-import { postCaseInvoice, postCasePayment } from "@/modules/finance/posting";
+import { postCaseInvoice, postCasePayment, postCogs } from "@/modules/finance/posting";
 import { LedgerError } from "@/modules/finance/ledger";
 import { CLOSING_PAYMENT_MODES, billSummary } from "../case-billing-math";
 import { closeBlockReason, closingAccessories, closingBill } from "../case-billing";
@@ -18,7 +18,7 @@ import { SERVICE_PATHS } from "../paths";
 
 const payloadSchema = z.object({
   accessories: z
-    .array(z.object({ itemId: z.string().min(1), quantity: z.number().int().min(1).max(99), unitPricePaise: z.number().int().min(0) }))
+    .array(z.object({ itemId: z.string().min(1), quantity: z.number().int().min(1).max(99), unitPricePaise: z.number().int().min(0), unitIds: z.array(z.string().min(1)).max(99).default([]) }))
     .max(20),
   payments: z
     .array(z.object({ mode: z.enum(CLOSING_PAYMENT_MODES), amountPaise: z.number().int().min(1), reference: z.string().trim().max(60) }))
@@ -45,7 +45,12 @@ export async function closeCaseWithBill(caseId: string, _prev: FormState, formDa
     return { message: "Something went wrong reading the form. Reload the page and try again." };
   }
   const parsed = payloadSchema.safeParse(raw);
-  if (!parsed.success) return { message: "Check the accessories and payments you entered." };
+  if (!parsed.success) {
+    const path = parsed.error.issues[0]?.path ?? [];
+    if (path[0] === "payments" && path[2] === "mode") return { message: "Select a payment mode for each payment.", fieldErrors: { payments: ["Select a payment mode"] } };
+    if (path[0] === "payments" && path[2] === "amountPaise") return { message: "Each payment needs an amount.", fieldErrors: { payments: ["Each payment needs an amount"] } };
+    return { message: "Check the accessories and payments you entered." };
+  }
   const input = parsed.data;
 
   try {
@@ -68,6 +73,10 @@ export async function closeCaseWithBill(caseId: string, _prev: FormState, formDa
       if (a.unitPricePaise < item.minPricePaise || a.unitPricePaise > item.pricePaise)
         throw new CloseError(`${item.name}: the price must be between ${formatPaise(item.minPricePaise)} and ${formatPaise(item.pricePaise)}.`);
       if (a.quantity > item.stock) throw new CloseError(`${item.name}: only ${item.stock} in stock.`);
+      if (new Set(a.unitIds).size !== a.unitIds.length) throw new CloseError(`${item.name}: each USID can be picked once.`);
+      if (a.unitIds.length > a.quantity) throw new CloseError(`${item.name}: more USIDs than the quantity billed.`);
+      if (a.unitIds.some((id) => !item.units.some((u) => u.id === id))) throw new CloseError(`${item.name}: a selected USID is no longer available. Reselect and try again.`);
+      if (a.quantity - a.unitIds.length > item.loose) throw new CloseError(`${item.name}: select a USID for each unit (only ${item.loose} in stock without a USID).`);
       return { item, ...a };
     });
     if (new Set(added.map((a) => a.itemId)).size !== added.length) throw new CloseError("Each accessory can be added once. Change its quantity instead.");
@@ -139,6 +148,19 @@ export async function closeCaseWithBill(caseId: string, _prev: FormState, formDa
           data: { quantity: { decrement: a.quantity }, updatedById: user.id },
         });
         if (done.count === 0) throw new CloseError(`${a.item.name}: not enough stock.`);
+        // The picked USIDs are consumed on this case (the stock count above already dropped for them).
+        for (const unitId of a.unitIds) {
+          const unit = await tx.stockUnit.findUnique({ where: { id: unitId }, select: { usid: true, branchId: true, billItem: { select: { taxablePaise: true, quantity: true } } } });
+          const claimed = await tx.stockUnit.updateMany({
+            where: { id: unitId, status: "RECEIVED", branchId: bill.branchId, itemId: a.itemId },
+            data: { status: "CONSUMED", consumedAt: now, consumedById: user.id, allocatedCaseId: caseId },
+          });
+          if (!unit || claimed.count === 0) throw new CloseError(`${a.item.name}: a selected USID was just used by someone else. Reselect and try again.`);
+          await tx.stockUnitEvent.create({ data: { unitId, action: "CONSUMED", userId: user.id, caseId, branchId: bill.branchId, note: `Sold on ${bill.jobsheetNo} (${invoiceNo})` } });
+          if (unit.billItem && unit.billItem.quantity > 0) {
+            await postCogs(tx, { unitId, usid: unit.usid, branchId: bill.branchId, costPaise: Math.round(unit.billItem.taxablePaise / unit.billItem.quantity), jobsheetNo: bill.jobsheetNo }, user.id);
+          }
+        }
       }
 
       // Close the case (only while it is still ready for delivery, so two people cannot both close it).

@@ -17,14 +17,14 @@ export async function saveSupplier(_prev: FormState, formData: FormData): Promis
   let savedId: string;
   try {
     const user = await requireActionPermission(INVENTORY_PATHS.suppliers, id ? "canEdit" : "canCreate");
-    const { name, gstin, state, phone, email, address } = parsed.data;
+    const { name, gstin, state, phone, email, address, paymentTermDays } = parsed.data;
 
     if (gstin) {
       const same = await db.supplier.findFirst({ where: { gstin, ...(id ? { id: { not: id } } : {}) }, select: { name: true } });
       if (same) return { message: "This GSTIN is already used.", fieldErrors: { gstin: [`${same.name} already has this GSTIN`] } };
     }
 
-    const data = { name, gstin: gstin ?? null, state: state ?? null, phone: phone ?? null, email: email ?? null, address: address ?? null };
+    const data = { name, gstin: gstin ?? null, state: state ?? null, phone: phone ?? null, email: email ?? null, address: address ?? null, paymentTermDays: paymentTermDays ? Number(paymentTermDays) : null };
     if (id) {
       const { count } = await db.supplier.updateMany({ where: { id }, data });
       if (count === 0) return { message: "Supplier not found." };

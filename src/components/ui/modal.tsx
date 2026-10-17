@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -35,18 +36,25 @@ type ModalProps = {
 export function Modal({ open, onClose, title, description, icon, size = "sm", footer, className, children }: ModalProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
+  // Rendered into <body>: a modal opened from inside a <form> or <p> must not nest its own form/content in it (invalid HTML).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     if (open && !el.open) el.showModal();
     if (!open && el.open) el.close();
-  }, [open]);
+  }, [open, mounted]);
 
-  return (
+  const dialog = (
     <dialog
       ref={ref}
       onClose={onClose}
+      // React bubbles portal events to the component that rendered the modal: keep a form inside the modal from
+      // triggering the submit/change handlers of a form around the trigger.
+      onSubmit={(e) => e.stopPropagation()}
+      onChange={(e) => e.stopPropagation()}
       onClick={(e) => e.target === ref.current && onClose()} // click on backdrop
       aria-labelledby={titleId}
       className={cn(
@@ -83,4 +91,6 @@ export function Modal({ open, onClose, title, description, icon, size = "sm", fo
       )}
     </dialog>
   );
+
+  return mounted ? createPortal(dialog, document.body) : dialog;
 }

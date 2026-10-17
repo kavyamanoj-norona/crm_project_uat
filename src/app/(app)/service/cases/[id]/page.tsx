@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, ArrowRight, Eye, FileText, History, Image as ImageIcon, IndianRupee, MessageCircle, Pencil, Send } from "lucide-react";
+import { ArrowLeft, ArrowRight, Eye, FileText, History, Image as ImageIcon, IndianRupee, MessageCircle, Pencil } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ActionButton } from "@/components/ui/action-button";
 import { buttonClass, LinkButton } from "@/components/ui/button";
@@ -48,6 +48,7 @@ import { ItemReturnDialog } from "@/modules/service/components/item-return-dialo
 import { getWarrantyCover, type WarrantyCover } from "@/modules/service/warranty";
 import { requestItemReturn } from "@/modules/service/actions/item-return";
 import { StageActions } from "@/modules/service/components/stage-actions";
+import { QuotePreviewDialog } from "@/modules/service/components/quote-preview-dialog";
 import { STAGE_ICONS } from "@/modules/service/components/stage-icons";
 import { ChipBranchActions } from "@/modules/service/components/chip-branch-actions";
 import { QcChecklistCard } from "@/modules/service/components/qc-checklist-card";
@@ -97,6 +98,8 @@ function timeline(c: CaseDetails): TimelineItem[] {
     icon: icon(!h.fromStatus ? FileText : STAGE_ICONS[h.toStatus]),
     title: !h.fromStatus
       ? "Case created"
+      : h.fromStatus === h.toStatus
+        ? `${CASE_STATUS_LABELS[h.toStatus]} completed`
       : h.toStatus === "CANCELLED"
         ? "Cancelled"
         : h.fromStatus === "INTAKE" && h.toStatus === "DIAGNOSIS"
@@ -231,6 +234,25 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
     closing ? closingAccessories(c.branchId) : Promise.resolve([]),
     closing ? closeBlockReason(c.id, c.status) : Promise.resolve(null),
   ]);
+  // Parts sent back before the case closed: reason, remarks and the photos taken, each set tied to its item and USID.
+  const returnedParts = await db.caseItemUsage.findMany({
+    where: { caseId: c.id, kind: { in: ["RETURNED_UNUSED", "RETURNED_DEFECTIVE"] } },
+    orderBy: { at: "desc" },
+    select: {
+      id: true,
+      reason: true,
+      remarks: true,
+      at: true,
+      user: { select: { firstName: true, lastName: true } },
+      stockUnit: {
+        select: {
+          usid: true,
+          item: { select: { name: true, code: true } },
+          attachments: { where: { kind: "RETURN_PHOTO", caseId: c.id }, select: { id: true, url: true, fileName: true } },
+        },
+      },
+    },
+  });
   const settledParts = new Map(usages.filter((u) => u.kind === "CONSUMED" || u.kind === "RETURNED_UNUSED").map((u) => [u.itemId, u.kind]));
   const receivedItemIds = new Set(receivedForCase.map((u) => u.itemId));
   // Open returns on a closed case, so a line already returned shows its status instead of the button.
@@ -440,13 +462,15 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
                         )
                       : c.status === "DIAGNOSIS" && c.estimatedCostPaise && permission.canEdit
                         ? (
-                            <ActionButton
-                              action={submitDiagnosis.bind(null, c.id)}
-                              label="Send quote to customer"
-                              className={buttonClass("navy")}
-                            >
-                              <Send className="size-4" /> Send quote to customer
-                            </ActionButton>
+                            <QuotePreviewDialog
+                              jobsheetNo={c.jobsheetNo}
+                              branchName={c.branch.name}
+                              device={device}
+                              lines={c.items.map((l) => ({ name: l.name, quantity: l.quantity, totalPaise: l.unitPricePaise * l.quantity }))}
+                              totalPaise={c.estimatedCostPaise}
+                              gstInclusive={extras.gstInclusive}
+                              send={submitDiagnosis.bind(null, c.id)}
+                            />
                           )
                         : undefined
                 }
@@ -483,6 +507,7 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
           })}
           current={cancelledFrom ?? (isChipCase ? branchChipRailStatus(c.status) : c.status)}
           stoppedLabel={c.status === "CANCELLED" ? "Cancelled" : undefined}
+          complete={c.status === "CLOSED"}
         />
       </div>
 
@@ -703,6 +728,55 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
                       ) : (
                         <Badge tone="warning">Awaiting receipt</Badge>
                       ),
+                  },
+                ]}
+              />
+            </Card>
+          )}
+
+          {returnedParts.length > 0 && (
+            <Card title="Returned parts">
+              <DataTable
+                rows={returnedParts}
+                rowKey={(r) => r.id}
+                columns={[
+                  {
+                    header: "Item / USID",
+                    cell: (r) => (
+                      <>
+                        <p className="font-medium">{r.stockUnit?.item.name ?? "—"}</p>
+                        <p className="text-xs text-text-muted">
+                          Case {c.jobsheetNo} · USID <span className="font-semibold tabular-nums text-text">{r.stockUnit?.usid ?? "—"}</span>
+                        </p>
+                      </>
+                    ),
+                  },
+                  { header: "Reason", cell: (r) => r.reason ?? "—" },
+                  { header: "Remarks", cell: (r) => <p className="max-w-60 whitespace-pre-wrap break-words text-sm">{r.remarks ?? "—"}</p> },
+                  {
+                    header: "Photos",
+                    cell: (r) =>
+                      !r.stockUnit || r.stockUnit.attachments.length === 0 ? (
+                        <span className="text-text-disabled">—</span>
+                      ) : (
+                        <div className="flex gap-1">
+                          {r.stockUnit.attachments.map((p) => (
+                            <a key={p.id} href={p.url} target="_blank" rel="noreferrer">
+                              {/* eslint-disable-next-line @next/next/no-img-element -- uploaded file, size unknown */}
+                              <img src={p.url} alt={p.fileName} className="size-10 rounded-md border border-border object-cover" />
+                            </a>
+                          ))}
+                        </div>
+                      ),
+                  },
+                  {
+                    header: "Returned",
+                    cell: (r) => (
+                      <span className="text-xs text-text-muted">
+                        {formatDateTime(r.at)}
+                        {r.user && ` · ${personName(r.user)}`}
+                      </span>
+                    ),
                   },
                 ]}
               />

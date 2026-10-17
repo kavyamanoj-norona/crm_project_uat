@@ -33,9 +33,11 @@ export default async function CasesPage({ searchParams }: PageProps<"/service/ca
   const type = param(sp, "type") ?? "";
   const from = param(sp, "from") ?? "";
   const to = param(sp, "to") ?? "";
+  const stage = list.tab === "all" || list.tab === "closed" ? list.tab : "open";
   const scope = await getBranchScope(user);
   const [{ rows, total }, staffOptions, intake, tat] = await Promise.all([
     listCases(list, branchWhere(scope), {
+      stage,
       type: isCaseTypeFilter(type) ? type : undefined,
       status: status || undefined,
       engineerId: engineer || undefined,
@@ -70,6 +72,11 @@ export default async function CasesPage({ searchParams }: PageProps<"/service/ca
         list={list}
         total={total}
         rows={rows}
+        tabs={[
+          { key: "all", label: "All" },
+          { key: "", label: "In Progress", isDefault: true },
+          { key: "closed", label: "Closed" },
+        ]}
         rowKey={(c) => c.id}
         highlight={(c) => c.id === highlight}
         searchPlaceholder="Search jobsheet / customer / phone / serial…"

@@ -1,4 +1,5 @@
 export const FINANCE_PATHS = {
+  daybook: "/finance/daybook",
   invoices: "/finance/invoices",
   receipts: "/finance/receipts",
   creditNotes: "/finance/credit-notes",
@@ -6,7 +7,6 @@ export const FINANCE_PATHS = {
   payables: "/finance/payables",
   expenses: "/finance/expenses",
   cashBank: "/finance/cash-bank",
-  transfers: "/finance/transfers",
   journal: "/finance/journal",
   ledger: "/finance/ledger",
   accounts: "/finance/accounts",

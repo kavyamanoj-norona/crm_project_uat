@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "StockUnitStatus" ADD VALUE 'OFFICE_CONSUMED';

@@ -94,6 +94,8 @@ export const billLineSchema = z.object({
   // Name as printed on the bill (from the scan); falls back to the catalog item's name when saved.
   description: opt(200),
   hsnSac: opt(20),
+  // Reusable warranty period picked beside the item; saved on every unit bought on the line.
+  warrantyId: opt(40),
   quantity: z
     .string()
     .trim()
@@ -131,6 +133,9 @@ export const billSchema = z
     lines: z.array(billLineSchema).min(1, "Add at least one item").max(100, "Too many items"),
     roundOff: rupees("Round off", { signed: true }),
     notes: opt(1000),
+    // Office use: bought for the office, not for service stock. The purpose says what it is for.
+    isOfficeUse: z.boolean(),
+    officePurpose: opt(150),
     paymentAmount: rupees("Amount paid"),
     paymentMode: z.enum(BILL_PAYMENT_MODES).nullable(),
     paymentRef: opt(60),
@@ -146,6 +151,8 @@ export const billSchema = z
       if (!l.newItem && !l.itemId) ctx.addIssue({ code: "custom", path: ["lines", i, "itemId"], message: "Select an item, or add a new one" });
       if (l.newItem && !l.newName) ctx.addIssue({ code: "custom", path: ["lines", i, "newName"], message: "Enter the item name" });
     });
+    if (b.isOfficeUse && !b.officePurpose)
+      ctx.addIssue({ code: "custom", path: ["officePurpose"], message: "Enter what the office items are for" });
     const lines = b.lines.map((l) => lineAmounts(l.quantity, l.rate, l.gstPercent, l.discountAmt));
     b.lines.forEach((l, i) => {
       if (l.discountAmt > l.quantity * l.rate)
@@ -182,6 +189,7 @@ export type BillFormValues = {
     newType: (typeof NEW_ITEM_TYPES)[number];
     description: string;
     hsnSac: string;
+    warrantyId: string;
     quantity: string;
     rate: string;
     discountPct: string;
@@ -190,6 +198,8 @@ export type BillFormValues = {
   }[];
   roundOff: string;
   notes: string;
+  isOfficeUse: boolean;
+  officePurpose: string;
   paymentAmount: string;
   paymentMode: string;
   paymentRef: string;

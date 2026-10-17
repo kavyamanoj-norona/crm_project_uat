@@ -3,7 +3,8 @@ import { cn } from "@/lib/cn";
 import { listHref, type ListState } from "@/lib/list";
 import { FilterSelect } from "./filter-select";
 
-export type FilterTab = { key: string; label: string; count?: number };
+/** `isDefault` marks the tab shown when no `tab` param is set (first tab when none is marked). */
+export type FilterTab = { key: string; label: string; count?: number; isDefault?: boolean };
 
 /**
  * Segmented filter tabs (All · Admin · Finance …) driven by the `tab` param.
@@ -11,7 +12,8 @@ export type FilterTab = { key: string; label: string; count?: number };
  */
 export function FilterTabs({ list, tabs, tone = "default" }: { list: ListState; tabs: FilterTab[]; tone?: "default" | "blue" }) {
   const blue = tone === "blue";
-  const active = tabs.some((t) => t.key === list.tab) ? list.tab : (tabs[0]?.key ?? "");
+  const defaultKey = (tabs.find((t) => t.isDefault) ?? tabs[0])?.key ?? "";
+  const active = list.tab && tabs.some((t) => t.key === list.tab) ? list.tab : defaultKey;
 
   return (
     <>
@@ -21,8 +23,8 @@ export function FilterTabs({ list, tabs, tone = "default" }: { list: ListState; 
         query={list.query}
         prefix={list.prefix}
         value={active}
-        options={tabs.map((t, i) => ({
-          value: i === 0 ? "" : t.key,
+        options={tabs.map((t) => ({
+          value: t.key === defaultKey ? "" : t.key,
           label: t.count === undefined ? t.label : `${t.label} (${t.count})`,
         }))}
       />
@@ -34,10 +36,10 @@ export function FilterTabs({ list, tabs, tone = "default" }: { list: ListState; 
         )}
       >
         <div className="flex gap-1">
-          {tabs.map((t, i) => (
+          {tabs.map((t) => (
             <Link
               key={t.key || "__default"}
-              href={listHref(list, { tab: i === 0 ? null : t.key })}
+              href={listHref(list, { tab: t.key === defaultKey ? null : t.key })}
               scroll={false}
               aria-current={t.key === active ? "page" : undefined}
               className={cn(

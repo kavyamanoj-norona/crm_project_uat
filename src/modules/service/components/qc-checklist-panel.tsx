@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, FlaskConical, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { initialFormState, type ActionResult, type FormState } from "@/lib/form";
@@ -38,9 +38,14 @@ type QcChecklistDialogProps = {
   action: (prev: FormState, formData: FormData) => Promise<FormState>;
   /** Adds step 2 (move on / send back) after the checklist is saved. */
   next?: QcNextStep;
+  /**
+   * Chip-lab mode: one modal for the checklist and the notes, with "Save progress" (partial answers are kept) and
+   * "Complete Quality Check" (every item answered). No second step.
+   */
+  lab?: boolean;
 };
 
-export function QcChecklistDialog({ trigger, triggerVariant = "secondary", jobsheetNo, items, action, next }: QcChecklistDialogProps) {
+export function QcChecklistDialog({ trigger, triggerVariant = "secondary", jobsheetNo, items, action, next, lab }: QcChecklistDialogProps) {
   return (
     <ModalButton
       trigger={trigger}
@@ -48,12 +53,14 @@ export function QcChecklistDialog({ trigger, triggerVariant = "secondary", jobsh
       size="xl"
       title={`Quality Check — ${jobsheetNo}`}
       description={
-        next
-          ? "Complete the checklist, then choose what happens next. Remarks are required when the answer is No."
-          : "Complete the checklist before moving this case on. Remarks are required when the answer is No."
+        lab
+          ? "Answer every item to complete the quality check, or save your progress and finish later. Remarks are required when the answer is No."
+          : next
+            ? "Complete the checklist, then choose what happens next. Remarks are required when the answer is No."
+            : "Complete the checklist before moving this case on. Remarks are required when the answer is No."
       }
     >
-      {(close) => <QcFlow items={items} action={action} next={next} onDone={close} />}
+      {(close) => <QcFlow items={items} action={action} next={next} lab={lab} onDone={close} />}
     </ModalButton>
   );
 }
@@ -62,8 +69,9 @@ function QcFlow({
   items,
   action,
   next,
+  lab,
   onDone,
-}: Pick<QcChecklistDialogProps, "items" | "action" | "next"> & { onDone: () => void }) {
+}: Pick<QcChecklistDialogProps, "items" | "action" | "next" | "lab"> & { onDone: () => void }) {
   const [step, setStep] = useState<"check" | "next">("check");
   const [answers, setAnswers] = useState<QcAnswer[]>(() =>
     items.map((i) => ({
@@ -91,6 +99,7 @@ function QcFlow({
           setAnswers={setAnswers}
           action={action}
           hasNext={Boolean(next)}
+          lab={lab}
           onSaved={() => (next ? setStep("next") : onDone())}
           onClose={onDone}
         />
@@ -107,6 +116,7 @@ function ChecklistStep({
   setAnswers,
   action,
   hasNext,
+  lab,
   onSaved,
   onClose,
 }: {
@@ -115,20 +125,31 @@ function ChecklistStep({
   setAnswers: React.Dispatch<React.SetStateAction<QcAnswer[]>>;
   action: QcChecklistDialogProps["action"];
   hasNext: boolean;
+  lab?: boolean;
   onSaved: () => void;
   onClose: () => void;
 }) {
   const [state, formAction, pending] = useActionState(action, initialFormState);
   const [showErrors, setShowErrors] = useState(false);
+  // Lab mode has two submit buttons; the hidden `intent` field tells the server which one was used.
+  const intent = useRef<HTMLInputElement>(null);
+  const [progressMode, setProgressMode] = useState(false);
 
-  const { onSubmit, onChange } = useFormFeedback({
+  const { errors, onSubmit, onChange } = useFormFeedback({
     state,
     validate: () => {
+      const saveProgress = Boolean(lab) && intent.current?.value === "progress";
+      setProgressMode(saveProgress);
       setShowErrors(true);
-      const problem = answers.map(qcAnswerError).find(Boolean);
+      const rows = saveProgress ? answers.filter((a) => a.passed) : answers;
+      const problem = rows.map(qcAnswerError).find(Boolean) ?? (saveProgress && rows.length === 0 ? "Answer at least one item to save progress" : null);
       return problem ? { answers: [problem] } : null;
     },
   });
+  const submit = (form: HTMLButtonElement["form"], value: "progress" | "complete") => {
+    if (intent.current) intent.current.value = value;
+    form?.requestSubmit();
+  };
 
   useEffect(() => {
     if (state.ok) onSaved();
@@ -142,11 +163,13 @@ function ChecklistStep({
   return (
     <form action={formAction} onSubmit={onSubmit} onChange={onChange} noValidate className="space-y-4">
       <input type="hidden" name="answers" value={JSON.stringify(answers)} />
+      {lab && <input ref={intent} type="hidden" name="intent" defaultValue="complete" />}
 
       <ul className="divide-y divide-border rounded-lg border border-border">
         {items.map((item, i) => {
           const a = answers[i]!;
-          const rowError = showErrors ? qcAnswerError(a) : null;
+          // Saving progress only checks the items that have been answered.
+          const rowError = showErrors && !(progressMode && !a.passed) ? qcAnswerError(a) : null;
           return (
             <li key={item.id} className="px-4 py-2.5">
               {/* One line per check: name · Yes / No · remarks (stacks on small screens) */}
@@ -192,22 +215,45 @@ function ChecklistStep({
         })}
       </ul>
 
+      {lab && (
+        <div>
+          <label htmlFor="qc-lab-note" className="mb-1 block text-sm font-medium">
+            Notes
+          </label>
+          <Textarea id="qc-lab-note" name="note" rows={2} placeholder="Enter notes" aria-invalid={errors.note ? true : undefined} />
+          <p className="mt-1 text-xs text-text-muted">{errors.note?.[0] ?? "Optional. Shown on the timeline when the quality check is completed."}</p>
+        </div>
+      )}
+
+      {errors.answers?.[0] && !showErrors && <p className="text-xs text-danger">{errors.answers[0]}</p>}
       {state.message && !state.ok && <p className="rounded-md bg-danger/5 px-3 py-2 text-sm text-danger">{state.message}</p>}
 
       <div className="flex justify-end gap-2">
         <Button variant="secondary" onClick={onClose}>
           Close
         </Button>
-        <Button type="submit" disabled={pending}>
-          {pending && <Loader2 className="size-4 animate-spin" />}
-          {hasNext ? (
-            <>
-              Save & continue <ArrowRight className="size-4" />
-            </>
-          ) : (
-            "Save checklist"
-          )}
-        </Button>
+        {lab ? (
+          <>
+            <Button variant="secondary" disabled={pending} onClick={(e) => submit(e.currentTarget.form, "progress")}>
+              Save progress
+            </Button>
+            <Button disabled={pending} onClick={(e) => submit(e.currentTarget.form, "complete")}>
+              {pending && <Loader2 className="size-4 animate-spin" />}
+              Complete Quality Check
+            </Button>
+          </>
+        ) : (
+          <Button type="submit" disabled={pending}>
+            {pending && <Loader2 className="size-4 animate-spin" />}
+            {hasNext ? (
+              <>
+                Save & continue <ArrowRight className="size-4" />
+              </>
+            ) : (
+              "Save checklist"
+            )}
+          </Button>
+        )}
       </div>
     </form>
   );

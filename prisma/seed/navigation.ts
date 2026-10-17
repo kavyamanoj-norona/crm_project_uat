@@ -85,7 +85,6 @@ export const MODULES: ModuleDef[] = [
     entries: [
       { title: "Dashboard", path: "/sales/dashboard", icon: "layout-dashboard" },
       { title: "Direct Sales", path: "/sales/direct", icon: "tag" },
-      { title: "Daybook & Expenses", path: "/sales/daybook", icon: "book-open", roles: [BM], approve: [BM] },
       {
         group: "Manage",
         icon: "sliders-horizontal",
@@ -102,38 +101,39 @@ export const MODULES: ModuleDef[] = [
     path: "/finance",
     roles: [BM],
     entries: [
+      // The one Finance screen branches use: their day's takings and expenses. Everything else here is Admin only.
+      { title: "Daybook & Expenses", path: "/finance/daybook", icon: "book-open", roles: [BM], approve: [BM] },
       {
         group: "Sales & Receipts",
         icon: "receipt",
         items: [
-          { title: "Invoices", path: "/finance/invoices", icon: "file-text" },
-          { title: "Receipts", path: "/finance/receipts", icon: "receipt" },
-          { title: "Credit Notes", path: "/finance/credit-notes", icon: "file-minus" },
-          { title: "Customer Dues", path: "/finance/pending-dues", icon: "clock" },
+          { title: "Invoices", path: "/finance/invoices", icon: "file-text", roles: [] },
+          { title: "Receipts", path: "/finance/receipts", icon: "receipt", roles: [] },
+          { title: "Credit Notes", path: "/finance/credit-notes", icon: "file-minus", roles: [] },
+          { title: "Customer Dues", path: "/finance/pending-dues", icon: "clock", roles: [] },
         ],
       },
       {
         group: "Purchases & Payables",
         icon: "shopping-cart",
-        items: [{ title: "Supplier Payables", path: "/finance/payables", icon: "truck", roles: [] }], // Head Office (admin) only
+        items: [{ title: "Payables", path: "/finance/payables", icon: "wallet", roles: [] }], // Head Office (admin) only
       },
       {
         group: "Expenses & Banking",
         icon: "landmark",
         items: [
-          { title: "Expenses", path: "/finance/expenses", icon: "wallet" },
-          { title: "Cash & Bank", path: "/finance/cash-bank", icon: "banknote" },
-          { title: "Inter-branch Transfers", path: "/finance/transfers", icon: "arrow-left-right", roles: [] }, // Head Office (admin) only
+          { title: "Expenses", path: "/finance/expenses", icon: "wallet", roles: [] },
+          { title: "Cash & Bank", path: "/finance/cash-bank", icon: "banknote", roles: [] },
         ],
       },
       {
         group: "Accounting",
         icon: "book",
         items: [
-          { title: "Journal Entries", path: "/finance/journal", icon: "book-open", readOnly: [BM] },
-          { title: "Ledger", path: "/finance/ledger", icon: "book" },
-          { title: "Chart of Accounts", path: "/finance/accounts", icon: "list-tree", readOnly: [BM] },
-          { title: "Trial Balance", path: "/finance/trial-balance", icon: "scale" },
+          { title: "Journal Entries", path: "/finance/journal", icon: "book-open", roles: [], readOnly: [BM] },
+          { title: "Ledger", path: "/finance/ledger", icon: "book", roles: [] },
+          { title: "Chart of Accounts", path: "/finance/accounts", icon: "list-tree", roles: [], readOnly: [BM] },
+          { title: "Trial Balance", path: "/finance/trial-balance", icon: "scale", roles: [] },
           { title: "Reconciliation", path: "/finance/reconciliation", icon: "check-check", roles: [] }, // Head Office (admin) only
         ],
       },
@@ -141,9 +141,9 @@ export const MODULES: ModuleDef[] = [
         group: "Reports",
         icon: "bar-chart-2",
         items: [
-          { title: "Profit & Loss", path: "/finance/reports/profit-loss", icon: "trending-up" },
-          { title: "Balance Sheet", path: "/finance/reports/balance-sheet", icon: "scale" },
-          { title: "Income & Expense", path: "/finance/reports/income-expense", icon: "area-chart" },
+          { title: "Profit & Loss", path: "/finance/reports/profit-loss", icon: "trending-up", roles: [] },
+          { title: "Balance Sheet", path: "/finance/reports/balance-sheet", icon: "scale", roles: [] },
+          { title: "Income & Expense", path: "/finance/reports/income-expense", icon: "area-chart", roles: [] },
         ],
       },
     ],
@@ -167,6 +167,8 @@ export const MODULES: ModuleDef[] = [
           // The one item catalog. Everyone can look items up; only the Purchase Manager (and admins) add or change them.
           { title: "Items", path: "/inventory/items", icon: "package", roles: EVERYONE, readOnly: [BM, SALES, CS, CHIP] },
           { title: "Suppliers", path: "/inventory/suppliers", icon: "truck", approve: [PM] },
+          // Reusable warranty periods for purchase bills: Admin and the Purchase Manager.
+          { title: "Manage Warranty", path: "/inventory/warranties", icon: "shield-check", roles: [PM] },
           // USID numbering and GST rates: Admin (sees everything) and the Purchase Manager only.
           { title: "Configuration", path: "/inventory/configuration", icon: "settings", roles: [PM] },
         ],

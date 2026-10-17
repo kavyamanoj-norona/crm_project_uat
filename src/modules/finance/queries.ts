@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "@/server/db";
 import type { Prisma } from "@/generated/prisma/client";
+import { countBankAtBranches } from "./bank";
 import { ACCT } from "./ledger";
 
 // Report queries over the journal. Branch filter: one branch, or null for the consolidated Head Office view.
@@ -113,7 +114,8 @@ export async function supplierPayables() {
 /** Cash and bank balances per branch. */
 export async function cashAndBank(branchId: string | null) {
   const [accounts, branches] = await Promise.all([
-    db.account.findMany({ where: { code: { in: [ACCT.CASH, ACCT.BANK] } }, select: { id: true, code: true, name: true } }),
+    // Cash in Hand plus every bank account (the default one and any Head Office bank accounts added later).
+    db.account.findMany({ where: { OR: [{ code: { in: [ACCT.CASH, ACCT.BANK] } }, { type: "ASSET", subType: "BANK" }] }, select: { id: true, code: true, name: true } }),
     db.branch.findMany({ where: { isActive: true, ...(branchId ? { id: branchId } : {}) }, orderBy: { code: "asc" }, select: { id: true, code: true, name: true } }),
   ]);
   const sums = await db.journalLine.groupBy({ by: ["accountId", "branchId"], where: { accountId: { in: accounts.map((a) => a.id) }, ...(branchId ? { branchId } : {}) }, _sum: { debitPaise: true, creditPaise: true } });
@@ -122,8 +124,8 @@ export async function cashAndBank(branchId: string | null) {
     return (s?.debitPaise ?? 0) - (s?.creditPaise ?? 0);
   };
   const cash = accounts.find((a) => a.code === ACCT.CASH)!;
-  const bank = accounts.find((a) => a.code === ACCT.BANK)!;
-  return branches.map((b) => ({ ...b, cash: cell(cash.id, b.id), bank: cell(bank.id, b.id) }));
+  const banks = accounts.filter((a) => a.code !== ACCT.CASH);
+  return branches.map((b) => ({ ...b, cash: cell(cash.id, b.id), bank: banks.reduce((s, a) => s + cell(a.id, b.id), 0) }));
 }
 
 /** Checks that the books agree with each other and with the business records. */
@@ -147,12 +149,13 @@ export async function reconcile() {
     const have = new Set(done.map((d) => d.sourceId));
     return ids.filter((i) => !have.has(i.id)).length;
   };
-  const [missInv, missBill, missPay, missBillPay, missSale] = await Promise.all([
+  const [missInv, missBill, missPay, missBillPay, missSale, bankAtBranch] = await Promise.all([
     posted("CASE_INVOICE", invoices),
     posted("PURCHASE_BILL", bills),
     posted("CASE_PAYMENT", payments),
     posted("PURCHASE_PAYMENT", billPayments),
     posted("DIRECT_SALE", sales),
+    countBankAtBranches(),
   ]);
   return {
     debit: totals._sum.debitPaise ?? 0,
@@ -163,7 +166,7 @@ export async function reconcile() {
     dueBills: (billSum._sum.totalPaise ?? 0) - (billSum._sum.paidPaise ?? 0),
     advanceLedger,
     advancesTaken: advanceSum._sum.amountPaise ?? 0,
-    missing: { invoices: missInv, bills: missBill, payments: missPay, billPayments: missBillPay, sales: missSale },
+    missing: { invoices: missInv, bills: missBill, payments: missPay, billPayments: missBillPay, sales: missSale, bankAtBranch },
   };
 }
 

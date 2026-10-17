@@ -14,7 +14,7 @@ import { canRequestParts, type CaseStatusValue } from "@/modules/service/case-sc
 import { createReplacementRequest } from "../replacement";
 import { INVENTORY_PATHS } from "../paths";
 import { requirePurchaseManager } from "../purchase-access";
-import { partRequestSchema, purchaseRequestSchema } from "../schemas";
+import { partRequestSchema, purchaseRequestSchema, stockRequestSchema } from "../schemas";
 
 const periodFmt = new Intl.DateTimeFormat("en-IN", {
   timeZone: "Asia/Kolkata",
@@ -55,6 +55,48 @@ export async function raisePurchaseRequest(_prev: FormState, formData: FormData)
 }
 
 /**
+ * A branch requests stock of a part or accessory from Head Office straight from the Items catalog, with no case.
+ * One request can ask for several units; the Purchase Manager later gives each unit its own USID and transfers them together.
+ */
+export async function requestItemStock(itemId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const parsed = stockRequestSchema.safeParse(pick(formData, ["quantity", "notes"]));
+  if (!parsed.success) return toFieldErrors(parsed.error, formData);
+  try {
+    const user = await requireActionPermission(INVENTORY_PATHS.purchasing, "canCreate");
+    // Only branch users request from Head Office; the Purchase Manager raises requests on the Purchasing page.
+    if (!user.privilege.isBranchBound || !user.branchId) throw new ForbiddenError();
+    const branchId = user.branchId;
+
+    const item = await db.item.findFirst({ where: { id: itemId, isActive: true }, select: { name: true, type: true } });
+    if (!item) return { message: "Item not found." };
+    if (item.type !== "PART" && item.type !== "ACCESSORY") return { message: "Only spare parts and accessories can be requested." };
+
+    const branch = await db.branch.findUniqueOrThrow({ where: { id: branchId }, select: { code: true } });
+    const { quantity, notes } = parsed.data;
+    const code = await db.$transaction(async (tx) => {
+      const seq = await nextSequence(tx, `PR:${branch.code}:${period()}`);
+      const code = `PR-${branch.code.toUpperCase()}-${period()}-${String(seq).padStart(3, "0")}`;
+      await tx.purchaseRequest.create({
+        data: { code, branchId, itemId, quantity, caseId: null, notes: notes ?? null, requestedById: user.id },
+      });
+      return code;
+    });
+    await logActivity({
+      action: "inventory.request",
+      userId: user.id,
+      entity: "PurchaseRequest",
+      entityId: code,
+      detail: `${code}: requested ${quantity} × ${item.name} from Head Office`,
+    });
+    revalidatePath(INVENTORY_PATHS.purchasing);
+    return { ok: true, message: `Requested ${quantity} × ${item.name} (${code}).` };
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { message: e.message };
+    throw e;
+  }
+}
+
+/**
  * Reorder a part for the case because the unit already received is defective. The dialog confirms it; the reason is
  * required and, with the person who confirmed, is shown to the Purchase Manager on the Replacement / Reorder request.
  */
@@ -81,13 +123,13 @@ export async function reorderPartForCase(caseItemId: string, _prev: FormState, f
   }
 }
 
-/** Part request from a case line: notes optional, at least one photo of the part is mandatory. */
+/** Part request from a case line: model number required; notes and photos of the part are optional. */
 export async function requestPartForCase(caseItemId: string, _prev: FormState, formData: FormData): Promise<FormState> {
   const parsed = partRequestSchema.safeParse(pick(formData, ["modelNo", "notes"]));
   if (!parsed.success) return toFieldErrors(parsed.error, formData);
 
   const photos = formPhotos(formData);
-  const photoMsg = photos.length === 0 ? "Add at least one photo" : photoError(photos);
+  const photoMsg = photoError(photos);
   if (photoMsg) return { message: "Please fix the highlighted fields.", fieldErrors: { photos: [photoMsg] } };
 
   try {
@@ -111,7 +153,7 @@ export async function requestPartForCase(caseItemId: string, _prev: FormState, f
       });
       return pr.id;
     });
-    await saveCasePhotos(caseId, photos, user.id, { kind: "PART_REQUEST_PHOTO", prefix: "request", purchaseRequestId: requestId });
+    if (photos.length > 0) await saveCasePhotos(caseId, photos, user.id, { kind: "PART_REQUEST_PHOTO", prefix: "request", purchaseRequestId: requestId });
 
     revalidatePath(INVENTORY_PATHS.stock);
     revalidatePath(INVENTORY_PATHS.purchasing);

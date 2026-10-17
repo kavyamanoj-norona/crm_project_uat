@@ -14,7 +14,11 @@ import { db } from "@/server/db";
 import { syncStockWithUnits } from "@/modules/inventory/stock-sync";
 import { adjustStock, consumeStockItem } from "@/modules/inventory/actions/stock";
 import { INVENTORY_PATHS } from "@/modules/inventory/paths";
-import { STOCK_SORTS, countAvailableUnits, listPhysicalItems, listStockPage, listStockUnitsPage } from "@/modules/inventory/queries";
+import { STOCK_SORTS, countAvailableUnits, listOfficeConsumedPage, listPhysicalItems, listStockPage, listStockUnitsPage } from "@/modules/inventory/queries";
+import { consumeOfficeUnit } from "@/modules/inventory/actions/office";
+import { OfficeConsumeDialog } from "@/modules/inventory/components/office-consume-dialog";
+import { isPurchaseManager } from "@/modules/inventory/purchase-access";
+import { listActiveStaff } from "@/modules/service/queries";
 import { LinkButton } from "@/components/ui/button";
 
 export const metadata = { title: "Stock" };
@@ -35,11 +39,16 @@ export default async function StockPage({ searchParams }: PageProps<"/inventory/
 
   // Head Office holds the purchased stock: its owners see it in every branch view, branch users never do.
   const withHo = !user.privilege.isBranchBound;
-  const view = param(sp, "view") === "units" ? "units" : "items";
+  const viewParam = param(sp, "view");
+  const view = viewParam === "units" ? "units" : viewParam === "office" ? "office" : "items";
+  // Only the Purchase Manager (and admins) hand office-use units to employees.
+  const canOfficeConsume = canEdit && isPurchaseManager(user);
 
-  const [{ rows, total, tabs, valuePaise }, units, unitCounts, physicalItems, branchOptions, editing] = await Promise.all([
+  const [{ rows, total, tabs, valuePaise }, units, officeConsumed, employees, unitCounts, physicalItems, branchOptions, editing] = await Promise.all([
     listStockPage(list, scope.branchId, withHo),
     view === "units" ? listStockUnitsPage(list, scope.branchId, withHo) : Promise.resolve({ rows: [], total: 0, tabs: [] }),
+    view === "office" ? listOfficeConsumedPage(list) : Promise.resolve({ rows: [], total: 0 }),
+    view === "units" && canOfficeConsume ? listActiveStaff() : Promise.resolve([] as { value: string; label: string }[]),
     countAvailableUnits(scope.branchId, withHo),
     listPhysicalItems(),
     listBranchOptions(),
@@ -93,8 +102,69 @@ export default async function StockPage({ searchParams }: PageProps<"/inventory/
         <LinkButton href={`${INVENTORY_PATHS.stock}?view=units`} variant={view === "units" ? "primary" : "secondary"} size="sm">
           Units (USIDs)
         </LinkButton>
+        {!user.privilege.isBranchBound && (
+          <LinkButton href={`${INVENTORY_PATHS.stock}?view=office`} variant={view === "office" ? "primary" : "secondary"} size="sm">
+            Office Consumed
+          </LinkButton>
+        )}
       </div>
-      {view === "units" ? (
+      {view === "office" ? (
+        <ListView
+          list={list}
+          total={officeConsumed.total}
+          rows={officeConsumed.rows}
+          rowKey={(u) => u.id}
+          searchPlaceholder="Search by USID, item, employee, remarks or bill"
+          empty="Nothing consumed for the office yet. Consume an office-use unit from Units (USIDs) → Office use."
+          columns={[
+            { header: "#", cell: (_, i) => i + 1 + (list.page - 1) * list.pageSize },
+            { header: "USID", cell: (u) => <span className="font-medium tabular-nums">{u.usid}</span> },
+            {
+              header: "Item",
+              cell: (u) => (
+                <>
+                  <p className="flex items-center gap-2 font-medium">
+                    {u.item.name} <Badge tone="violet">Office use</Badge>
+                  </p>
+                  <p className="text-xs text-text-muted">{u.item.code}</p>
+                </>
+              ),
+            },
+            {
+              header: "Employee",
+              cell: (u) => (u.officeEmployee ? [u.officeEmployee.firstName, u.officeEmployee.lastName].filter(Boolean).join(" ") : "—"),
+            },
+            { header: "Remarks", cell: (u) => <p className="max-w-60 whitespace-pre-wrap break-words text-sm">{u.officeRemarks ?? "—"}</p> },
+            {
+              header: "Bill",
+              cell: (u) =>
+                u.billItem ? (
+                  <>
+                    <Link href={`${INVENTORY_PATHS.billing}/${u.billItem.bill.id}`} className="text-primary hover:underline">
+                      {u.billItem.bill.billNo}
+                    </Link>
+                    {u.billItem.bill.officePurpose && <p className="text-xs text-text-muted">{u.billItem.bill.officePurpose}</p>}
+                  </>
+                ) : (
+                  "—"
+                ),
+            },
+            {
+              header: "Warranty",
+              cell: (u) => (u.warrantyEndsAt ? <>{u.warrantyLabel ?? u.warranty?.name}<p className="text-xs text-text-muted">until {formatDate(u.warrantyEndsAt)}</p></> : "—"),
+            },
+            {
+              header: "Consumed",
+              cell: (u) => (
+                <span className="text-xs text-text-muted">
+                  {u.consumedAt ? formatDate(u.consumedAt) : "—"}
+                  {u.consumedBy && <> · {[u.consumedBy.firstName, u.consumedBy.lastName].filter(Boolean).join(" ")}</>}
+                </span>
+              ),
+            },
+          ]}
+        />
+      ) : view === "units" ? (
       <ListView
         list={list}
         total={units.total}
@@ -110,7 +180,9 @@ export default async function StockPage({ searchParams }: PageProps<"/inventory/
             header: "Item",
             cell: (u) => (
               <>
-                <p className="font-medium">{u.item.name}</p>
+                <p className="flex items-center gap-2 font-medium">
+                  {u.item.name} {u.isOfficeUse && <Badge tone="violet">Office use</Badge>}
+                </p>
                 <p className="text-xs text-text-muted">{u.item.code}</p>
               </>
             ),
@@ -127,6 +199,10 @@ export default async function StockPage({ searchParams }: PageProps<"/inventory/
               ),
           },
           { header: "Supplier", cell: (u) => u.billItem?.bill.supplier.name ?? "—" },
+          {
+            header: "Warranty",
+            cell: (u) => (u.warrantyEndsAt ? <>{u.warrantyLabel ?? u.warranty?.name}<p className="text-xs text-text-muted">until {formatDate(u.warrantyEndsAt)}</p></> : "—"),
+          },
           { header: "Location", cell: (u) => `${u.branch.name} (${u.branch.code})` },
           {
             header: "Status",
@@ -159,6 +235,17 @@ export default async function StockPage({ searchParams }: PageProps<"/inventory/
                 "—"
               ),
           },
+          ...(canOfficeConsume
+            ? [
+                {
+                  header: "Action",
+                  cell: (u: (typeof units.rows)[number]) =>
+                    u.isOfficeUse && u.status === "AVAILABLE" ? (
+                      <OfficeConsumeDialog usid={u.usid} itemName={u.item.name} employees={employees} action={consumeOfficeUnit.bind(null, u.id)} />
+                    ) : null,
+                },
+              ]
+            : []),
         ]}
       />
       ) : (

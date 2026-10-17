@@ -14,13 +14,20 @@ import { ITEM_TYPE_LABELS, ITEM_TYPE_TONE, gstOptions, itemTypeOptions, unitOpti
 import { ITEM_SORTS, listItemCategories, listItems } from "@/modules/admin/queries";
 import { INVENTORY_PATHS } from "@/modules/inventory/paths";
 import { RULES, getNumberRule } from "@/server/rules";
-import { requirePageAccess } from "@/server/rbac/guard";
+import { getMenuPermission, requirePageAccess } from "@/server/rbac/guard";
+import { requestItemStock } from "@/modules/inventory/actions/purchase";
+import { RequestStockDialog } from "@/modules/inventory/components/request-stock-dialog";
 
 export const metadata = { title: "Items" };
 
 
 export default async function ItemsPage({ searchParams }: PageProps<"/inventory/items">) {
-  const { permission } = await requirePageAccess(INVENTORY_PATHS.items);
+  const { user, permission: menuPermission } = await requirePageAccess(INVENTORY_PATHS.items);
+  // Branch users get a read-only catalog: no add, edit or delete, whatever the menu permission says.
+  const branchUser = user.privilege.isBranchBound && !user.privilege.isSuperAdmin;
+  const permission = branchUser ? { ...menuPermission, canCreate: false, canEdit: false, canDelete: false, canApprove: false } : menuPermission;
+  // They can ask Head Office for stock of a part or accessory (needs create rights on Purchasing).
+  const canRequest = branchUser && Boolean(user.branchId) && (await getMenuPermission(user, INVENTORY_PATHS.purchasing)).canCreate;
   const sp = await searchParams;
   const list = listState(INVENTORY_PATHS.items, sp, { sorts: ITEM_SORTS, defaultSort: "name", defaultDir: "asc" });
   const editId = param(sp, "edit");
@@ -105,16 +112,26 @@ export default async function ItemsPage({ searchParams }: PageProps<"/inventory/
           { header: "Unit", cell: (r) => r.unit },
           { header: "Warranty", cell: (r) => (r.warrantyDays ? `${r.warrantyDays} days` : "—") },
           { header: "Last updated", sort: "updatedAt", cell: (r) => <WhoWhen by={r.updatedBy} at={r.updatedAt} /> },
-          {
-            header: "Action",
-            cell: (r) =>
-              permission.canEdit && (
-                <RowActions
-                  editHref={`${INVENTORY_PATHS.items}?edit=${r.id}`}
-                  remove={deleteRecord.bind(null, "item", r.id)}
-                />
-              ),
-          },
+          ...(permission.canEdit || canRequest
+            ? [
+                {
+                  header: "Action",
+                  cell: (r: (typeof rows)[number]) =>
+                    canRequest ? (
+                      (r.type === "PART" || r.type === "ACCESSORY") && r.isActive ? (
+                        <RequestStockDialog itemName={r.name} itemCode={r.code} action={requestItemStock.bind(null, r.id)} />
+                      ) : (
+                        <span className="text-text-disabled">—</span>
+                      )
+                    ) : (
+                      <RowActions
+                        editHref={`${INVENTORY_PATHS.items}?edit=${r.id}`}
+                        remove={deleteRecord.bind(null, "item", r.id)}
+                      />
+                    ),
+                },
+              ]
+            : []),
         ]}
       />
     </AdminPage>

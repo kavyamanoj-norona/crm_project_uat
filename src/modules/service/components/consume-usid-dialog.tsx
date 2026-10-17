@@ -15,10 +15,12 @@ type Props = {
   options: UsidOption[];
   /** Branch stock without a USID can be used too. */
   allowStock: boolean;
+  /** Whose stock the units are from, shown in the picker ("Branch" by default, "Head Office" in the lab). */
+  location?: string;
   action: (prev: FormState, formData: FormData) => Promise<FormState>;
 };
 
-function Picker({ options, allowStock, jobsheetNo, error }: Pick<Props, "options" | "allowStock" | "jobsheetNo"> & { error?: string }) {
+function Picker({ options, allowStock, jobsheetNo, location, error }: Pick<Props, "options" | "allowStock" | "jobsheetNo"> & { location: string; error?: string }) {
   // The USID allocated to this case is pre-selected; the user still has to confirm.
   const [picked, setPicked] = useState(options.find((o) => o.mine)?.id ?? "");
   const chosen = options.find((o) => o.id === picked);
@@ -36,19 +38,25 @@ function Picker({ options, allowStock, jobsheetNo, error }: Pick<Props, "options
           >
             <input type="radio" name="unitId" value={o.id} checked={picked === o.id} onChange={() => setPicked(o.id)} className="size-4 accent-primary" />
             <span className="font-semibold tabular-nums">{o.usid}</span>
-            {o.mine ? <Badge tone="success">Allocated to this case</Badge> : <Badge tone="warning">Allocated to {o.otherCase ?? "another case"}</Badge>}
+            {o.mine ? (
+              <Badge tone="success">Allocated to this case</Badge>
+            ) : o.otherCase ? (
+              <Badge tone="warning">Allocated to {o.otherCase}</Badge>
+            ) : (
+              <Badge tone="navy">In stock</Badge>
+            )}
           </label>
         ))}
         {allowStock && (
           <label className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-sm transition-colors ${picked === "stock" ? "border-primary bg-primary-soft" : "border-border hover:border-primary"}`}>
             <input type="radio" name="unitId" value="stock" checked={picked === "stock"} onChange={() => setPicked("stock")} className="size-4 accent-primary" />
-            <span className="font-medium">Branch stock without a USID</span>
+            <span className="font-medium">{location} stock without a USID</span>
           </label>
         )}
         {error && <p className="text-xs text-danger">{error}</p>}
       </fieldset>
 
-      {chosen && !chosen.mine && (
+      {chosen && !chosen.mine && chosen.otherCase && (
         <p className="flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
           <span>
@@ -59,7 +67,7 @@ function Picker({ options, allowStock, jobsheetNo, error }: Pick<Props, "options
       )}
       <p className="rounded-lg bg-surface-muted px-3 py-2 text-sm">
         {picked
-          ? <>You are about to consume <strong className="tabular-nums">{picked === "stock" ? "branch stock (no USID)" : chosen?.usid}</strong> on <strong>{jobsheetNo}</strong>. This cannot be undone.</>
+          ? <>You are about to consume <strong className="tabular-nums">{picked === "stock" ? `${location.toLowerCase()} stock (no USID)` : chosen?.usid}</strong> on <strong>{jobsheetNo}</strong>. This cannot be undone.</>
           : "Select a USID to continue."}
       </p>
     </div>
@@ -67,7 +75,7 @@ function Picker({ options, allowStock, jobsheetNo, error }: Pick<Props, "options
 }
 
 /** "Consume" on a case line: pick the USID, see it confirmed, then consume. Nothing is consumed without this step. */
-export function ConsumeUsidDialog({ itemName, jobsheetNo, options, allowStock, action }: Props) {
+export function ConsumeUsidDialog({ itemName, jobsheetNo, options, allowStock, location = "Branch", action }: Props) {
   return (
     <ActionDialog
       trigger={
@@ -83,7 +91,7 @@ export function ConsumeUsidDialog({ itemName, jobsheetNo, options, allowStock, a
       validate={(fd) => (String(fd.get("unitId") ?? "") ? null : { unitId: ["Select the USID to consume"] })}
       submitLabel="Confirm consume"
     >
-      {(errors) => <Picker options={options} allowStock={allowStock} jobsheetNo={jobsheetNo} error={errors.unitId?.[0]} />}
+      {(errors) => <Picker options={options} allowStock={allowStock} jobsheetNo={jobsheetNo} location={location} error={errors.unitId?.[0]} />}
     </ActionDialog>
   );
 }

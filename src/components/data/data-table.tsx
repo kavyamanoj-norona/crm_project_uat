@@ -6,6 +6,8 @@ import { listHref, type ListState } from "@/lib/list";
 
 export type Column<T> = {
   header: string;
+  /** Shown in the header cell instead of the text (e.g. a select-all checkbox); `header` stays the column's key and aria label. */
+  headerNode?: React.ReactNode;
   /** Receives the row and its absolute position (0-based, across pages). */
   cell: (row: T, index: number) => React.ReactNode;
   /** Sort key understood by the page's query; makes the header clickable. */
@@ -73,7 +75,7 @@ export function DataTable<T>({ columns, rows, rowKey, empty = "No records found.
                   <SortHeader column={c} list={list} blue={blue} />
                 ) : (
                   <>
-                    {c.header}
+                    {c.headerNode ?? c.header}
                     {c.required && <span className={cn("ml-0.5", blue ? "text-danger" : "text-danger")}>*</span>}
                   </>
                 )}

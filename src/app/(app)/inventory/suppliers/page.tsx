@@ -37,6 +37,7 @@ export default async function SuppliersPage({ searchParams }: PageProps<"/invent
         phone: editing.phone ?? "",
         email: editing.email ?? "",
         address: editing.address ?? "",
+        paymentTermDays: editing.paymentTermDays === null ? "" : String(editing.paymentTermDays),
       }
     : undefined;
 

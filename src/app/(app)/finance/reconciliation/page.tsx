@@ -24,6 +24,7 @@ export default async function ReconciliationPage() {
     { check: "Customer payments not yet in the ledger", books: 0, records: r.missing.payments, count: true, ok: r.missing.payments === 0 },
     { check: "Purchase bills not yet in the ledger", books: 0, records: r.missing.bills, count: true, ok: r.missing.bills === 0 },
     { check: "Supplier payments not yet in the ledger", books: 0, records: r.missing.billPayments, count: true, ok: r.missing.billPayments === 0 },
+    { check: "Bank receipts and payments still booked on a branch, not the Head Office bank", books: 0, records: r.missing.bankAtBranch, count: true, ok: r.missing.bankAtBranch === 0 },
     { check: "Direct sales not yet in the ledger", books: 0, records: r.missing.sales, count: true, ok: r.missing.sales === 0 },
   ];
 

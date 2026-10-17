@@ -6,7 +6,7 @@ import { ModalButton } from "@/components/ui/modal-button";
 import { formatDate, formatDateTime } from "@/lib/dates";
 
 type Person = { firstName: string; lastName?: string | null } | null | undefined;
-type Photo = { id: string; url: string; fileName: string };
+type Photo = { id: string; url: string; fileName: string; kind?: string };
 type CaseRef = { id: string; jobsheetNo: string } | null | undefined;
 
 const name = (u: Person) => (u ? [u.firstName, u.lastName].filter(Boolean).join(" ") : null);
@@ -261,8 +261,22 @@ export function UnitDetails({ u, status }: { u: UnitData; status: React.ReactNod
         <Notes label="Branch notes" text={u.purchaseRequest?.notes} />
         <Notes label="Transfer note / remarks" text={[u.note, u.purchaseRequest?.pmRemarks].filter(Boolean).join("\n") || null} />
       </div>
-      <Section title={`Photos (${u.attachments.length})`}>
-        <PhotoGrid photos={u.attachments} />
+      {u.attachments.some((p) => p.kind === "RETURN_PHOTO") && (
+        <Section title="Return photos">
+          {/* Each set is labelled with what it belongs to, so photos are never mixed up between cases and items. */}
+          <p className="mb-2 text-sm">
+            <span className="text-text-muted">Case ID </span>
+            {caseLink(u.allocatedCase) ?? "—"}
+            <span className="text-text-muted"> · Item </span>
+            <span className="font-medium">{u.item.name}</span>
+            <span className="text-text-muted"> · USID </span>
+            <span className="font-semibold tabular-nums">{u.usid}</span>
+          </p>
+          <PhotoGrid photos={u.attachments.filter((p) => p.kind === "RETURN_PHOTO")} />
+        </Section>
+      )}
+      <Section title={`Other photos (${u.attachments.filter((p) => p.kind !== "RETURN_PHOTO").length})`}>
+        <PhotoGrid photos={u.attachments.filter((p) => p.kind !== "RETURN_PHOTO")} />
       </Section>
     </div>
   );

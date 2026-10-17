@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "@/server/db";
 import { logActivity } from "@/server/security/activity";
+import { formPhotos, photoError, saveCasePhotos } from "@/server/case-photos";
 import type { ActionResult, FormState } from "@/lib/form";
 import { canRequestParts, type CaseStatusValue } from "@/modules/service/case-schema";
 import { getHeadOfficeBranch } from "./head-office";
@@ -22,16 +23,23 @@ export const RETURN_REASON_LABELS: Record<ReturnReason, string> = {
   DEFECTIVE: "Defective / Not working",
 };
 
-/** Shared by the branch and lab return actions: validates the reason and remarks. */
-export function parseReturn(formData: FormData): { reason: ReturnReason; remarks: string } | { error: FormState } {
+/**
+ * Shared by the branch and lab return actions: validates the reason, remarks and photos. Courier / branch damage must come
+ * with at least one photo; for the other reasons photos are optional.
+ */
+export function parseReturn(formData: FormData): { reason: ReturnReason; remarks: string; photos: File[] } | { error: FormState } {
   const reason = String(formData.get("reason") ?? "") as ReturnReason;
   const remarks = String(formData.get("remarks") ?? "").trim();
+  const photos = formPhotos(formData);
   const errors: Record<string, string[]> = {};
   if (!(RETURN_REASONS as readonly string[]).includes(reason)) errors.reason = ["Select a return reason"];
   if (remarks.length < 3) errors.remarks = ["Add remarks explaining the return"];
   if (remarks.length > 300) errors.remarks = ["Keep the remarks under 300 characters"];
-  if (Object.keys(errors).length > 0) return { error: { message: "Please fix the highlighted fields.", fieldErrors: errors } };
-  return { reason, remarks };
+  if (reason === "COURIER_DAMAGE" && photos.length === 0) errors.photos = ["Add at least one photo of the damage for a courier / branch damage return"];
+  const photoMsg = photoError(photos);
+  if (photoMsg) errors.photos = [photoMsg];
+  if (Object.keys(errors).length > 0) return { error: { message: Object.values(errors)[0]![0]!, fieldErrors: errors } };
+  return { reason, remarks, photos };
 }
 
 const isPhysical = (t: string) => t === "PART" || t === "ACCESSORY";
@@ -64,10 +72,11 @@ export type ConsumableUnit = { id: string; usid: string; mine: boolean; otherCas
  * The USIDs that can be consumed for these items on a case: every unit received at the case's branch and not yet used.
  * The one allocated to this case is marked `mine`; the others belong to other cases and are offered only for urgent reuse.
  */
-export async function consumableUnits(caseId: string, branchId: string, itemIds: string[]): Promise<Record<string, ConsumableUnit[]>> {
+export async function consumableUnits(caseId: string, branchId: string, itemIds: string[], opts: { includeAvailable?: boolean } = {}): Promise<Record<string, ConsumableUnit[]>> {
   if (itemIds.length === 0) return {};
+  // `includeAvailable` (Head Office / chip-level lab): units sitting unallocated in this location's stock can be used directly.
   const units = await db.stockUnit.findMany({
-    where: { branchId, itemId: { in: itemIds }, status: "RECEIVED" },
+    where: { branchId, itemId: { in: itemIds }, isOfficeUse: false, status: opts.includeAvailable ? { in: ["RECEIVED", "AVAILABLE"] } : "RECEIVED" },
     orderBy: [{ receivedAt: "asc" }, { usid: "asc" }],
     select: { id: true, usid: true, itemId: true, allocatedCaseId: true, allocatedCase: { select: { jobsheetNo: true } } },
   });
@@ -97,7 +106,7 @@ export async function caseUsids(caseId: string): Promise<Record<string, string>>
  * - `unitId` = "stock" uses one unit of branch stock that has no USID.
  * Either way it is recorded against the case (USID, case, user) in the usage record and the activity log.
  */
-export async function consumeCasePart(opts: { caseId: string; itemId: string; unitId: string; userId: string }): Promise<ActionResult> {
+export async function consumeCasePart(opts: { caseId: string; itemId: string; unitId: string; userId: string; atHeadOffice?: boolean }): Promise<ActionResult> {
   if (!opts.unitId) return { ok: false, message: "Select the USID to consume." };
   const kase = await db.case.findUnique({ where: { id: opts.caseId }, select: { branchId: true, jobsheetNo: true, status: true } });
   if (!kase) return { ok: false, message: "Case not found." };
@@ -106,6 +115,11 @@ export async function consumeCasePart(opts: { caseId: string; itemId: string; un
   const item = await db.item.findUnique({ where: { id: opts.itemId }, select: { name: true, type: true } });
   if (!item || !isPhysical(item.type)) return { ok: false, message: "Only parts and accessories are consumed." };
 
+  // The chip-level lab works from Head Office stock, whichever branch the case came from; branches use their own stock.
+  const location = opts.atHeadOffice ? await getHeadOfficeBranch() : { id: kase.branchId };
+  const locationLabel = opts.atHeadOffice ? "Head Office" : "this branch";
+  const usable = opts.atHeadOffice ? (["RECEIVED", "AVAILABLE"] as const) : (["RECEIVED"] as const);
+
   const result = await db.$transaction(async (tx) => {
     const settled = await tx.caseItemUsage.findFirst({ where: { caseId: opts.caseId, itemId: opts.itemId, kind: { in: ["CONSUMED", "RETURNED_UNUSED"] } } });
     if (settled) return { ok: false as const, message: "This item is already consumed for this case." };
@@ -113,15 +127,16 @@ export async function consumeCasePart(opts: { caseId: string; itemId: string; un
     if (opts.unitId !== "stock") {
       const unit = await tx.stockUnit.findUnique({
         where: { id: opts.unitId },
-        select: { id: true, usid: true, itemId: true, status: true, branchId: true, allocatedCaseId: true, allocatedCase: { select: { jobsheetNo: true } }, billItem: { select: { taxablePaise: true, quantity: true } } },
+        select: { id: true, usid: true, itemId: true, status: true, branchId: true, isOfficeUse: true, allocatedCaseId: true, allocatedCase: { select: { jobsheetNo: true } }, billItem: { select: { taxablePaise: true, quantity: true } } },
       });
       if (!unit || unit.itemId !== opts.itemId) return { ok: false as const, message: "That USID is not for this item." };
-      if (unit.status !== "RECEIVED" || unit.branchId !== kase.branchId) return { ok: false as const, message: `${unit.usid} is not available at this branch.` };
+      if (unit.isOfficeUse) return { ok: false as const, message: `${unit.usid} is office-use stock and can't be used on a case.` };
+      if (!(usable as readonly string[]).includes(unit.status) || unit.branchId !== location.id) return { ok: false as const, message: `${unit.usid} is not in stock at ${locationLabel}.` };
 
       const reusedFrom = unit.allocatedCaseId && unit.allocatedCaseId !== opts.caseId ? unit.allocatedCase?.jobsheetNo ?? "another case" : null;
       const claimed = await tx.stockUnit.updateMany({
-        where: { id: unit.id, status: "RECEIVED" },
-        data: { status: "CONSUMED", consumedAt: new Date(), consumedById: opts.userId, ...(reusedFrom ? { allocatedCaseId: opts.caseId } : {}) },
+        where: { id: unit.id, status: { in: [...usable] }, branchId: location.id },
+        data: { status: "CONSUMED", consumedAt: new Date(), consumedById: opts.userId, ...(reusedFrom || !unit.allocatedCaseId ? { allocatedCaseId: opts.caseId } : {}) },
       });
       if (claimed.count === 0) return { ok: false as const, message: "This unit was just used by someone else." };
       if (reusedFrom) {
@@ -144,10 +159,10 @@ export async function consumeCasePart(opts: { caseId: string; itemId: string; un
     }
 
     // A unit of branch stock without a USID (not reserved for received units).
-    const stock = await tx.stockItem.findUnique({ where: { branchId_itemId: { branchId: kase.branchId, itemId: opts.itemId } }, select: { quantity: true } });
-    const held = await tx.stockUnit.count({ where: { branchId: kase.branchId, itemId: opts.itemId, status: "RECEIVED" } });
-    if (!stock || stock.quantity - held <= 0) return { ok: false as const, message: "Out of stock." };
-    await tx.stockItem.update({ where: { branchId_itemId: { branchId: kase.branchId, itemId: opts.itemId } }, data: { quantity: { decrement: 1 }, updatedById: opts.userId } });
+    const stock = await tx.stockItem.findUnique({ where: { branchId_itemId: { branchId: location.id, itemId: opts.itemId } }, select: { quantity: true } });
+    const held = await tx.stockUnit.count({ where: { branchId: location.id, itemId: opts.itemId, isOfficeUse: false, status: { in: [...usable] } } });
+    if (!stock || stock.quantity - held <= 0) return { ok: false as const, message: opts.atHeadOffice ? "Stock unavailable at Head Office." : "Out of stock." };
+    await tx.stockItem.update({ where: { branchId_itemId: { branchId: location.id, itemId: opts.itemId } }, data: { quantity: { decrement: 1 }, updatedById: opts.userId } });
     await tx.caseItemUsage.create({ data: { caseId: opts.caseId, itemId: opts.itemId, kind: "CONSUMED", userId: opts.userId } });
     return { ok: true as const, message: "Stock updated.", detail: `${item.name} used from branch stock (no USID) on ${kase.jobsheetNo}` };
   });
@@ -172,6 +187,8 @@ export async function returnCasePart(opts: {
   reason: ReturnReason;
   remarks: string;
   userId: string;
+  /** Photos of the returned part (required by the action for courier / branch damage), kept on the case against the USID. */
+  photos?: File[];
 }): Promise<ActionResult> {
   const kase = await db.case.findUnique({ where: { id: opts.caseId }, select: { jobsheetNo: true, status: true, branchId: true } });
   if (!kase || kase.status === "CLOSED" || kase.status === "CANCELLED") return { ok: false, message: "Items can only be returned before the case is closed." };
@@ -245,12 +262,15 @@ export async function returnCasePart(opts: {
   });
   if (!result) return { ok: false, message: "There is no received, unused unit of this item for the case." };
 
+  const photos = opts.photos ?? [];
+  if (photos.length > 0) await saveCasePhotos(opts.caseId, photos, opts.userId, { kind: "RETURN_PHOTO", prefix: "return", stockUnitId: result.id });
+
   await logActivity({
     action: "case.part.return",
     userId: opts.userId,
     entity: "Case",
     entityId: opts.caseId,
-    detail: `${result.item.name} (${result.usid}) returned from ${kase.jobsheetNo}: ${label} — ${opts.remarks}`,
+    detail: `${result.item.name} (${result.usid}) returned from ${kase.jobsheetNo}: ${label} — ${opts.remarks}${photos.length > 0 ? ` (${photos.length} ${photos.length === 1 ? "photo" : "photos"})` : ""}`,
   });
 
   if (unused) return { ok: true, message: `${result.usid} returned to Head Office stock.` };

@@ -98,9 +98,11 @@ export async function buildCaseHistory(caseId: string, opts: { isAdmin: boolean 
             ? "Sent back to Chip-Level Lab (HO)"
             : "Sent to Chip-Level Lab (HO) after Quality Check"
           : "Handed over to Chip-Level Lab (HO)"
-        : to === "CHIP_BRANCH_RECEIVED"
-          ? "Transferred back to the Branch"
-          : `Moved to ${label(to)}`;
+        : s.fromStatus === to
+          ? `${label(to)} completed`
+          : to === "CHIP_BRANCH_RECEIVED"
+            ? "Transferred back to the Branch"
+            : `Moved to ${label(to)}`;
     entries.push({
       key: `stage-${s.id}`,
       at: s.at,

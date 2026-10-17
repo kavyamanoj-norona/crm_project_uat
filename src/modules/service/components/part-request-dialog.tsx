@@ -12,7 +12,7 @@ type PartRequestDialogProps = {
   action: (prev: FormState, formData: FormData) => Promise<FormState>;
 };
 
-/** "Request" button for an out-of-stock part: notes optional, at least one photo mandatory. */
+/** "Request" button for an out-of-stock part: model number required, notes and photos optional. */
 export function PartRequestDialog({ itemName, action }: PartRequestDialogProps) {
   return (
     <ActionDialog
@@ -24,13 +24,9 @@ export function PartRequestDialog({ itemName, action }: PartRequestDialogProps) 
       triggerVariant="danger"
       triggerSize="sm"
       title={`Request ${itemName}`}
-      description="Enter the model number and attach a photo of the part needed.."
+      description="Enter the model number. A photo of the part needed is optional."
       action={action}
-      validate={(fd) => {
-        const errors: Record<string, string[] | undefined> = { ...validateForm(partRequestSchema, fd) };
-        if (!fd.getAll("photos").some((f) => f instanceof File && f.size > 0)) errors.photos = ["Add at least one photo"];
-        return Object.keys(errors).length > 0 ? errors : null;
-      }}
+      validate={(fd) => validateForm(partRequestSchema, fd)}
       submitLabel="Submit request"
     >
       {(errors) => (
@@ -41,7 +37,7 @@ export function PartRequestDialog({ itemName, action }: PartRequestDialogProps) 
           <Field label="Notes" htmlFor="notes" error={errors.notes}>
             <Textarea id="notes" name="notes" rows={3} placeholder="Enter notes" />
           </Field>
-          <Field label="Photos" htmlFor="photos" required error={errors.photos}>
+          <Field label="Photos" htmlFor="photos" error={errors.photos}>
             <PhotoInput name="photos" allowUpload invalid={Boolean(errors.photos)} />
           </Field>
         </>

@@ -31,8 +31,8 @@ export default async function ChipLabPage({ searchParams }: PageProps<"/service/
   const list = listState(SERVICE_PATHS.lab, sp, {
     sorts: LAB_LIST_SORTS,
     defaultSort: "stageChangedAt",
-    // in progress: longest waiting first; completed: latest first
-    defaultDir: completedTab ? "desc" : "asc",
+    // latest activity first on both tabs
+    defaultDir: "desc",
     defaultPageSize: 25,
   });
 

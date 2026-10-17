@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { confirmBill, scanBill } from "@/modules/inventory/actions/billing";
 import { getGstRates } from "@/modules/inventory/config";
 import { previewNextUsid } from "@/modules/inventory/usid";
-import { listBillableItems, listSuppliers } from "@/modules/inventory/billing-queries";
+import { listBillableItems, listSuppliers, listWarranties } from "@/modules/inventory/billing-queries";
 import { BillEntry } from "@/modules/inventory/components/bill-entry";
 import { INVENTORY_PATHS } from "@/modules/inventory/paths";
 import { requirePageAccess } from "@/server/rbac/guard";
@@ -16,7 +16,7 @@ export default async function NewBillPage() {
   const { permission } = await requirePageAccess(INVENTORY_PATHS.billing);
   if (!permission.canCreate) redirect("/forbidden");
 
-  const [catalog, suppliers, nextUsid, gstRates] = await Promise.all([listBillableItems(), listSuppliers(), previewNextUsid(), getGstRates()]);
+  const [catalog, suppliers, nextUsid, gstRates, warranties] = await Promise.all([listBillableItems(), listSuppliers(), previewNextUsid(), getGstRates(), listWarranties()]);
 
   return (
     <>
@@ -33,6 +33,7 @@ export default async function NewBillPage() {
         scanAction={scanBill}
         nextUsid={nextUsid}
         gstRates={gstRates}
+        warranties={warranties}
         confirmAction={confirmBill}
         catalog={catalog}
         suppliers={suppliers}

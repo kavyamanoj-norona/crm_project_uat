@@ -55,11 +55,13 @@ type BillEntryProps = {
   nextUsid: string;
   /** GST % choices from Inventory → Configuration. */
   gstRates: number[];
+  /** Reusable warranty periods (Inventory → Manage Warranty). */
+  warranties: { id: string; name: string }[];
 };
 
 type Notice = { tone: "info" | "error"; text: string; duplicate?: ScanResult["duplicate"] };
 
-const blankLine = (): BillFormValues["lines"][number] => ({ itemId: "", newItem: false, newName: "", newType: "PART", description: "", hsnSac: "", quantity: "1", rate: "", discountPct: "", discountAmt: "", gstPercent: "18" });
+const blankLine = (): BillFormValues["lines"][number] => ({ itemId: "", newItem: false, newName: "", newType: "PART", description: "", hsnSac: "", warrantyId: "", quantity: "1", rate: "", discountPct: "", discountAmt: "", gstPercent: "18" });
 
 /** Paise as a plain rupee string for an input: 25000 → "250", 25050 → "250.5". */
 const paiseToText = (p: number) => String(Number((p / 100).toFixed(2)));
@@ -80,6 +82,8 @@ const blankValues = (): BillFormValues => ({
   lines: [blankLine()],
   roundOff: "",
   notes: "",
+  isOfficeUse: false,
+  officePurpose: "",
   paymentAmount: "",
   paymentMode: "",
   paymentRef: "",
@@ -88,7 +92,7 @@ const blankValues = (): BillFormValues => ({
 });
 
 /** One page: fill in the bill (or upload/capture the image and let it be read), review, confirm. */
-export function BillEntry({ scanAction, confirmAction, catalog, suppliers, nextUsid, gstRates }: BillEntryProps) {
+export function BillEntry({ scanAction, confirmAction, catalog, suppliers, nextUsid, gstRates, warranties }: BillEntryProps) {
   const [v, setV] = useState<BillFormValues>(blankValues);
   const [printedTotal, setPrintedTotal] = useState<number | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -331,6 +335,20 @@ export function BillEntry({ scanAction, confirmAction, catalog, suppliers, nextU
                 <Input id="billDate" type="date" max={todayIst()} value={v.billDate} onChange={(e) => set("billDate", e.target.value)} aria-invalid={err("billDate") ? true : undefined} />
               </Field>
             </div>
+            <div className="mt-4 space-y-3 rounded-lg border border-border p-3">
+              <label className="flex cursor-pointer items-start gap-2 text-sm">
+                <input type="checkbox" className="mt-0.5 size-4 accent-primary" checked={v.isOfficeUse} onChange={(e) => set("isOfficeUse", e.target.checked)} />
+                <span>
+                  <span className="font-semibold">Office use</span>
+                  <span className="block text-xs text-text-muted">Bought for the office, not for service stock. Units get USIDs and show in Stock, but are never used on cases or sent to branches.</span>
+                </span>
+              </label>
+              {v.isOfficeUse && (
+                <Field label="Purpose" htmlFor="officePurpose" required error={err("officePurpose")}>
+                  <Input id="officePurpose" value={v.officePurpose} onChange={(e) => set("officePurpose", e.target.value)} placeholder="Enter purpose" aria-invalid={err("officePurpose") ? true : undefined} />
+                </Field>
+              )}
+            </div>
           </Card>
 
           <Card
@@ -404,6 +422,19 @@ export function BillEntry({ scanAction, confirmAction, catalog, suppliers, nextU
                       {lineErr(i, "itemId") && <p className="mt-1 text-xs text-danger">{lineErr(i, "itemId")}</p>}
                       {line.newItem && <p className="mt-1 text-xs text-primary">New item — fill in the details below</p>}
                     </div>
+                  ),
+                },
+                {
+                  header: "Warranty",
+                  cell: ({ line, i }) => (
+                    <Select
+                      className="w-32"
+                      aria-label={`Warranty for line ${i + 1}`}
+                      value={line.warrantyId}
+                      onChange={(e) => setLine(i, { warrantyId: e.target.value })}
+                      options={warranties.map((w) => ({ value: w.id, label: w.name }))}
+                      placeholder="No warranty"
+                    />
                   ),
                 },
                 {

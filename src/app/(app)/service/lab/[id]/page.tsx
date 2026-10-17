@@ -88,7 +88,8 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
   const isDispatched = status === "CHIP_BRANCH_RECEIVED";
   // The device has left the lab: awaiting the branch's receipt, or already moved on there.
   const leftLab = !LAB_QUEUE_STATUSES.includes(status);
-  const transferDone = leftLab && (!isDispatched || c.labTransferCompletedAt !== null);
+  // Transfer to Branch completes the lab's work in one step, so leaving the lab means the transfer is done.
+  const transferDone = leftLab;
 
   // Billable items stay editable at any active lab stage (not once dispatched back to branch).
   const canEditItems = permission.canEdit && !leftLab;
@@ -130,7 +131,9 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
 
   // Non-repairable sits outside the rail — show it stopped at In Servicing with a label.
   // Every other status (including Quality Check and the final Transfer to Branch) is on the rail.
-  const railCurrent: CaseStatusValue = isNonRepairable ? "CHIP_LAB_SERVICING" : status;
+  // A finished quality check moves the rail on to Transfer to Branch, ready to be sent.
+  const qcDone = status === "CHIP_LAB_QUALITY_CHECK" && qc !== null && qc.rows.length > 0 && qc.complete;
+  const railCurrent: CaseStatusValue = isNonRepairable ? "CHIP_LAB_SERVICING" : qcDone ? "CHIP_BRANCH_RECEIVED" : status;
   const stoppedLabel = isNonRepairable ? "Non-Repairable" : undefined;
 
   // Timeline (newest first — query is ordered by at: "desc")
@@ -141,7 +144,9 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
       icon: <Icon />,
       title: !h.fromStatus
         ? "Case created"
-        : `Moved to ${CASE_STATUS_LABELS[h.toStatus as CaseStatusValue]}`,
+        : h.fromStatus === h.toStatus
+          ? `${LAB_FLOW_LABELS[h.toStatus] ?? CASE_STATUS_LABELS[h.toStatus as CaseStatusValue]} completed`
+          : `Moved to ${CASE_STATUS_LABELS[h.toStatus as CaseStatusValue]}`,
       detail: h.note,
       meta: `${formatDateTime(h.at)} · ${personName(h.changedBy) ?? "System"}`,
       tone: h.toStatus === "NON_REPAIRABLE" ? ("danger" as const) : ("default" as const),
@@ -172,7 +177,7 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
     <>
       <PageHeader
         title={c.jobsheetNo}
-        badges={<Badge tone={CASE_STATUS_TONE[status]}>{CASE_STATUS_LABELS[status]}</Badge>}
+        badges={<Badge tone={CASE_STATUS_TONE[status]}>{qcDone ? "Quality Check completed" : CASE_STATUS_LABELS[status]}</Badge>}
         subtitle={[
           [c.brand, c.model].filter(Boolean).join(" ") || "—",
           WARRANTY_LABELS[c.warrantyStatus],
@@ -195,7 +200,6 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
               <ChipLabActions
                 caseId={c.id}
                 status={status}
-                transferCompleted={transferDone}
                 qcBlock={qcBlock}
                 qc={
                   qc && !qc.complete && qc.rows.length > 0
@@ -224,13 +228,11 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
           <p className="text-sm font-medium text-success">
             {!isDispatched
               ? `Transferred to the branch — the device is now at ${CASE_STATUS_LABELS[status]}.`
-              : transferDone
-                ? "Transfer completed — the lab's work on this case is done. Waiting for the branch to confirm receipt."
-                : "Dispatched — device has been sent back to the branch. Complete the transfer to finish the lab's work."}
+              : "Transferred to the branch — the lab's work on this case is done. Waiting for the branch to confirm receipt."}
           </p>
-          {transferDone && c.labTransferCompletedAt && (
+          {c.labTransferCompletedAt && (
             <p className="mt-0.5 text-xs text-success/80">
-              Completed by {personName(c.labTransferBy) ?? "—"} · {formatDateTime(c.labTransferCompletedAt)}
+              Transferred by {personName(c.labTransferBy) ?? "—"} · {formatDateTime(c.labTransferCompletedAt)}
             </p>
           )}
         </div>
@@ -249,6 +251,7 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
             };
           })}
           current={railCurrent}
+          currentLabel={qcDone ? "Ready to transfer" : undefined}
           stoppedLabel={stoppedLabel}
           complete={transferDone}
         />
@@ -300,6 +303,7 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
               rows={qc.rows}
               action={saveQcAnswers.bind(null, c.id)}
               canEdit={permission.canEdit}
+              lab
             />
           )}
 
@@ -402,7 +406,7 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
                     <p className="mt-1 text-sm text-text-muted">
                       Vendor charges {formatPaise(vendorOwed)} − Paid {formatPaise(vendorPaid)}
                     </p>
-                    <p className="mt-1 flex flex-wrap items-center gap-2 text-2xl font-semibold tabular-nums text-brand-navy dark:text-text">
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-2xl font-semibold tabular-nums text-brand-navy dark:text-text">
                       Due {formatPaise(vendorDue)}
                       {vendorOwed > 0 && vendorDue === 0 && <Badge tone="success">Paid</Badge>}
                       {vendorDue > 0 && permission.canEdit && (
@@ -413,7 +417,7 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
                           action={recordVendorPayment.bind(null, c.id)}
                         />
                       )}
-                    </p>
+                    </div>
                     {vendorOwed === 0 && (
                       <p className="mt-1 text-xs text-text-muted">Enter the vendor charge on each item to track what is due.</p>
                     )}

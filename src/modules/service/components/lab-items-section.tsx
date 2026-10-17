@@ -95,7 +95,27 @@ export function LabItemsSection({ action, catalog, initial, outsource, stockInfo
     return null;
   };
 
-  const { errors, onSubmit, onChange } = useFormFeedback({ state });
+  // Outsourced: every service line needs a valid vendor charge (parts are optional but must be valid when entered).
+  const vendorError = (l: Line) => {
+    const needed = outsource && info.get(l.itemId)?.type === "SERVICE";
+    if (l.vendorCost.trim() === "") return needed ? "Enter the vendor charge" : null;
+    const v = optionalRupees("Vendor charge").safeParse(l.vendorCost);
+    if (!v.success || v.data === null) return "Enter a valid amount";
+    if (needed && v.data <= 0) return "Vendor charge must be more than 0";
+    return null;
+  };
+
+  const { errors, onSubmit, onChange } = useFormFeedback({
+    state,
+    validate: () => {
+      const out: Record<string, string[]> = {};
+      for (const l of lines) {
+        const e = outsource ? vendorError(l) : null;
+        if (e) out[`vendorCost-${l.itemId}`] = [e];
+      }
+      return Object.keys(out).length ? out : null;
+    },
+  });
 
   const set = (i: number, patch: Partial<Line>) =>
     setLines((prev) => prev.map((l, j) => (j === i ? { ...l, ...patch } : l)));
@@ -177,17 +197,28 @@ export function LabItemsSection({ action, catalog, initial, outsource, stockInfo
             ? [
                 {
                   header: "Vendor ₹ / unit",
-                  className: "w-40",
-                  cell: (l: Line) => (
-                    <Input
-                      value={l.vendorCost}
-                      onChange={(e) => set(lines.indexOf(l), { vendorCost: e.target.value })}
-                      inputMode="decimal"
-                      placeholder="Enter vendor charge"
-                      aria-label={`${info.get(l.itemId)!.name} vendor charge`}
-                      className="h-9 px-2"
-                    />
-                  ),
+                  className: "w-40 align-top",
+                  cell: (l: Line) => {
+                    const name = `vendorCost-${l.itemId}`;
+                    const err = errors[name]?.[0];
+                    const required = info.get(l.itemId)?.type === "SERVICE";
+                    return (
+                      <>
+                        <Input
+                          name={name}
+                          value={l.vendorCost}
+                          onChange={(e) => set(lines.indexOf(l), { vendorCost: e.target.value })}
+                          inputMode="decimal"
+                          placeholder={required ? "Enter vendor charge" : "Enter vendor charge (optional)"}
+                          aria-label={`${info.get(l.itemId)!.name} vendor charge`}
+                          aria-required={required}
+                          aria-invalid={err ? true : undefined}
+                          className={cn("h-9 px-2", err && "border-danger")}
+                        />
+                        {err && <p className="mt-1 max-w-40 whitespace-normal text-xs text-danger">{err}</p>}
+                      </>
+                    );
+                  },
                 },
               ]
             : []),
@@ -221,6 +252,7 @@ export function LabItemsSection({ action, catalog, initial, outsource, stockInfo
                       jobsheetNo={jobsheetNo}
                       options={options}
                       allowStock={(stockInfo.stock[l.itemId] ?? 0) > 0}
+                      location="Head Office"
                       action={consumeAction.bind(null, caseItemId)}
                     />
                     {received && <ReturnPartDialog itemName={info.get(l.itemId)!.name} action={returnAction.bind(null, caseItemId)} />}
@@ -242,13 +274,16 @@ export function LabItemsSection({ action, catalog, initial, outsource, stockInfo
               if (vendor) return <Badge tone="violet">Vendor replacement · {VR_STATUS_LABELS[vendor as keyof typeof VR_STATUS_LABELS]}</Badge>;
               if (!canRequest) return <span className="text-xs text-text-muted">After approval</span>;
               return (
-                <ActionButton
-                  action={requestAction.bind(null, caseItemId)}
-                  label="Request this item"
-                  className={buttonClass("danger", "sm")}
-                >
-                  <ShoppingCart className="size-3.5" /> Request
-                </ActionButton>
+                <span className="inline-flex flex-col items-center gap-1">
+                  <span className="text-xs font-medium text-danger">Stock unavailable at Head Office</span>
+                  <ActionButton
+                    action={requestAction.bind(null, caseItemId)}
+                    label="Request stock for Head Office"
+                    className={buttonClass("danger", "sm")}
+                  >
+                    <ShoppingCart className="size-3.5" /> Request stock
+                  </ActionButton>
+                </span>
               );
             },
           },

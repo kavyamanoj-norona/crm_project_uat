@@ -13,10 +13,12 @@ type QcChecklistCardProps = {
   /** Omit for a view-only card. */
   action?: (prev: FormState, formData: FormData) => Promise<FormState>;
   canEdit: boolean;
+  /** Chip-lab QC: the popup holds the checklist and notes, with Save progress / Complete Quality Check. */
+  lab?: boolean;
 };
 
 /** Saved QC answers as a table, with the button that opens the checklist popup. */
-export function QcChecklistCard({ jobsheetNo, rows, action, canEdit }: QcChecklistCardProps) {
+export function QcChecklistCard({ jobsheetNo, rows, action, canEdit, lab }: QcChecklistCardProps) {
   const pending = rows.filter((r) => r.answer === null).length;
   const complete = rows.length > 0 && pending === 0;
 
@@ -30,6 +32,7 @@ export function QcChecklistCard({ jobsheetNo, rows, action, canEdit }: QcCheckli
           </Badge>
           {canEdit && action && rows.length > 0 && (
             <QcChecklistDialog
+              lab={lab}
               trigger={
                 <>
                   <ClipboardCheck className="size-3.5" /> {complete ? "Edit checklist" : "Fill checklist"}

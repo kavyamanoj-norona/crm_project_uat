@@ -49,7 +49,7 @@ export async function returnPartForCase(caseItemId: string, _prev: FormState, fo
   try {
     const { user, line } = await scopedLine(caseItemId);
     if (!line) return { message: "Item not found." };
-    const res = await returnCasePart({ caseId: line.caseId, itemId: line.itemId, reason: parsed.reason, remarks: parsed.remarks, userId: user.id });
+    const res = await returnCasePart({ caseId: line.caseId, itemId: line.itemId, reason: parsed.reason, remarks: parsed.remarks, photos: parsed.photos, userId: user.id });
     if (!res.ok) return { message: res.message };
     refresh(line.caseId);
     return { ok: true, message: res.message };

@@ -4,210 +4,20 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Activity,
-  Calendar,
   Check,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Filter,
   Search,
   Users,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { DateRangeChip } from "@/components/data/date-range-chip";
 import { listHref, type ListState } from "@/lib/list";
 import { CASE_STATUSES, CASE_STATUS_LABELS } from "../case-schema";
 
 type ChipOption = { value: string; label: string };
 type ListRef = Pick<ListState, "path" | "query" | "prefix">;
-
-// ─── Date utilities ───────────────────────────────────────────────────────────
-
-function toYMD(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function fmtDate(ymd: string) {
-  if (!ymd) return "";
-  try {
-    return new Intl.DateTimeFormat("en-IN", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    }).format(new Date(`${ymd}T12:00:00`));
-  } catch {
-    return ymd;
-  }
-}
-
-const MONTH_NAMES = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
-const DAY_HEADERS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
-
-// ─── Calendar picker ──────────────────────────────────────────────────────────
-
-function CalendarPicker({
-  from,
-  to,
-  onChange,
-}: {
-  from: string;
-  to: string;
-  onChange: (from: string, to: string) => void;
-}) {
-  const today = toYMD(new Date());
-
-  const initBase = from || today;
-  const [viewYear, setViewYear] = useState(() => parseInt(initBase.slice(0, 4)));
-  const [viewMonth, setViewMonth] = useState(() => parseInt(initBase.slice(5, 7)) - 1);
-  const [hovered, setHovered] = useState<string | null>(null);
-
-  // Determine whether next click picks "from" or "to"
-  const selectingTo = !!(from && !to);
-
-  // Effective range for display (including hover preview)
-  const effFrom = selectingTo && hovered && hovered < from ? hovered : from;
-  const effTo = selectingTo && hovered
-    ? hovered >= from ? hovered : from
-    : to;
-
-  function handleDayClick(date: string) {
-    if (!selectingTo) {
-      // Start fresh selection
-      onChange(date, "");
-    } else {
-      // Completing the range
-      if (date === from) {
-        onChange("", ""); // deselect
-      } else if (date < from) {
-        onChange(date, from);
-      } else {
-        onChange(from, date);
-      }
-    }
-  }
-
-  function prevMonth() {
-    if (viewMonth === 0) { setViewMonth(11); setViewYear((y) => y - 1); }
-    else setViewMonth((m) => m - 1);
-  }
-  function nextMonth() {
-    if (viewMonth === 11) { setViewMonth(0); setViewYear((y) => y + 1); }
-    else setViewMonth((m) => m + 1);
-  }
-
-  // Build day grid (6 rows × 7 = 42 cells)
-  const firstDay = new Date(viewYear, viewMonth, 1);
-  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
-  const startOffset = firstDay.getDay();
-
-  const cells: Array<{ date: string; day: number; current: boolean }> = [];
-  for (let i = startOffset - 1; i >= 0; i--) {
-    const d = new Date(viewYear, viewMonth, -i);
-    cells.push({ date: toYMD(d), day: d.getDate(), current: false });
-  }
-  for (let d = 1; d <= daysInMonth; d++) {
-    cells.push({ date: toYMD(new Date(viewYear, viewMonth, d)), day: d, current: true });
-  }
-  for (let d = 1; cells.length < 42; d++) {
-    cells.push({ date: toYMD(new Date(viewYear, viewMonth + 1, d)), day: d, current: false });
-  }
-
-  return (
-    <div className="select-none">
-      {/* Month navigation */}
-      <div className="flex items-center justify-between px-4 py-3">
-        <button
-          type="button"
-          onClick={prevMonth}
-          className="rounded-lg p-1 text-text-muted hover:bg-surface-muted hover:text-text"
-        >
-          <ChevronLeft className="size-4" />
-        </button>
-        <span className="text-sm font-semibold text-text">
-          {MONTH_NAMES[viewMonth]} {viewYear}
-        </span>
-        <button
-          type="button"
-          onClick={nextMonth}
-          className="rounded-lg p-1 text-text-muted hover:bg-surface-muted hover:text-text"
-        >
-          <ChevronRight className="size-4" />
-        </button>
-      </div>
-
-      {/* Day headers */}
-      <div className="grid grid-cols-7 px-3">
-        {DAY_HEADERS.map((h) => (
-          <div
-            key={h}
-            className="flex h-7 items-center justify-center text-[11px] font-semibold uppercase tracking-wide text-text-muted"
-          >
-            {h}
-          </div>
-        ))}
-      </div>
-
-      {/* Day grid */}
-      <div className="grid grid-cols-7 px-3 pb-3">
-        {cells.map((cell, i) => {
-          const isStart = cell.date === effFrom && effFrom !== "";
-          const isEnd = cell.date === effTo && effTo !== "";
-          const inRange = !!(effFrom && effTo && cell.date > effFrom && cell.date < effTo);
-          const isToday = cell.date === today;
-
-          // Strip positions: start → strip begins at center going right
-          //                  end   → strip ends at center from left
-          //                  middle → full-width strip
-          const stripLeft = isStart && !isEnd ? "left-1/2" : "left-0";
-          const stripRight = isEnd && !isStart ? "right-1/2" : "right-0";
-          const showStrip = (isStart || isEnd || inRange) && !(isStart && isEnd);
-
-          return (
-            <div
-              key={i}
-              className="relative h-9"
-              onMouseEnter={() => selectingTo && setHovered(cell.date)}
-              onMouseLeave={() => setHovered(null)}
-            >
-              {/* Range highlight strip */}
-              {showStrip && (
-                <div
-                  className={cn(
-                    "absolute inset-y-1 bg-primary/10",
-                    stripLeft,
-                    stripRight,
-                  )}
-                />
-              )}
-
-              {/* Day button */}
-              <button
-                type="button"
-                onClick={() => handleDayClick(cell.date)}
-                className={cn(
-                  "relative z-10 mx-auto flex h-8 w-8 items-center justify-center rounded-full text-xs transition-colors",
-                  isStart || isEnd
-                    ? "bg-primary font-semibold text-white"
-                    : inRange
-                      ? "text-primary hover:bg-primary/20"
-                      : "hover:bg-surface-muted",
-                  isToday && !isStart && !isEnd && "font-bold",
-                  !cell.current && "text-text-disabled",
-                  cell.current && !isStart && !isEnd && !inRange && "text-text",
-                )}
-              >
-                {cell.day}
-              </button>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 // ─── Popover wrapper ──────────────────────────────────────────────────────────
 
@@ -297,84 +107,6 @@ function ChipBtn({
         <ChevronDown className={cn("size-3.5 text-text-muted transition-transform", open && "rotate-180")} />
       )}
     </button>
-  );
-}
-
-// ─── Date-range filter ────────────────────────────────────────────────────────
-
-function DateRangeFilter({ from, to, list }: { from: string; to: string; list: ListRef }) {
-  const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const [localFrom, setLocalFrom] = useState(from);
-  const [localTo, setLocalTo] = useState(to);
-
-  const active = !!(from || to);
-  const valueLabel = from && to
-    ? `${fmtDate(from)} - ${fmtDate(to)}`
-    : from ? `From ${fmtDate(from)}`
-    : to ? `To ${fmtDate(to)}`
-    : undefined;
-
-  function openPicker() {
-    setLocalFrom(from);
-    setLocalTo(to);
-    setOpen((o) => !o);
-  }
-
-  function clear() {
-    setLocalFrom(""); setLocalTo("");
-    router.replace(listHref(list, { from: null, to: null }), { scroll: false });
-  }
-
-  function handleCalendarChange(f: string, t: string) {
-    setLocalFrom(f);
-    setLocalTo(t);
-    // Auto-apply once the range is complete (both dates chosen)
-    if (f && t) {
-      router.replace(listHref(list, { from: f, to: t }), { scroll: false });
-      setOpen(false);
-    }
-  }
-
-  return (
-    <Popover
-      open={open}
-      onToggle={openPicker}
-      trigger={
-        <ChipBtn
-          icon={Calendar}
-          label="Date"
-          valueLabel={valueLabel}
-          active={active}
-          open={open}
-          onClick={openPicker}
-          onClear={clear}
-        />
-      }
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-border bg-surface-muted px-4 py-2.5">
-        <p className="text-sm font-semibold text-text">Date</p>
-        {(localFrom || localTo) && (
-          <button
-            type="button"
-            onClick={clear}
-            className="text-xs font-medium text-text-muted hover:text-text"
-          >
-            Clear
-          </button>
-        )}
-      </div>
-
-      {/* Calendar — auto-applies when range is complete */}
-      <div className="w-full max-w-72">
-        <CalendarPicker
-          from={localFrom}
-          to={localTo}
-          onChange={handleCalendarChange}
-        />
-      </div>
-    </Popover>
   );
 }
 
@@ -522,7 +254,7 @@ export function CaseFilterBar({
 }: CaseFilterBarProps) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <DateRangeFilter from={activeFrom} to={activeTo} list={list} />
+      <DateRangeChip from={activeFrom} to={activeTo} list={list} />
       <SelectFilter
         label="Status"
         icon={Activity}

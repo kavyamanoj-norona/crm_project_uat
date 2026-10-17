@@ -1,6 +1,7 @@
 import "server-only";
 import type { Tx } from "@/server/db";
-import { ACCT, payAccount, postJournal } from "./ledger";
+import { settlementLines } from "./bank";
+import { ACCT, postJournal } from "./ledger";
 
 // How each business event becomes a journal entry. Every function is idempotent (the entry is keyed by its source), so
 // calling it twice, or from a backfill, never doubles anything. Branch = where the money / goods actually are.
@@ -31,7 +32,7 @@ export async function postCasePayment(tx: Tx, p: PaymentRow, userId?: string | n
     userId,
     narration: `${p.kind === "ADVANCE" ? "Advance" : "Payment"} received${p.case ? ` for ${p.case.jobsheetNo}` : ""} (${p.mode})`,
     lines: [
-      { account: payAccount(p.mode), branchId: p.branchId, debit: p.amountPaise },
+      ...(await settlementLines(tx, { mode: p.mode, branchId: p.branchId, paise: p.amountPaise, dir: "in" })),
       { account: against, branchId: p.branchId, credit: p.amountPaise, partyType: "CUSTOMER", partyId: p.customerId },
     ],
   });
@@ -120,12 +121,12 @@ export async function postPurchasePayment(
     narration: `Paid supplier for bill ${bill.billNo} (${p.mode})`,
     lines: [
       { account: ACCT.PAYABLE, branchId: bill.branchId, debit: p.amountPaise, partyType: "SUPPLIER", partyId: bill.supplierId },
-      { account: payAccount(p.mode), branchId: bill.branchId, credit: p.amountPaise },
+      ...(await settlementLines(tx, { mode: p.mode, branchId: bill.branchId, paise: p.amountPaise, dir: "out" })),
     ],
   });
 }
 
-/** A counter sale of a product: Dr Cash/Bank, Cr Product & Accessory Sales (the sale total as entered). */
+/** A counter sale of a product: Dr Cash / Head Office bank, Cr Product & Accessory Sales (the sale total as entered). */
 export async function postDirectSale(
   tx: Tx,
   s: { id: string; saleNo: string; branchId: string; paymentMode: string; totalPaise: number; soldAt: Date },
@@ -139,7 +140,7 @@ export async function postDirectSale(
     userId,
     narration: `Direct sale ${s.saleNo} (${s.paymentMode})`,
     lines: [
-      { account: payAccount(s.paymentMode), branchId: s.branchId, debit: s.totalPaise },
+      ...(await settlementLines(tx, { mode: s.paymentMode, branchId: s.branchId, paise: s.totalPaise, dir: "in" })),
       { account: ACCT.SALES_INCOME, branchId: s.branchId, credit: s.totalPaise },
     ],
   });
@@ -156,6 +157,29 @@ export async function postCogs(tx: Tx, c: { unitId: string; usid: string; branch
     narration: `Cost of ${c.usid}${c.jobsheetNo ? ` used on ${c.jobsheetNo}` : ""}`,
     lines: [
       { account: ACCT.COGS, branchId: c.branchId, debit: c.costPaise },
+      { account: ACCT.INVENTORY, branchId: c.branchId, credit: c.costPaise },
+    ],
+  });
+}
+
+/**
+ * An office-use unit handed to an employee: its purchase cost (net of discount, before GST) moves from Inventory to an
+ * expense (Other Expenses), because it is used by the office, not sold or used on a service case.
+ */
+export async function postOfficeConsumption(
+  tx: Tx,
+  c: { unitId: string; usid: string; branchId: string; costPaise: number; employee: string },
+  userId?: string | null,
+) {
+  if (c.costPaise <= 0) return null;
+  return postJournal(tx, {
+    sourceType: "OFFICE_CONSUMPTION",
+    sourceId: c.unitId,
+    branchId: c.branchId,
+    userId,
+    narration: `Office use of ${c.usid} by ${c.employee}`,
+    lines: [
+      { account: ACCT.OTHER_EXPENSE, branchId: c.branchId, debit: c.costPaise },
       { account: ACCT.INVENTORY, branchId: c.branchId, credit: c.costPaise },
     ],
   });

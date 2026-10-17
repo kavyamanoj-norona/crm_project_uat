@@ -4,11 +4,13 @@ import { z } from "zod";
 // the edges only: form input → paise, paise → display.
 
 const inr = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
+const inrFixed = new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /** 750000 → "₹7,500"; null → "—". */
-export function formatPaise(paise: number | null | undefined, { symbol = true } = {}) {
+/** `fixed` always shows two decimals ("₹1,652.00"), for lists where paise matter. */
+export function formatPaise(paise: number | null | undefined, { symbol = true, fixed = false } = {}) {
   if (paise === null || paise === undefined) return "—";
-  const text = inr.format(paise / 100);
+  const text = (fixed ? inrFixed : inr).format(paise / 100);
   return symbol ? `₹${text}` : text;
 }
 

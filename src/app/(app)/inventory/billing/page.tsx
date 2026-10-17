@@ -52,9 +52,12 @@ export default async function BillingPage({ searchParams }: PageProps<"/inventor
           {
             header: "Bill",
             cell: (r) => (
-              <Link href={`${INVENTORY_PATHS.billing}/${r.id}`} className="font-medium text-primary hover:underline">
-                {r.billNo}
-              </Link>
+              <span className="flex items-center gap-2">
+                <Link href={`${INVENTORY_PATHS.billing}/${r.id}`} className="font-medium text-primary hover:underline">
+                  {r.billNo}
+                </Link>
+                {r.isOfficeUse && <Badge tone="violet">Office use{r.officePurpose ? ` · ${r.officePurpose}` : ""}</Badge>}
+              </span>
             ),
           },
           { header: "Code", cell: (r) => <span className="text-xs text-text-muted tabular-nums">{r.code}</span> },

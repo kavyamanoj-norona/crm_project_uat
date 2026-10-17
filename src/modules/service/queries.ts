@@ -112,10 +112,14 @@ export type CaseFilters = {
   engineerId?: string;
   from?: string;
   to?: string;
+  /** Listing tab: open cases (default), finished (closed/cancelled) cases, or everything. */
+  stage?: "open" | "closed" | "all";
 };
 
 export async function listCases(list: ListState, scope: { branchId?: string }, filters: CaseFilters = {}) {
-  const { type, status, engineerId, from, to } = filters;
+  const { type, status, engineerId, from, to, stage = "open" } = filters;
+  const stageWhere: Prisma.CaseWhereInput =
+    stage === "all" ? {} : stage === "closed" ? { status: { in: ["CLOSED", "CANCELLED"] } } : { status: { notIn: ["CLOSED", "CANCELLED"] } };
   const digits = list.q.replace(/\D/g, "");
   const fromDate = from ? new Date(`${from}T00:00:00+05:30`) : null;
   const toDate = to ? new Date(`${to}T23:59:59+05:30`) : null;
@@ -140,6 +144,7 @@ export async function listCases(list: ListState, scope: { branchId?: string }, f
   const where: Prisma.CaseWhereInput = {
     ...scope,
     ...(type ? CASE_TYPE_FILTERS[type].where : {}),
+    AND: [stageWhere],
     ...(validStatus ? { status: validStatus } : {}),
     ...(engineerId ? { engineerId } : {}),
     ...dateFilter,

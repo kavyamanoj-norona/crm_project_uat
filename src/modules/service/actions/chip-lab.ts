@@ -5,7 +5,7 @@ import { db } from "@/server/db";
 import { ForbiddenError, requireActionPermission } from "@/server/rbac/guard";
 import { FieldError } from "@/server/prisma-errors";
 import { logActivity } from "@/server/security/activity";
-import { pick, toFieldErrors, type ActionResult, type FormState } from "@/lib/form";
+import { initialFormState, pick, toFieldErrors, type ActionResult, type FormState } from "@/lib/form";
 import { formatPaise } from "@/lib/money";
 import { minPricePaise } from "@/lib/pricing";
 import {
@@ -55,8 +55,8 @@ async function applyLabStage(
         status: to,
         stageChangedAt: new Date(),
         updatedById: userId,
-        // A fresh dispatch needs its own completion.
-        ...(to === "CHIP_BRANCH_RECEIVED" ? { labTransferCompletedAt: null, labTransferCompletedById: null } : {}),
+        // Transferring to the branch also completes the lab's work: there is no separate completion step.
+        ...(to === "CHIP_BRANCH_RECEIVED" ? { labTransferCompletedAt: new Date(), labTransferCompletedById: userId } : {}),
       },
     });
     if (count === 0) return false;
@@ -226,36 +226,20 @@ export async function dispatchToBranch(caseId: string, _prev: FormState, formDat
     }
     if (!(await applyLabStage(caseId, row.status as CaseStatusValue, "CHIP_BRANCH_RECEIVED", note, user.id)))
       return { message: STALE };
-    return { ok: true, message: "Case dispatched to branch." };
+    return { ok: true, message: "Case transferred to the branch." };
   } catch (e) {
     if (e instanceof ForbiddenError) return { message: e.message };
     throw e;
   }
 }
 
-/** Lab confirms the handover to the branch is done: ends the lab's work on the case. */
-export async function completeLabTransfer(caseId: string): Promise<ActionResult> {
-  try {
-    const user = await requireActionPermission(SERVICE_PATHS.lab, "canEdit");
-    const { count } = await db.case.updateMany({
-      where: { id: caseId, status: "CHIP_BRANCH_RECEIVED", labTransferCompletedAt: null },
-      data: { labTransferCompletedAt: new Date(), labTransferCompletedById: user.id, updatedById: user.id },
-    });
-    if (count === 0) return { ok: false, message: "This transfer is already completed or the case isn't awaiting the branch." };
-    await logActivity({
-      action: "case.lab.transfer-complete",
-      userId: user.id,
-      entity: "Case",
-      entityId: caseId,
-      detail: "Transfer to branch completed by lab",
-    });
-    revalidatePath(SERVICE_PATHS.lab, "layout");
-    revalidatePath(SERVICE_PATHS.cases, "layout");
-    return { ok: true, message: "Transfer to branch completed." };
-  } catch (e) {
-    if (e instanceof ForbiddenError) return { ok: false, message: e.message };
-    throw e;
-  }
+/**
+ * "Transfer to Branch" once the quality check is complete: one action that sends the case back to its branch and
+ * completes the lab's work (the QC notes are already on the timeline). Repeating it is rejected: the case has left the lab.
+ */
+export async function transferToBranch(caseId: string): Promise<ActionResult> {
+  const res = await dispatchToBranch(caseId, initialFormState, new FormData());
+  return { ok: Boolean(res.ok), message: res.message ?? (res.ok ? "Case transferred to the branch." : "Could not transfer the case.") };
 }
 
 // ── Outsourcing ───────────────────────────────────────────────────────────────
@@ -405,6 +389,9 @@ export async function saveLabItems(caseId: string, _prev: FormState, formData: F
         throw new FieldError("items", `${item.name}: lowest allowed price is ${formatPaise(min)} (max ${item.maxDiscountPercent}% discount)`);
       if (unit > item.pricePaise)
         throw new FieldError("items", `${item.name}: price can't be above ${formatPaise(item.pricePaise)}`);
+      // Outsourced services are paid to the vendor per unit, so every service line needs its vendor charge.
+      if (outsourced && item.type === "SERVICE" && (l.vendorCost === null || l.vendorCost <= 0))
+        throw new FieldError(`vendorCost-${item.id}`, "Enter the vendor charge");
       return {
         caseId,
         itemId: item.id,
@@ -448,7 +435,7 @@ export async function saveLabItems(caseId: string, _prev: FormState, formData: F
     return { ok: true, message: `Items saved · ${formatPaise(total)}` };
   } catch (e) {
     if (e instanceof ForbiddenError) return { message: e.message };
-    if (e instanceof FieldError) return { message: e.message, fieldErrors: { items: [e.message] } };
+    if (e instanceof FieldError) return { message: e.message, fieldErrors: { [e.field.startsWith("vendorCost-") ? e.field : "items"]: [e.message] } };
     throw e;
   }
 }
@@ -531,9 +518,9 @@ export async function reorderPartForLabCase(caseItemId: string, _prev: FormState
 }
 
 /**
- * Uses a part for this case. The chip-level lab is a service provider, so the usage is always taken from, and
- * recorded against, the case's own branch, whichever branch raised the request. A unit received for the case is
- * consumed first (its USID becomes Consumed); this is what lets the case move on to Quality check.
+ * Uses a part for this case. The chip-level lab works at Head Office, so the unit must be in Head Office stock
+ * (checked by location), whichever branch the case came from. Its USID becomes Consumed; this is what lets the case
+ * move on to Quality check.
  */
 export async function consumeLabItem(caseItemId: string, _prev: FormState, formData: FormData): Promise<FormState> {
   const unitId = String(formData.get("unitId") ?? "");
@@ -542,7 +529,8 @@ export async function consumeLabItem(caseItemId: string, _prev: FormState, formD
     const user = await requireActionPermission(SERVICE_PATHS.lab, "canEdit");
     const line = await physicalLine(caseItemId);
     if (!line) return { message: "Item or stock not found." };
-    const res = await consumeCasePart({ caseId: line.caseId, itemId: line.itemId, unitId, userId: user.id });
+    // Head Office stock only, whichever branch the case came from.
+    const res = await consumeCasePart({ caseId: line.caseId, itemId: line.itemId, unitId, userId: user.id, atHeadOffice: true });
     if (!res.ok) return { message: res.message };
     revalidatePath(SERVICE_PATHS.lab, "layout");
     revalidatePath("/inventory", "layout");
@@ -561,7 +549,7 @@ export async function returnPartForLabCase(caseItemId: string, _prev: FormState,
     const user = await requireActionPermission(SERVICE_PATHS.lab, "canEdit");
     const line = await physicalLine(caseItemId);
     if (!line) return { message: "Item not found." };
-    const res = await returnCasePart({ caseId: line.caseId, itemId: line.itemId, reason: parsed.reason, remarks: parsed.remarks, userId: user.id });
+    const res = await returnCasePart({ caseId: line.caseId, itemId: line.itemId, reason: parsed.reason, remarks: parsed.remarks, photos: parsed.photos, userId: user.id });
     if (!res.ok) return { message: res.message };
     revalidatePath(SERVICE_PATHS.lab, "layout");
     revalidatePath("/inventory", "layout");

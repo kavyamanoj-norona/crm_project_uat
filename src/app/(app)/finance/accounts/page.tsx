@@ -37,6 +37,13 @@ export default async function AccountsPage() {
             <Field label="Type" htmlFor="ac-type" required>
               <Select id="ac-type" name="type" placeholder="Select account type" options={["ASSET", "LIABILITY", "EQUITY", "INCOME", "EXPENSE"].map((t) => ({ value: t, label: t[0] + t.slice(1).toLowerCase() }))} />
             </Field>
+            <label className="flex items-start gap-2 text-sm">
+              <input type="checkbox" name="isBank" className="mt-0.5 size-4 accent-primary" />
+              <span>
+                Head Office bank account
+                <span className="block text-xs text-text-muted">Asset accounts only. Branches can deposit their cash into it from the Daybook.</span>
+              </span>
+            </label>
           </ActionDialog>
         )
       }

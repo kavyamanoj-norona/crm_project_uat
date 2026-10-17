@@ -30,6 +30,9 @@ const SOURCE_LABEL: Record<string, string> = {
   COGS: "Cost of goods",
   MANUAL: "Manual",
   REVERSAL: "Reversal",
+  CASH_DEPOSIT: "Cash deposit",
+  CASH_VARIANCE: "Day-end difference",
+  OFFICE_CONSUMPTION: "Office use",
 };
 
 export default async function JournalPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {

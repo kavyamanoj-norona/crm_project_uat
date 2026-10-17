@@ -13,7 +13,17 @@ import { parseRupees } from "@/modules/inventory/billing-schema";
 import { CLOSING_PAYMENT_LABELS, CLOSING_PAYMENT_MODES, billSummary, type ClosingPayload } from "../case-billing-math";
 
 export type ClosingLineView = { key: string; code: string; name: string; type: string; quantity: number; unitPricePaise: number; gstPercent: number };
-export type ClosingAccessoryView = { id: string; code: string; name: string; pricePaise: number; minPricePaise: number; gstPercent: number; stock: number };
+export type ClosingAccessoryView = {
+  id: string;
+  code: string;
+  name: string;
+  pricePaise: number;
+  minPricePaise: number;
+  gstPercent: number;
+  stock: number;
+  loose: number;
+  units: { id: string; usid: string }[];
+};
 
 type Props = {
   jobsheetNo: string;
@@ -25,7 +35,7 @@ type Props = {
   action: (prev: FormState, formData: FormData) => Promise<FormState>;
 };
 
-type AddedRow = { itemId: string; quantity: string; price: string };
+type AddedRow = { itemId: string; quantity: string; price: string; unitIds: string[] };
 type PayRow = { mode: (typeof CLOSING_PAYMENT_MODES)[number]; amount: string; reference: string };
 
 const rupees = (paise: number) => String(Number((paise / 100).toFixed(2)));
@@ -54,13 +64,36 @@ function Body({ jobsheetNo, customerName, gstInclusive, lines, advancePaise, acc
   const remaining = dueNow - collected;
 
   const payload: ClosingPayload = {
-    accessories: added.map((a) => ({ itemId: a.itemId, quantity: Number(a.quantity) || 0, unitPricePaise: parseRupees(a.price) ?? 0 })),
+    accessories: added.map((a) => ({ itemId: a.itemId, quantity: Number(a.quantity) || 0, unitPricePaise: parseRupees(a.price) ?? 0, unitIds: a.unitIds })),
     payments: pays.filter((p) => (parseRupees(p.amount) ?? 0) > 0).map((p) => ({ mode: p.mode, amountPaise: parseRupees(p.amount) ?? 0, reference: p.reference.trim() })),
     notes: notes.trim(),
     acceptDue,
   };
 
-  const addable = accessories.filter((a) => !added.some((r) => r.itemId === a.id));
+  // One option per received USID not yet on the bill, plus one for stock held without a USID.
+  const addOptions = accessories.flatMap((a) => [
+    ...a.units
+      .filter((u) => !added.some((r) => r.unitIds.includes(u.id)))
+      .map((u) => ({ value: `u:${a.id}:${u.id}`, label: `${a.code} — ${a.name} · ${u.usid} · ₹${rupees(a.pricePaise)}` })),
+    ...(a.loose > 0 && !added.some((r) => r.itemId === a.id && !r.unitIds.length)
+      ? [{ value: `i:${a.id}`, label: `${a.code} — ${a.name} · no USID · ₹${rupees(a.pricePaise)} · ${a.loose} in stock` }]
+      : []),
+  ]);
+  function addFromPicker(value: string) {
+    const [kind, itemId, unitId] = value.split(":");
+    const a = catalog.get(itemId!);
+    if (!a) return;
+    setAdded((p) => {
+      const at = p.findIndex((r) => r.itemId === itemId);
+      if (kind === "i") return at >= 0 ? p : [...p, { itemId: a.id, quantity: "1", price: rupees(a.pricePaise), unitIds: [] }];
+      if (at < 0) return [...p, { itemId: a.id, quantity: "1", price: rupees(a.pricePaise), unitIds: [unitId!] }];
+      return p.map((r, j) => {
+        if (j !== at) return r;
+        const unitIds = [...r.unitIds, unitId!];
+        return { ...r, unitIds, quantity: String(Math.max(Number(r.quantity) || 0, unitIds.length)) };
+      });
+    });
+  }
   const setAdd = (i: number, patch: Partial<AddedRow>) => setAdded((p) => p.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const setPay = (i: number, patch: Partial<PayRow>) => setPays((p) => p.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const half = (n: number) => Math.floor(n / 2);
@@ -97,10 +130,37 @@ function Body({ jobsheetNo, customerName, gstInclusive, lines, advancePaise, acc
                       {l.code} · {TYPE_LABEL[l.type] ?? l.type}
                       {isAdded && " · added to bill"}
                     </p>
+                    {row && catalog.get(row.itemId)!.units.length > 0 && (
+                      <div className="mt-1.5">
+                        <p className="mb-1 text-xs text-text-muted">
+                          Select USIDs ({row.unitIds.length} selected
+                          {catalog.get(row.itemId)!.loose > 0 ? `, ${catalog.get(row.itemId)!.loose} more without USID in stock` : ""})
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {catalog.get(row.itemId)!.units.map((u) => {
+                            const on = row.unitIds.includes(u.id);
+                            return (
+                              <label key={u.id} className={`flex cursor-pointer items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium ${on ? "border-primary bg-primary-soft text-primary" : "border-border text-text hover:bg-surface-muted"}`}>
+                                <input
+                                  type="checkbox"
+                                  className="size-3 accent-primary"
+                                  checked={on}
+                                  onChange={() => {
+                                    const unitIds = on ? row.unitIds.filter((x) => x !== u.id) : [...row.unitIds, u.id];
+                                    setAdd(idx, { unitIds, quantity: String(Math.max(Number(row.quantity) || 0, unitIds.length)) });
+                                  }}
+                                />
+                                {u.usid}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-center tabular-nums">
                     {row ? (
-                      <Input className="mx-auto h-8 w-16 text-center" inputMode="numeric" aria-label={`${l.name} quantity`} value={row.quantity} onChange={(e) => setAdd(idx, { quantity: e.target.value.replace(/\D/g, "") })} />
+                      <Input className="mx-auto h-8 w-16 text-center" inputMode="numeric" aria-label={`${l.name} quantity`} value={row.quantity} onChange={(e) => setAdd(idx, { quantity: e.target.value.replace(/\D/g, "") })} onBlur={() => row.unitIds.length > (Number(row.quantity) || 0) && setAdd(idx, { quantity: String(row.unitIds.length) })} />
                     ) : (
                       l.quantity
                     )}
@@ -137,16 +197,13 @@ function Body({ jobsheetNo, customerName, gstInclusive, lines, advancePaise, acc
 
       <div className="grid gap-5 md:grid-cols-2">
         <div className="space-y-4">
-          <Field label="Add an accessory or product (optional)" htmlFor="close-accessory" hint="For example a cleaning kit. Only items in this branch's stock are listed.">
+          <Field label="Add an accessory or product (optional)" htmlFor="close-accessory" hint="Each received unit is listed by its USID, so the sale is attached to this case.">
             <SearchSelect
               id="close-accessory"
               value=""
-              onChange={(id) => {
-                const a = catalog.get(id);
-                if (a) setAdded((p) => [...p, { itemId: id, quantity: "1", price: rupees(a.pricePaise) }]);
-              }}
-              options={addable.map((a) => ({ value: a.id, label: `${a.code} — ${a.name} · ₹${rupees(a.pricePaise)} · ${a.stock} in stock` }))}
-              placeholder={addable.length ? "Search accessories" : "No accessories in stock"}
+              onChange={addFromPicker}
+              options={addOptions}
+              placeholder={addOptions.length ? "Search accessories or USID" : "No accessories in stock"}
             />
             {errors.accessories?.[0] && <p className="mt-1 text-xs text-danger">{errors.accessories[0]}</p>}
           </Field>
@@ -247,6 +304,7 @@ export function CloseCaseDialog(props: Props) {
       validate={(fd) => {
         try {
           const p = JSON.parse(String(fd.get("payload") ?? "{}")) as ClosingPayload;
+          if (p.payments.some((x) => !(CLOSING_PAYMENT_MODES as readonly string[]).includes(x.mode))) return { payments: ["Select a payment mode"] };
           const bad = p.payments.find((x) => x.amountPaise <= 0);
           if (bad) return { payments: ["Each payment needs an amount"] };
         } catch {

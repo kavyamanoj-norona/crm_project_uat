@@ -71,11 +71,14 @@ export function ChipPopover({
   onToggle,
   trigger,
   children,
+  align = "left",
 }: {
   open: boolean;
   onToggle: () => void;
   trigger: React.ReactNode;
   children: React.ReactNode;
+  /** Which edge of the trigger the panel lines up with; "right" for chips near the right edge of the page. */
+  align?: "left" | "right";
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -92,7 +95,7 @@ export function ChipPopover({
     <div ref={ref} className="relative">
       {trigger}
       {open && (
-        <div className="absolute top-full left-0 z-50 mt-1 min-w-[180px] overflow-hidden rounded-xl border border-border bg-surface shadow-lg">
+        <div className={cn("absolute top-full z-50", align === "right" ? "right-0" : "left-0", "mt-1 min-w-[180px] overflow-hidden rounded-xl border border-border bg-surface shadow-lg")}>
           {children}
         </div>
       )}

@@ -322,10 +322,9 @@ export const estimateSchema = z
     engineerId: requiredText("Engineer"),
     /** Checkbox: "on" when chip-level service is selected, absent otherwise. Only meaningful for mode=start. */
     chipLevel: z.string().optional().default("").transform((v) => v === "on"),
-    expectedDeliveryDate: optionalDate.refine(
-      (d) => d === null || d.toISOString().slice(0, 10) >= todayIst(),
-      "Expected delivery can't be in the past",
-    ),
+    expectedDeliveryDate: optionalDate
+      .refine((d) => d !== null, "Select the expected delivery date")
+      .refine((d) => d === null || d.toISOString().slice(0, 10) >= todayIst(), "Expected delivery can't be in the past"),
     gstInvoiceRequired: z.enum(["no", "yes"]).transform((v) => v === "yes"),
     note: optionalText.refine((v) => v === null || v.length <= 500, "Keep the note under 500 characters"),
     items: estimateLines,
