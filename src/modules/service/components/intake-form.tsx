@@ -32,6 +32,8 @@ type IntakeFormProps = {
   action: (prev: FormState, formData: FormData) => Promise<FormState>;
   lookup: (phone: string) => Promise<CustomerMatch | null>;
   options: IntakeOptions;
+  /** Onsite pickup role: intake type fixed to On-site, branch picked on every case. */
+  onsite?: boolean;
 };
 
 const DEFAULTS: Record<string, string> = {
@@ -41,17 +43,18 @@ const DEFAULTS: Record<string, string> = {
 };
 
 /** New case: customer (phone-first lookup) → product. Items and the estimate are added when diagnosis starts. */
-export function IntakeForm({ action, lookup, options }: IntakeFormProps) {
+export function IntakeForm({ action, lookup, options, onsite = false }: IntakeFormProps) {
   const [state, formAction, pending] = useActionState(action, initialFormState);
   const { errors, onSubmit, onChange } = useFormFeedback({
     state,
     validate: (fd) => validateForm(intakeSchema, fd, INTAKE_FIELDS),
   });
-  const single = options.branches.length === 1 ? options.branches[0]!.id : "";
+  // Onsite pickup staff choose the branch on every case, so nothing is pre-selected for them.
+  const single = !onsite && options.branches.length === 1 ? options.branches[0]!.id : "";
   const v: Record<string, string> = state.values ?? { ...DEFAULTS, branchId: single };
 
   const [branchId, setBranchId] = useState(v.branchId ?? single);
-  const [intakeType, setIntakeType] = useState(v.intakeType ?? "WALK_IN");
+  const [intakeType, setIntakeType] = useState(onsite ? "ON_SITE" : (v.intakeType ?? "WALK_IN"));
   const preview = options.previews[branchId];
 
   const f = (name: string) => ({
@@ -73,7 +76,7 @@ export function IntakeForm({ action, lookup, options }: IntakeFormProps) {
       {/* Header row: jobsheet preview · intake type · save */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-wrap items-end gap-3">
-          {options.branches.length > 1 ? (
+          {onsite || options.branches.length > 1 ? (
             <Field label="Branch" htmlFor="branchId" required error={errors.branchId} className="w-56">
               <Select
                 {...f("branchId")}
@@ -81,6 +84,7 @@ export function IntakeForm({ action, lookup, options }: IntakeFormProps) {
                 defaultValue={undefined}
                 onChange={(e) => setBranchId(e.target.value)}
                 options={options.branches.map((b) => ({ value: b.id, label: `${b.name} (${b.code})` }))}
+                placeholder="Select branch"
               />
             </Field>
           ) : (
@@ -94,14 +98,22 @@ export function IntakeForm({ action, lookup, options }: IntakeFormProps) {
         </div>
         <div className="flex items-end gap-2">
           <Field label="Intake type" htmlFor="intakeType" required error={errors.intakeType} className="w-40">
-            <Select
-              {...f("intakeType")}
-              value={intakeType}
-              defaultValue={undefined}
-              onChange={(e) => setIntakeType(e.target.value)}
-              options={intakeTypeOptions}
-              placeholder="Select intake type"
-            />
+            {onsite ? (
+              <>
+                {/* Fixed for this role: shown, not editable; the server sets it too. */}
+                <Select id="intakeType" value="ON_SITE" defaultValue={undefined} disabled onChange={() => {}} options={intakeTypeOptions} />
+                <input type="hidden" name="intakeType" value="ON_SITE" />
+              </>
+            ) : (
+              <Select
+                {...f("intakeType")}
+                value={intakeType}
+                defaultValue={undefined}
+                onChange={(e) => setIntakeType(e.target.value)}
+                options={intakeTypeOptions}
+                placeholder="Select intake type"
+              />
+            )}
           </Field>
           <SaveButton pending={pending} />
         </div>
@@ -140,7 +152,7 @@ export function IntakeForm({ action, lookup, options }: IntakeFormProps) {
             <Input {...f("problemReported")} placeholder="Enter problem reported" />
           </Field>
           <Field label="Intake photos" htmlFor="photos" error={errors.photos} hint="Up to 8; re-add them if the save fails">
-            <PhotoInput name="photos" invalid={Boolean(errors.photos)} />
+            <PhotoInput name="photos" allowUpload invalid={Boolean(errors.photos)} />
           </Field>
           <Field
             label="Received items"

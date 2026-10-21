@@ -3,7 +3,8 @@
 export const CUSTOMER_PATHS = {
   dashboard: "/customers/dashboard",
   database: "/customers/database",
-  leads: "/customers/leads",
+  // Leads moved to the Telecaller module; the old /customers/leads URL redirects.
+  leads: "/telecaller/leads",
   b2b: "/customers/b2b",
   leadReports: "/customers/lead-reports",
   csWorkspace: "/customers/cs-workspace",

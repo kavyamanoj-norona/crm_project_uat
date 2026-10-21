@@ -10,6 +10,7 @@ import { formatPaise } from "@/lib/money";
 import { getHeadOfficeBranch } from "@/modules/inventory/head-office";
 import { parseRupees } from "@/modules/inventory/billing-schema";
 import { ROUTABLE_MODES, MODE_LABEL, moveBankToHeadOffice, type RoutableMode } from "./bank";
+import { DayLockError } from "./day-lock";
 import { ACCT, LedgerError, postJournal } from "./ledger";
 import { FINANCE_PATHS } from "./paths";
 import { dayValue, isDateString, todayIst } from "./daybook";
@@ -169,7 +170,7 @@ export async function moveBankMoney(): Promise<ActionResult> {
     refresh();
     return { ok: true, message: moved === 0 ? "Nothing to move: the Head Office bank already holds everything." : `Moved ${moved} bank ${moved === 1 ? "posting" : "postings"} to the Head Office bank.` };
   } catch (e) {
-    if (e instanceof ForbiddenError || e instanceof LedgerError) return { ok: false, message: e.message };
+    if (e instanceof ForbiddenError || e instanceof LedgerError || e instanceof DayLockError) return { ok: false, message: e.message };
     throw e;
   }
 }

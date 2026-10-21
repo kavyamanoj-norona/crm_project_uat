@@ -65,6 +65,8 @@ model Branch {
 
   stockItems         StockItem[]
   purchaseRequests   PurchaseRequest[]
+  stockRequests      StockRequest[]
+  leadCalls          LeadCall[]
   purchaseBills      PurchaseBill[]
   vendorReplacements VendorReplacement[]
   stockUnits         StockUnit[]         @relation("UnitLocation")
@@ -73,14 +75,15 @@ model Branch {
   transfersOut       StockTransfer[]     @relation("TransferFrom")
   transfersIn        StockTransfer[]     @relation("TransferTo")
 
-  directSales     DirectSale[]
-  buybackRecords  BuybackRecord[]
-  refurbItems     RefurbItem[]
-  salesTargets    SalesTarget[]
-  cashbookEntries CashbookEntry[]
-  dayCloses       DayClose[]
-  paymentRoutes   PaymentRoute[]
-  isDelete        Int             @default(0) // 0 = active, 1 = soft-deleted
+  directSales      DirectSale[]
+  buybackRecords   BuybackRecord[]
+  refurbItems      RefurbItem[]
+  salesTargets     SalesTarget[]
+  cashbookEntries  CashbookEntry[]
+  dayCloses        DayClose[]
+  daybookOverrides DaybookOverride[]
+  paymentRoutes    PaymentRoute[]
+  isDelete         Int               @default(0) // 0 = active, 1 = soft-deleted
 
   @@index([companyId])
   @@map("branch")
@@ -234,6 +237,13 @@ model User {
 
   stockItemsUpdated        StockItem[]           @relation("StockItemUpdatedBy")
   purchaseRequestsRaised   PurchaseRequest[]     @relation("PRRequestedBy")
+  stockRequestsRaised      StockRequest[]        @relation("SRRequestedBy")
+  caseDiagnoses            CaseDiagnosis[]       @relation("CaseDiagnosisBy")
+  leadsAsSalesPerson       LeadProfile[]         @relation("LeadSalesPerson")
+  leadsAsTelecaller        LeadProfile[]         @relation("LeadTelecaller")
+  leadsAssignedToBranch    LeadProfile[]         @relation("LeadBranchAssigner")
+  leadCalls                LeadCall[]            @relation("LeadCallBy")
+  telecallerTargets        TelecallerTarget[]    @relation("TelecallerTargetUser")
   purchaseRequestsReviewed PurchaseRequest[]     @relation("PRReviewedBy")
   purchaseBillsCreated     PurchaseBill[]        @relation("BillCreatedBy")
   stockUnitsAllocated      StockUnit[]           @relation("UnitAllocatedBy")
@@ -242,6 +252,7 @@ model User {
   officeUnits              StockUnit[]           @relation("UnitOfficeEmployee")
   cashbookEntries          CashbookEntry[]       @relation("CashbookEntryBy")
   dayCloses                DayClose[]            @relation("DayClosedBy")
+  daybookOverrides         DaybookOverride[]     @relation("DaybookOverrideBy")
   inventoryConfigsUpdated  InventoryConfig[]     @relation("InventoryConfigUpdatedBy")
   caseItemUsages           CaseItemUsage[]       @relation("CaseItemUsageBy")
   replacementsConfirmed    PurchaseRequest[]     @relation("PRReplacementConfirmedBy")
@@ -517,6 +528,8 @@ model Customer {
   payments         Payment[]
   caseInvoices     CaseInvoice[]
   whatsappMessages WhatsAppMessage[]
+  leadProfile      LeadProfile?
+  leadCalls        LeadCall[]
 
   directSales    DirectSale[]
   buybackRecords BuybackRecord[]
@@ -653,6 +666,7 @@ model Case {
   labEngineer        User?                  @relation("CaseLabEngineer", fields: [labEngineerId], references: [id])
   labVendor          ChipLabVendor?         @relation("CaseLabVendor", fields: [labVendorId], references: [id])
   qcResponses        CaseQcResponse[]
+  diagnosis          CaseDiagnosis?
   labTransferBy      User?                  @relation("CaseLabTransferBy", fields: [labTransferCompletedById], references: [id], onDelete: SetNull)
   isDelete           Int                    @default(0) // 0 = active, 1 = soft-deleted
 
@@ -788,6 +802,175 @@ model CaseItemReturn {
 }
 
 // Append-only stage history; the case timeline reads from here.
+// The engineer's diagnosis of a case: what was examined, what was found, and the repairs recommended. One per case, edited in place;
+// every save is also written to the activity log (and so the case history).
+model CaseDiagnosis {
+  id                 String   @id @default(cuid())
+  caseId             String   @unique
+  details            String
+  findings           String
+  recommendedRepairs String
+  savedById          String?
+  createdAt          DateTime @default(now()) @db.Timestamptz
+  updatedAt          DateTime @updatedAt @db.Timestamptz
+
+  case     Case  @relation(fields: [caseId], references: [id])
+  savedBy  User? @relation("CaseDiagnosisBy", fields: [savedById], references: [id])
+  isDelete Int   @default(0) // 0 = active, 1 = soft-deleted
+
+  @@map("case_diagnosis")
+}
+
+// ─── Telecaller: lead tracking, calls, price estimates, incentives ────────────
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  HOT
+  APPOINTMENT // appointment fixed
+  CONVERTED // became a customer, assigned to a branch; not yet walked in
+  WALKED_IN // a case was opened for them
+  BILLED // the case was invoiced
+  LOST
+}
+
+enum CallOutcome {
+  INTERESTED
+  NOT_INTERESTED
+  CALL_BACK
+  NO_ANSWER
+  SWITCHED_OFF
+  WRONG_NUMBER
+  APPOINTMENT_FIXED
+  OTHER
+}
+
+enum CallSide {
+  TELECALLER // Head Office telecaller
+  BRANCH // branch staff following up an assigned lead
+}
+
+enum IncentiveBasis {
+  PER_CONVERSION // flat amount for each converted lead
+  PER_BILLING // flat amount for each billed lead
+  MARGIN_PERCENT // percentage of the margin on each billed lead
+}
+
+// The telecaller's working data for a lead (the spreadsheet columns that are not on the customer): one per lead, kept for
+// life, so it still reads right after the lead is converted, walks in and is billed. The customer row stays the single record.
+model LeadProfile {
+  id                   String       @id @default(cuid())
+  customerId           String       @unique
+  status               LeadStatus   @default(NEW)
+  serviceMode          IntakeType?
+  appointmentAt        DateTime?    @db.Timestamptz
+  walkInDate           DateTime?    @db.Timestamptz
+  billingDate          DateTime?    @db.Timestamptz
+  tokenNo              String?
+  purchaseCostPaise    Int?
+  marginPaise          Int?
+  firstInteractionAt   DateTime?    @db.Timestamptz
+  salesPersonId        String?
+  assignedTelecallerId String?
+  // When Head Office handed the lead to a branch (it then shows on that branch's call list).
+  assignedToBranchAt   DateTime?    @db.Timestamptz
+  assignedToBranchById String?
+  // Kept in step with the call log so due / overdue lists don't scan it.
+  lastCallAt           DateTime?    @db.Timestamptz
+  lastOutcome          CallOutcome?
+  nextFollowUpAt       DateTime?    @db.Timestamptz
+  billedInvoiceId      String?
+  createdAt            DateTime     @default(now()) @db.Timestamptz
+  updatedAt            DateTime     @updatedAt @db.Timestamptz
+
+  customer           Customer @relation(fields: [customerId], references: [id])
+  salesPerson        User?    @relation("LeadSalesPerson", fields: [salesPersonId], references: [id])
+  assignedTelecaller User?    @relation("LeadTelecaller", fields: [assignedTelecallerId], references: [id])
+  assignedToBranchBy User?    @relation("LeadBranchAssigner", fields: [assignedToBranchById], references: [id])
+  isDelete           Int      @default(0) // 0 = active, 1 = soft-deleted
+
+  @@index([assignedTelecallerId, nextFollowUpAt])
+  @@index([status])
+  @@index([nextFollowUpAt])
+  @@map("lead_profile")
+}
+
+// Every call about a lead, by the telecaller or by the branch it was handed to. Append-only: a branch's update is a new row,
+// so the telecaller's original history is never overwritten.
+model LeadCall {
+  id             String      @id @default(cuid())
+  customerId     String
+  side           CallSide
+  outcome        CallOutcome
+  remarks        String?
+  nextFollowUpAt DateTime?   @db.Timestamptz
+  calledAt       DateTime    @default(now()) @db.Timestamptz
+  calledById     String?
+  branchId       String? // the branch that made the call (BRANCH side)
+  createdAt      DateTime    @default(now()) @db.Timestamptz
+
+  customer Customer @relation(fields: [customerId], references: [id])
+  calledBy User?    @relation("LeadCallBy", fields: [calledById], references: [id])
+  branch   Branch?  @relation(fields: [branchId], references: [id])
+  isDelete Int      @default(0) // 0 = active, 1 = soft-deleted
+
+  @@index([customerId, calledAt])
+  @@index([calledById, calledAt])
+  @@map("lead_call")
+}
+
+// Approximate price for a reported issue / repair type, quoted by telecallers on the phone.
+model ServicePriceEstimate {
+  id          String       @id @default(cuid())
+  name        String // "Laptop screen replacement"
+  productType ProductType?
+  minPaise    Int
+  maxPaise    Int
+  notes       String?
+  isActive    Boolean      @default(true)
+  createdById String?
+  createdAt   DateTime     @default(now()) @db.Timestamptz
+  updatedAt   DateTime     @updatedAt @db.Timestamptz
+  isDelete    Int          @default(0) // 0 = active, 1 = soft-deleted
+
+  @@index([isActive, name])
+  @@map("service_price_estimate")
+}
+
+// How telecaller incentives are earned. Every active rule that has started applies to the events (conversions / billings)
+// after its start date; reports are computed from the leads, so changing a rule never touches history before its start date.
+model IncentiveRule {
+  id             String         @id @default(cuid())
+  name           String
+  basis          IncentiveBasis
+  amountPaise    Int? // PER_CONVERSION / PER_BILLING: paid per event
+  percentBp      Int? // MARGIN_PERCENT: basis points of the margin (500 = 5%)
+  minMarginPaise Int? // MARGIN_PERCENT: only billings with at least this margin count
+  effectiveFrom  DateTime       @db.Date
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now()) @db.Timestamptz
+  updatedAt      DateTime       @updatedAt @db.Timestamptz
+  isDelete       Int            @default(0) // 0 = active, 1 = soft-deleted
+
+  @@map("incentive_rule")
+}
+
+model TelecallerTarget {
+  id                String   @id @default(cuid())
+  userId            String
+  month             String // "2026-10"
+  conversionsTarget Int      @default(0)
+  billingsTarget    Int      @default(0)
+  createdAt         DateTime @default(now()) @db.Timestamptz
+  updatedAt         DateTime @updatedAt @db.Timestamptz
+
+  user     User @relation("TelecallerTargetUser", fields: [userId], references: [id])
+  isDelete Int  @default(0) // 0 = active, 1 = soft-deleted
+
+  @@unique([userId, month])
+  @@map("telecaller_target")
+}
+
 model CaseStatusHistory {
   id          String      @id @default(cuid())
   caseId      String
@@ -1015,6 +1198,7 @@ model PurchaseRequest {
   code                     String                @unique // "PR-EDP-2610-001"
   branchId                 String
   itemId                   String
+  stockRequestId           String? // the branch Stock Request (several items in one go) this line belongs to
   caseId                   String? // case that triggered the request
   quantity                 Int                   @default(1)
   notes                    String?
@@ -1042,6 +1226,7 @@ model PurchaseRequest {
   item                   Item              @relation(fields: [itemId], references: [id])
   stockUnits             StockUnit[]
   case                   Case?             @relation(fields: [caseId], references: [id])
+  stockRequest           StockRequest?     @relation(fields: [stockRequestId], references: [id])
   requestedBy            User?             @relation("PRRequestedBy", fields: [requestedById], references: [id])
   reviewedBy             User?             @relation("PRReviewedBy", fields: [reviewedById], references: [id])
   replacementOf          PurchaseRequest?  @relation("PRReorder", fields: [replacementOfId], references: [id])
@@ -1052,7 +1237,28 @@ model PurchaseRequest {
 
   @@index([branchId, status])
   @@index([itemId])
+  @@index([stockRequestId])
   @@map("purchase_request")
+}
+
+// A branch asks Head Office for several parts / accessories in one go. Each line is an ordinary PurchaseRequest, so it
+// shows on the Purchasing Requests tab and follows the usual order → transfer → receipt flow; this is only the header.
+model StockRequest {
+  id            String   @id @default(cuid())
+  code          String   @unique // "SR-EDP-2610-001"
+  branchId      String
+  notes         String?
+  requestedById String?
+  createdAt     DateTime @default(now()) @db.Timestamptz
+  updatedAt     DateTime @updatedAt @db.Timestamptz
+
+  branch      Branch            @relation(fields: [branchId], references: [id])
+  requestedBy User?             @relation("SRRequestedBy", fields: [requestedById], references: [id])
+  lines       PurchaseRequest[]
+  isDelete    Int               @default(0) // 0 = active, 1 = soft-deleted
+
+  @@index([branchId, createdAt])
+  @@map("stock_request")
 }
 
 // Planned movement of stock between branches.
@@ -1927,6 +2133,25 @@ model DayClose {
 
   @@unique([branchId, date])
   @@map("day_close")
+}
+
+// A time-boxed, logged exception to the daily-close lock: while one is active, a branch whose earlier day is still
+// unreconciled may keep posting. Granted by a user with approve rights on the Daybook; expires by itself (or is revoked).
+model DaybookOverride {
+  id          String    @id @default(cuid())
+  branchId    String
+  reason      String
+  grantedById String
+  expiresAt   DateTime  @db.Timestamptz
+  revokedAt   DateTime? @db.Timestamptz
+  createdAt   DateTime  @default(now()) @db.Timestamptz
+
+  branch    Branch @relation(fields: [branchId], references: [id])
+  grantedBy User   @relation("DaybookOverrideBy", fields: [grantedById], references: [id])
+  isDelete  Int    @default(0)
+
+  @@index([branchId, expiresAt])
+  @@map("daybook_override")
 }
 
 // ─── Head Office bank accounts and where digital payments land ────────────────

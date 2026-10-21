@@ -1,6 +1,7 @@
 import "server-only";
 import type { Tx } from "@/server/db";
 import { nextSequence } from "@/server/sequence";
+import { assertDaybookCurrent } from "./day-lock";
 
 // Double-entry bookkeeping core. Every financial event becomes one balanced journal entry. Entries are never edited or
 // deleted (a mistake is corrected with a reversal), and (sourceType, sourceId) is unique, so the same event can never be
@@ -84,6 +85,9 @@ export async function postJournal(tx: Tx, input: JournalInput): Promise<{ id: st
     const existing = await tx.journalEntry.findFirst({ where: { sourceType: input.sourceType, sourceId: input.sourceId }, select: { id: true, entryNo: true } });
     if (existing) return { ...existing, created: false };
   }
+
+  // Daily close lock: the branch where this happened must have closed its earlier days (or hold an override).
+  await assertDaybookCurrent(tx, input.branchId ?? lines[0]!.branchId, input.sourceType, input.narration);
 
   const codes = [...new Set(lines.map((l) => l.account))];
   const accounts = await tx.account.findMany({ where: { code: { in: codes } }, select: { id: true, code: true } });

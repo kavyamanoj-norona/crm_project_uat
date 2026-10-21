@@ -81,6 +81,7 @@ export function AppShell({ nav, counts, user, greeting, logout, branch, children
           greeting={greeting}
           logout={logout}
           branch={branch}
+          restricted={user.restricted}
           onOpenMobile={() => setMobileOpen(true)}
           onToggleSidebar={() => setCollapsed((c) => !c)}
           sidebarCollapsed={collapsed}

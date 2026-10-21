@@ -1,12 +1,18 @@
 import { getCurrentUser } from "@/server/auth/session";
 import { getBranchScope } from "@/server/branch-scope";
 import { runKiran } from "@/ai/runner/kiran.runner";
+import { isOnsitePickup } from "@/server/rbac/roles";
 import { db } from "@/server/db";
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // The assistant reads CRM-wide data; field roles with a single screen must not reach it through the API.
+  if (isOnsitePickup(user)) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
   if (!process.env.OPENAI_API_KEY) {

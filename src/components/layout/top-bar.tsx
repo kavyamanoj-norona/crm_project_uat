@@ -15,6 +15,7 @@ type TopBarProps = {
   greeting: string;
   logout: LogoutAction;
   branch: ShellBranch;
+  restricted?: boolean;
   onOpenMobile: () => void;
   onToggleSidebar: () => void;
   sidebarCollapsed: boolean;
@@ -29,6 +30,7 @@ export function TopBar({
   greeting,
   logout,
   branch,
+  restricted,
   onOpenMobile,
   onToggleSidebar,
   sidebarCollapsed,
@@ -62,10 +64,14 @@ export function TopBar({
       </div>
 
       <div className="ml-auto flex min-w-0 items-center gap-1">
-        <div className="mr-1 sm:mr-2">
-          <BranchSwitcher {...branch} />
-        </div>
-        <AskKiran />
+        {!restricted && (
+          <>
+            <div className="mr-1 sm:mr-2">
+              <BranchSwitcher {...branch} />
+            </div>
+            <AskKiran />
+          </>
+        )}
 
         <AppSwitcher nav={nav} activeModule={activeModule} />
 

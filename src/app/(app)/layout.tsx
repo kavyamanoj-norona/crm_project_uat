@@ -4,6 +4,7 @@ import { requireUser } from "@/server/auth/session";
 import { getNavigation } from "@/server/navigation/get-navigation";
 import { setBranchScope } from "@/server/branch-actions";
 import { branchWhere, getBranchScope, listBranchOptions } from "@/server/branch-scope";
+import { isOnsitePickup } from "@/server/rbac/roles";
 import { getMenuCounts } from "@/server/navigation/menu-counts";
 
 function istGreeting(name: string) {
@@ -26,7 +27,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     <AppShell
       nav={nav}
       counts={counts}
-      user={{ name: user.name, username: user.username, roleName: user.privilege.name }}
+      user={{ name: user.name, username: user.username, roleName: user.privilege.name, restricted: isOnsitePickup(user) }}
       greeting={istGreeting(user.name)}
       logout={logout}
       branch={{ canSwitch: scope.canSwitch, current: scope.branch, options, setBranch: setBranchScope }}

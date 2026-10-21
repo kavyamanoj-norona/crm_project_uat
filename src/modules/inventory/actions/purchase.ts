@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/server/db";
 import { toFieldErrors, pick, type FormState } from "@/lib/form";
 import { ForbiddenError, requireActionPermission } from "@/server/rbac/guard";
+import { isEngineer } from "@/server/rbac/roles";
 import { branchWhere, getBranchScope } from "@/server/branch-scope";
 import { formPhotos, photoError, saveCasePhotos } from "@/server/case-photos";
 import { logActivity } from "@/server/security/activity";
@@ -14,6 +15,7 @@ import { canRequestParts, type CaseStatusValue } from "@/modules/service/case-sc
 import { createReplacementRequest } from "../replacement";
 import { INVENTORY_PATHS } from "../paths";
 import { requirePurchaseManager } from "../purchase-access";
+import { createStockRequest } from "../stock-request";
 import { partRequestSchema, purchaseRequestSchema, stockRequestSchema } from "../schemas";
 
 const periodFmt = new Intl.DateTimeFormat("en-IN", {
@@ -63,6 +65,8 @@ export async function requestItemStock(itemId: string, _prev: FormState, formDat
   if (!parsed.success) return toFieldErrors(parsed.error, formData);
   try {
     const user = await requireActionPermission(INVENTORY_PATHS.purchasing, "canCreate");
+    // Stock requests are for Front Desk and Branch Managers; engineers never raise them, whatever permissions they hold.
+    if (isEngineer(user)) throw new ForbiddenError();
     // Only branch users request from Head Office; the Purchase Manager raises requests on the Purchasing page.
     if (!user.privilege.isBranchBound || !user.branchId) throw new ForbiddenError();
     const branchId = user.branchId;
@@ -73,18 +77,14 @@ export async function requestItemStock(itemId: string, _prev: FormState, formDat
 
     const branch = await db.branch.findUniqueOrThrow({ where: { id: branchId }, select: { code: true } });
     const { quantity, notes } = parsed.data;
-    const code = await db.$transaction(async (tx) => {
-      const seq = await nextSequence(tx, `PR:${branch.code}:${period()}`);
-      const code = `PR-${branch.code.toUpperCase()}-${period()}-${String(seq).padStart(3, "0")}`;
-      await tx.purchaseRequest.create({
-        data: { code, branchId, itemId, quantity, caseId: null, notes: notes ?? null, requestedById: user.id },
-      });
-      return code;
-    });
+    // Recorded as a one-line Stock Request, so it shows in the branch's Stock Requests list; Head Office still sees the same PurchaseRequest.
+    const { code } = await db.$transaction((tx) =>
+      createStockRequest(tx, { branchId, branchCode: branch.code, userId: user.id, notes: notes ?? null, lines: [{ itemId, quantity }] }),
+    );
     await logActivity({
       action: "inventory.request",
       userId: user.id,
-      entity: "PurchaseRequest",
+      entity: "StockRequest",
       entityId: code,
       detail: `${code}: requested ${quantity} × ${item.name} from Head Office`,
     });
@@ -106,6 +106,8 @@ export async function reorderPartForCase(caseItemId: string, _prev: FormState, f
   if (reason.length > 300) return { message: "Please fix the highlighted fields.", fieldErrors: { reason: ["Keep the reason under 300 characters"] } };
   try {
     const user = await requireActionPermission(INVENTORY_PATHS.stock, "canCreate");
+    // Case-linked stock requests are for Front Desk and Branch Managers only; engineers never raise them.
+    if (isEngineer(user)) throw new ForbiddenError();
     const scope = branchWhere(await getBranchScope(user));
     const line = await db.caseItem.findFirst({
       where: { id: caseItemId, removedAt: null, case: { ...scope } },
@@ -134,6 +136,8 @@ export async function requestPartForCase(caseItemId: string, _prev: FormState, f
 
   try {
     const user = await requireActionPermission(INVENTORY_PATHS.stock, "canCreate");
+    // Case-linked stock requests are for Front Desk and Branch Managers only; engineers never raise them.
+    if (isEngineer(user)) throw new ForbiddenError();
     const scope = branchWhere(await getBranchScope(user));
     const line = await db.caseItem.findFirst({
       where: { id: caseItemId, removedAt: null, case: { ...scope } },

@@ -6,19 +6,10 @@ import { ACCT } from "./ledger";
 // branch on that business day (IST). Case payments and counter sales post there automatically; expenses, bank deposits
 // and the day-end difference are posted from the Daybook itself.
 
-/** Today in IST as yyyy-mm-dd. */
-export const todayIst = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
+import { dayValue, isDateString, istDay, todayIst } from "./daybook-dates";
+import { earliestUnclosedDay as unclosedDayBefore } from "./day-lock";
 
-/** The instant a business day starts and the next one starts, in IST. */
-export function istDay(date: string) {
-  const from = new Date(`${date}T00:00:00+05:30`);
-  return { from, to: new Date(from.getTime() + 24 * 60 * 60 * 1000) };
-}
-
-/** The business day as a DATE column value. */
-export const dayValue = (date: string) => new Date(`${date}T00:00:00Z`);
-
-export const isDateString = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(new Date(`${v}T00:00:00Z`).getTime());
+export { dayValue, isDateString, istDay, todayIst };
 
 export type DaybookRowType = "auto" | "expense" | "deposit" | "variance" | "reversal" | "other";
 
@@ -117,6 +108,97 @@ export async function getDaybook(branchId: string, fromDate: string, toDate = fr
     /** The day's close; only for a single-day book. */
     close: fromDate === toDate ? (closes[0] ?? null) : null,
     closedDays: closes.length,
+  };
+}
+
+export type LedgerAccount = "cash" | "bank";
+
+const MODE_NAMES: Record<string, string> = { CASH: "Cash", UPI: "UPI", CARD: "Card", BANK_TRANSFER: "Bank transfer", OTHER: "Other" };
+
+/** Payment mode of a posting: payments and sales carry it in the narration "(UPI)"; the rest are plain cash or bank. */
+function entryMode(account: LedgerAccount, sourceType: string, narration: string) {
+  if (account === "cash") return "Cash";
+  if (sourceType === "CASE_PAYMENT" || sourceType === "DIRECT_SALE") {
+    const m = /\(([A-Z_]+)\)\s*$/.exec(narration)?.[1];
+    if (m && MODE_NAMES[m]) return MODE_NAMES[m];
+  }
+  return "Bank";
+}
+
+/**
+ * Consolidated Head Office book: every money-in / money-out line on the cash boxes (`account: "cash"`) or on the Head
+ * Office bank accounts (`"bank"`), from `fromDate` to `toDate`, optionally for one branch (`branchId`), with a running
+ * balance. The two ledgers are never mixed, so a cash deposit shows once as cash out and once as bank in, and UPI / card
+ * collections (which settle to the bank, not the cash box) appear only in the bank ledger. A bank line is attributed to
+ * the branch where the event happened (the journal entry's branch), since the bank itself is held at Head Office.
+ */
+export async function getLedgerBook(o: { account: LedgerAccount; branchId: string | null; fromDate: string; toDate: string }) {
+  const { from } = istDay(o.fromDate);
+  const { to } = istDay(o.toDate);
+  const accountIds =
+    o.account === "cash"
+      ? [await cashAccountId()]
+      : (await db.account.findMany({ where: { type: "ASSET", subType: "BANK", isDelete: 0 }, select: { id: true } })).map((a) => a.id);
+  const b = o.branchId;
+  const branchWhere =
+    b === null ? {} : o.account === "cash" ? { branchId: b } : { OR: [{ entry: { branchId: b } }, { entry: { branchId: null }, branchId: b }] };
+  const base = { accountId: { in: accountIds }, isDelete: 0, ...branchWhere };
+
+  const [open, lines, branches] = await Promise.all([
+    db.journalLine.aggregate({ where: { ...base, entry: { entryDate: { lt: from } } }, _sum: { debitPaise: true, creditPaise: true } }),
+    db.journalLine.findMany({
+      where: { ...base, entry: { entryDate: { gte: from, lt: to } } },
+      orderBy: [{ entry: { entryDate: "asc" } }, { entry: { entryNo: "asc" } }],
+      select: {
+        id: true,
+        debitPaise: true,
+        creditPaise: true,
+        branch: { select: { code: true, name: true } },
+        entry: {
+          select: {
+            entryNo: true,
+            entryDate: true,
+            narration: true,
+            sourceType: true,
+            branchId: true,
+            cashbookEntry: { select: { kind: true, description: true, remarks: true, receiptUrl: true, account: { select: { name: true } }, createdBy: { select: { firstName: true, lastName: true } } } },
+          },
+        },
+      },
+    }),
+    db.branch.findMany({ select: { id: true, code: true, name: true } }),
+  ]);
+  const branchById = new Map(branches.map((x) => [x.id, x]));
+  const openingPaise = (open._sum.debitPaise ?? 0) - (open._sum.creditPaise ?? 0);
+
+  let balance = openingPaise;
+  const rows = lines.map((l) => {
+    balance += l.debitPaise - l.creditPaise;
+    const cb = l.entry.cashbookEntry;
+    const src = (l.entry.branchId ? branchById.get(l.entry.branchId) : undefined) ?? l.branch;
+    return {
+      id: l.id,
+      at: l.entry.entryDate,
+      entryNo: l.entry.entryNo,
+      type: rowType(l.entry.sourceType),
+      branchCode: src.code,
+      branchName: src.name,
+      mode: entryMode(o.account, l.entry.sourceType, l.entry.narration),
+      description: cb ? `${cb.kind === "DEPOSIT" ? "Deposit to " : "Expense — "}${cb.kind === "DEPOSIT" ? cb.account.name : cb.description}${cb.kind === "EXPENSE" ? ` · ${cb.account.name}` : ""}` : l.entry.narration,
+      remarks: cb?.remarks ?? null,
+      receiptUrl: cb?.receiptUrl ?? null,
+      by: cb?.createdBy ?? null,
+      inPaise: l.debitPaise,
+      outPaise: l.creditPaise,
+      balancePaise: balance,
+    };
+  });
+  return {
+    openingPaise,
+    rows,
+    totalInPaise: rows.reduce((s, r) => s + r.inPaise, 0),
+    totalOutPaise: rows.reduce((s, r) => s + r.outPaise, 0),
+    closingPaise: balance,
   };
 }
 
@@ -229,19 +311,8 @@ export async function getDaybookSummary(fromDate: string, toDate: string) {
   };
 }
 
-/** The last business day before `date` that had cash movement but was never closed, if any. */
-export async function earliestUnclosedDay(branchId: string, date: string): Promise<string | null> {
-  const { from } = istDay(date);
-  const accountId = await cashAccountId();
-  const lastClose = await db.dayClose.findFirst({ where: { branchId, date: { lt: dayValue(date) } }, orderBy: { date: "desc" }, select: { date: true } });
-  const after = lastClose ? istDay(lastClose.date.toISOString().slice(0, 10)).to : undefined;
-  const line = await db.journalLine.findFirst({
-    where: { accountId, branchId, entry: { entryDate: { lt: from, ...(after ? { gte: after } : {}) } } },
-    orderBy: { entry: { entryDate: "asc" } },
-    select: { entry: { select: { entryDate: true } } },
-  });
-  return line ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(line.entry.entryDate) : null;
-}
+/** The earliest business day before `date` that had cash movement but was never closed, if any. */
+export const earliestUnclosedDay = (branchId: string, date: string) => unclosedDayBefore(db, branchId, date);
 
 /** Expense categories offered in the Daybook (the chart's expense accounts, without the system ones). */
 export function listExpenseAccounts() {

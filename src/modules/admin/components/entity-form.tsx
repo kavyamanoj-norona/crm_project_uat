@@ -13,7 +13,7 @@ import { FORM_SCHEMAS, type FormSchemaKey } from "../form-schemas";
 export type FieldConfig = {
   name: string;
   label: string;
-  type?: "text" | "email" | "number" | "textarea" | "select" | "switch";
+  type?: "text" | "email" | "number" | "date" | "datetime-local" | "textarea" | "select" | "switch";
   /** Selects only: a dropdown you can type into to filter, for long lists such as items. */
   searchable?: boolean;
   required?: boolean;

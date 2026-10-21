@@ -12,6 +12,8 @@ import { formatPaise } from "@/lib/money";
 import { markCaseUnitsConsumed } from "@/modules/inventory/unit-consume";
 import { postCaseInvoice, postCasePayment, postCogs } from "@/modules/finance/posting";
 import { LedgerError } from "@/modules/finance/ledger";
+import { markLeadBilled } from "@/modules/telecaller/service";
+import { DayLockError } from "@/modules/finance/day-lock";
 import { CLOSING_PAYMENT_MODES, billSummary } from "../case-billing-math";
 import { closeBlockReason, closingAccessories, closingBill } from "../case-billing";
 import { SERVICE_PATHS } from "../paths";
@@ -125,6 +127,9 @@ export async function closeCaseWithBill(caseId: string, _prev: FormState, formDa
         select: { id: true, invoiceNo: true, branchId: true, customerId: true, totalPaise: true, taxPaise: true, issuedAt: true, lines: { select: { type: true, taxablePaise: true } } },
       });
 
+      // A lead's case being billed moves the lead to Billed (billing date, margin) for the telecaller reports.
+      await markLeadBilled(tx, invoice.customerId, { id: invoice.id, subtotalPaise: sum.taxablePaise, issuedAt: invoice.issuedAt });
+
       // Advances already taken: make sure each is in the ledger, then tie it to this invoice.
       const advances = await tx.payment.findMany({ where: { caseId, kind: "ADVANCE", invoiceId: null }, include: { case: { select: { jobsheetNo: true } } } });
       for (const a of advances) await postCasePayment(tx, a, user.id);
@@ -189,7 +194,7 @@ export async function closeCaseWithBill(caseId: string, _prev: FormState, formDa
     return { ok: true, message: `Case closed. Invoice ${result.invoiceNo} generated${result.remaining > 0 ? `, ${formatPaise(result.remaining)} due` : ""}.` };
   } catch (e) {
     if (e instanceof ForbiddenError) return { message: e.message };
-    if (e instanceof CloseError || e instanceof LedgerError) return { message: e.message };
+    if (e instanceof CloseError || e instanceof LedgerError || e instanceof DayLockError) return { message: e.message };
     throw e;
   }
 }

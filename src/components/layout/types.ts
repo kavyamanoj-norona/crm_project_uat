@@ -2,6 +2,8 @@ export type ShellUser = {
   name: string;
   username: string;
   roleName: string;
+  /** Field role with a single screen: no branch switcher, no assistant. */
+  restricted?: boolean;
 };
 
 /** Server action passed down from the (app) layout — components never import server/. */

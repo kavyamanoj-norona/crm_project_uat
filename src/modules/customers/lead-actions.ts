@@ -9,7 +9,9 @@ import { getBranchScope, leadWhere } from "@/server/branch-scope";
 import { ForbiddenError, requireActionPermission } from "@/server/rbac/guard";
 import { logActivity } from "@/server/security/activity";
 import { CUSTOMER_PATHS } from "./paths";
-import { LEAD_FIELDS, LEAD_LABELS, leadSchema } from "./lead-schemas";
+import { LEAD_LABELS } from "./lead-schemas";
+import { LEAD_FORM_FIELDS, leadFormSchema } from "@/modules/telecaller/lead-form-schema";
+import { isTelecaller } from "@/server/rbac/roles";
 import { changedFields, convertLeadRecord, createLeadRecord, describeChanges } from "./service";
 
 type Scope = Awaited<ReturnType<typeof getBranchScope>>;
@@ -33,37 +35,78 @@ const getLeadInScope = (id: string, scope: Scope) =>
   });
 
 export async function saveLead(_prev: FormState, formData: FormData): Promise<FormState> {
-  const parsed = leadSchema.safeParse(pick(formData, LEAD_FIELDS));
+  const parsed = leadFormSchema.safeParse(pick(formData, LEAD_FORM_FIELDS));
   if (!parsed.success) return toFieldErrors(parsed.error, formData);
-  const data = parsed.data;
+  const { branchId: formBranch, serviceMode, appointmentAt, status, tokenNo, purchaseCost, margin, walkInDate, billingDate, salesPersonId, assignedTelecallerId, ...customerData } = parsed.data;
   const id = formData.get("id")?.toString() || null;
 
   let savedId: string;
   try {
     const actor = await requireActionPermission(CUSTOMER_PATHS.leads, id ? "canEdit" : "canCreate");
     const scope = await getBranchScope(actor);
-    const clash = await phoneClash(data.phone, id);
+    // Branch staff keep leads in their own branch and can't hand them to a telecaller; Head Office picks both.
+    const bound = actor.privilege.isBranchBound;
+    const clash = await phoneClash(customerData.phone, id);
     if (clash) throw new FieldError("phone", clash);
 
+    if (!bound && formBranch) {
+      const ok = await db.branch.findFirst({ where: { id: formBranch, isActive: true, isVirtual: false }, select: { id: true } });
+      if (!ok) throw new FieldError("branchId", "Pick an active branch");
+    }
+    for (const [field, uid] of [["salesPersonId", salesPersonId], ["assignedTelecallerId", bound ? null : assignedTelecallerId]] as const) {
+      if (!uid) continue;
+      const u = await db.user.findFirst({ where: { id: uid, isActive: true, status: "WORKING" }, select: { id: true } });
+      if (!u) throw new FieldError(field, "Pick an active staff member");
+    }
+
+    const tracking = {
+      serviceMode,
+      appointmentAt,
+      tokenNo,
+      purchaseCostPaise: purchaseCost,
+      marginPaise: margin,
+      walkInDate,
+      billingDate,
+      salesPersonId,
+      ...(status ? { status } : {}),
+      ...(bound ? {} : { assignedTelecallerId }),
+    };
+
     if (id) {
-      const existing = await db.customer.findFirst({ where: { AND: [{ id, kind: "LEAD" }, leadWhere(scope)] } });
-      if (!existing) throw new FieldError("name", "This lead no longer exists or was already converted.");
-      const changed = changedFields(existing, data);
+      const existing = await db.customer.findFirst({ where: { AND: [{ id, leadCode: { not: null } }, leadWhere(scope)] } });
+      if (!existing) throw new FieldError("name", "This lead no longer exists.");
       savedId = id;
-      if (changed.length > 0) {
-        await db.customer.update({ where: { id }, data: { ...data, updatedById: actor.id } });
-        await logActivity({
-          action: "lead.update",
-          userId: actor.id,
-          entity: "Customer",
-          entityId: id,
-          detail: describeChanges(changed),
+      const open = existing.kind === "LEAD";
+      const changed = open ? changedFields(existing, customerData) : [];
+      const newBranch = bound ? undefined : formBranch;
+      const branchChanged = newBranch !== undefined && newBranch !== existing.branchId;
+      await db.$transaction(async (tx) => {
+        if (open && (changed.length > 0 || branchChanged)) {
+          await tx.customer.update({ where: { id }, data: { ...customerData, ...(branchChanged ? { branchId: newBranch } : {}), updatedById: actor.id } });
+        } else if (!open && branchChanged) {
+          await tx.customer.update({ where: { id }, data: { branchId: newBranch, updatedById: actor.id } });
+        }
+        await tx.leadProfile.upsert({
+          where: { customerId: id },
+          update: { ...tracking, ...(branchChanged && newBranch ? { assignedToBranchAt: new Date(), assignedToBranchById: actor.id } : {}) },
+          create: { customerId: id, firstInteractionAt: existing.createdAt, ...tracking, status: status ?? (open ? "NEW" : "CONVERTED") },
         });
+      });
+      await logActivity({ action: "lead.update", userId: actor.id, entity: "Customer", entityId: id, detail: changed.length > 0 ? describeChanges(changed) : "Tracking details updated" });
+      if (branchChanged && newBranch) {
+        await logActivity({ action: "lead.assign-branch", userId: actor.id, entity: "Customer", entityId: id, detail: `${existing.leadCode} assigned to a branch` });
       }
     } else {
-      const lead = await db.$transaction((tx) =>
-        createLeadRecord(tx, data, { branchId: scope.branchId, actorId: actor.id }),
-      );
+      const branchId = bound ? (scope.branchId ?? actor.branchId) : formBranch;
+      const owner = isTelecaller(actor) ? actor.id : bound ? null : assignedTelecallerId;
+      const lead = await db.$transaction(async (tx) => {
+        const created = await createLeadRecord(tx, customerData, { branchId, actorId: actor.id, telecallerId: owner });
+        await tx.leadProfile.update({
+          where: { customerId: created.id },
+          data: { ...tracking, assignedTelecallerId: owner, ...(!bound && branchId ? { assignedToBranchAt: new Date(), assignedToBranchById: actor.id } : {}) },
+        });
+        return created;
+      });
       savedId = lead.id;
       await logActivity({ action: "lead.create", userId: actor.id, entity: "Customer", entityId: lead.id, detail: lead.code });
     }

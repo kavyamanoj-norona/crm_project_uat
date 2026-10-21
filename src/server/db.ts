@@ -33,7 +33,7 @@ type ExtendedClient = ReturnType<typeof createClient>;
 const globalForPrisma = globalThis as unknown as { prisma?: ExtendedClient; prismaVersion?: number };
 
 // Bump when the extension changes so a hot-reloaded dev server drops the stale cached client.
-const CLIENT_VERSION = 8;
+const CLIENT_VERSION = 9;
 
 // After `prisma generate` the dev server hot-reloads a new PrismaClient class;
 // a cached instance of the old class would miss new models, so replace it.

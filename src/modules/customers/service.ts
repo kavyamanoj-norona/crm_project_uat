@@ -26,10 +26,10 @@ export type NewLeadInput = {
 export async function createLeadRecord(
   tx: Tx,
   input: NewLeadInput,
-  who: { branchId: string | null; actorId: string | null },
+  who: { branchId: string | null; actorId: string | null; telecallerId?: string | null },
 ) {
   const code = await nextLeadCode(tx);
-  return tx.customer.create({
+  const lead = await tx.customer.create({
     data: {
       ...input,
       code,
@@ -40,6 +40,11 @@ export async function createLeadRecord(
       updatedById: who.actorId,
     },
   });
+  // The telecaller's tracking row (status, calls, follow-ups) starts with the lead.
+  await tx.leadProfile.create({
+    data: { customerId: lead.id, status: "NEW", firstInteractionAt: new Date(), assignedTelecallerId: who.telecallerId ?? null },
+  });
+  return lead;
 }
 
 /**
@@ -68,7 +73,10 @@ export async function convertLeadRecord(
       updatedById: actorId,
     },
   });
-  return count === 0 ? null : tx.customer.findUniqueOrThrow({ where: { id: leadId } });
+  if (count === 0) return null;
+  // Tracking follows: a converted lead is "Converted" unless it has already walked in or been billed.
+  await tx.leadProfile.updateMany({ where: { customerId: leadId, status: { notIn: ["WALKED_IN", "BILLED"] } }, data: { status: "CONVERTED", nextFollowUpAt: null } });
+  return tx.customer.findUniqueOrThrow({ where: { id: leadId } });
 }
 
 /** Keys of `after` whose value differs from `before`. */

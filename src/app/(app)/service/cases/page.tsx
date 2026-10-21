@@ -10,7 +10,7 @@ import { formatPhone } from "@/lib/phone";
 import { enumLabel } from "@/lib/enum";
 import { AdminPage, param } from "@/modules/admin/components/admin-page";
 import { caseAge } from "@/modules/service/case-age";
-import { CASE_KIND_LABELS, CASE_STATUS_LABELS, CASE_STATUS_TONE, isOpenStatus } from "@/modules/service/case-schema";
+import { CASE_KIND_LABELS, INTAKE_TYPE_LABELS, CASE_STATUS_LABELS, CASE_STATUS_TONE, isOpenStatus } from "@/modules/service/case-schema";
 import { SERVICE_PATHS } from "@/modules/service/paths";
 import { CASE_SORTS, CASE_TYPE_FILTERS, getTatLimits, isCaseTypeFilter, listActiveStaff, listCases } from "@/modules/service/queries";
 import { assignEngineer, getBranchStaffOptions } from "@/modules/service/actions/case";
@@ -103,6 +103,10 @@ export default async function CasesPage({ searchParams }: PageProps<"/service/ca
                 {c.jobsheetNo}
               </Link>
             ),
+          },
+          {
+            header: "Intake",
+            cell: (c) => <Badge tone={c.intakeType === "ON_SITE" ? "warning" : c.intakeType === "PICKUP" ? "navy" : "neutral"}>{INTAKE_TYPE_LABELS[c.intakeType]}</Badge>,
           },
           {
             header: "Customer",

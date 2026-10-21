@@ -15,6 +15,7 @@ import { parseRupees } from "@/modules/inventory/billing-schema";
 import { getHeadOfficeBranch } from "@/modules/inventory/head-office";
 import { ACCT, LedgerError, postJournal } from "./ledger";
 import { cashBalanceBefore, dayValue, isDateString, istDay, todayIst } from "./daybook";
+import { earliestUnclosedDay } from "./day-lock";
 import { FINANCE_PATHS } from "./paths";
 
 const RECEIPT_TYPES: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "application/pdf": "pdf" };
@@ -34,7 +35,7 @@ async function guard(run: () => Promise<FormState>): Promise<FormState> {
 }
 
 /** The branch the Daybook works on: a branch user's own, or the one picked in the header. Never "all branches". */
-async function daybookBranch(permission: "canCreate" | "canEdit") {
+async function daybookBranch(permission: "canCreate" | "canEdit" | "canApprove") {
   const user = await requireActionPermission(FINANCE_PATHS.daybook, permission);
   const scope = await getBranchScope(user);
   if (!scope.branchId) throw new FieldError("form", "Select a branch in the header first.");
@@ -184,6 +185,9 @@ export async function closeDaybook(_prev: FormState, fd: FormData): Promise<Form
       // One close per branch per day, even if two people press the button together.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`dayclose:${branchId}:${date}`}))`;
       await assertDayOpen(tx, branchId, date);
+      // Days close in order, so each day opens with the previous day's counted closing balance.
+      const earlier = await earliestUnclosedDay(tx, branchId, date);
+      if (earlier) throw new FieldError("form", `Close ${earlier} first: days are reconciled in order so each one opens with the previous day's counted balance.`);
       const cash = await tx.account.findUniqueOrThrow({ where: { code: ACCT.CASH }, select: { id: true } });
       const s = await tx.journalLine.aggregate({
         where: { accountId: cash.id, branchId, entry: { entryDate: { lt: isToday ? new Date(Date.now() + 1000) : to } } },
@@ -233,5 +237,36 @@ export async function closeDaybook(_prev: FormState, fd: FormData): Promise<Form
     });
     refresh();
     return { ok: true, message: `Day ${date} reconciled and closed.` };
+  });
+}
+
+/**
+ * Authorised exception to the daily-close lock: lets one branch keep posting for the rest of today although an earlier day
+ * is still unreconciled. Needs approve rights on the Daybook and a written reason; it expires at the end of today (IST)
+ * and every use of it is logged.
+ */
+export async function grantDaybookOverride(_prev: FormState, fd: FormData): Promise<FormState> {
+  return guard(async () => {
+    const reason = text(fd, "reason", 300);
+    if (reason.length < 10) return fail("reason", "Explain why the lock is being lifted (at least 10 characters)");
+    const { user, branchId } = await daybookBranch("canApprove");
+    const unclosed = await earliestUnclosedDay(db, branchId, todayIst());
+    if (!unclosed) return { message: "This branch has no unreconciled earlier day, so there is nothing to override." };
+    const expiresAt = istDay(todayIst()).to;
+    const row = await db.daybookOverride.create({ data: { branchId, reason, grantedById: user.id, expiresAt }, select: { id: true } });
+    await logActivity({ action: "finance.daybook.override.grant", userId: user.id, entity: "Branch", entityId: branchId, detail: `Lock lifted for today while ${unclosed} is unclosed (${row.id}): ${reason}` });
+    refresh();
+    return { ok: true, message: "Override granted until the end of today. Close the earlier day as soon as possible." };
+  });
+}
+
+/** Ends an override early. */
+export async function revokeDaybookOverride(_prev: FormState, _fd: FormData): Promise<FormState> {
+  return guard(async () => {
+    const { user, branchId } = await daybookBranch("canApprove");
+    const { count } = await db.daybookOverride.updateMany({ where: { branchId, revokedAt: null, expiresAt: { gt: new Date() } }, data: { revokedAt: new Date() } });
+    if (count) await logActivity({ action: "finance.daybook.override.revoke", userId: user.id, entity: "Branch", entityId: branchId, detail: `Override ended early (${count})` });
+    refresh();
+    return { ok: true, message: "Override ended." };
   });
 }

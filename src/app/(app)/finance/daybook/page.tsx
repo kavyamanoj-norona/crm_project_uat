@@ -1,7 +1,10 @@
+import Link from "next/link";
+import { db } from "@/server/db";
 import { Banknote, Wallet, ArrowDownCircle, BoxIcon, Landmark, IndianRupee } from "lucide-react";
 import { StatCard } from "@/components/data/stat-card";
 import { DataTable } from "@/components/data/data-table";
 import { DateRangeChip } from "@/components/data/date-range-chip";
+import { FilterSelect } from "@/components/data/filter-select";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/layout/page-header";
@@ -11,6 +14,7 @@ import { getBranchScope } from "@/server/branch-scope";
 import { setBranchScope } from "@/server/branch-actions";
 import { formatPaise } from "@/lib/money";
 import { formatDateTime } from "@/lib/dates";
+import { getHeadOfficeBranch } from "@/modules/inventory/head-office";
 import { param } from "@/modules/admin/components/admin-page";
 import { FINANCE_PATHS } from "@/modules/finance/paths";
 import {
@@ -20,12 +24,15 @@ import {
   getCollections,
   getDaybook,
   getDaybookSummary,
+  getLedgerBook,
   isDateString,
+  type LedgerAccount,
   listBankAccounts,
   listExpenseAccounts,
   todayIst,
   type CollectionMode,
 } from "@/modules/finance/daybook";
+import { lockedBranches, getDayLock } from "@/modules/finance/day-lock";
 import { closeDaybook, depositCashToBank, postDaybookExpense } from "@/modules/finance/daybook-actions";
 import {
   ClosedDayCard,
@@ -73,6 +80,79 @@ function CollectionsCard({ modes, totalPaise }: { modes: Record<CollectionMode, 
   );
 }
 
+type Ledger = Awaited<ReturnType<typeof getLedgerBook>>;
+
+/** A cash-book style ledger: opening row, every in/out line with branch and mode, running balance, totals footer. */
+function LedgerTable({ ledger, singleDay }: { ledger: Ledger; singleDay: boolean }) {
+  const rows: ((Ledger["rows"][number]) | { id: "opening"; opening: true })[] = [{ id: "opening", opening: true }, ...ledger.rows];
+  return (
+    <>
+          <DataTable
+            bordered={false}
+            rows={rows}
+            rowKey={(r) => r.id}
+            empty="No transactions in this period."
+            columns={[
+              {
+                header: "Date",
+                cell: (r) => ("opening" in r ? "—" : <span className="text-xs whitespace-nowrap text-text-muted">{(singleDay ? timeFmt : dateTimeFmt).format(r.at)}</span>),
+              },
+              {
+                header: "Branch",
+                cell: (r) =>
+                  "opening" in r ? (
+                    ""
+                  ) : (
+                    <span className="flex flex-col leading-tight">
+                      <span className="font-medium">{r.branchName}</span>
+                      <span className="text-xs text-text-muted">{r.branchCode === "HO" ? "Head Office" : r.branchCode}</span>
+                    </span>
+                  ),
+              },
+              {
+                header: "Description",
+                cell: (r) =>
+                  "opening" in r ? (
+                    <span className="font-semibold">Opening balance b/f</span>
+                  ) : (
+                    <div className="max-w-xl whitespace-normal">
+                      <span>{r.description}</span>
+                      {TYPE_TAG[r.type] && (
+                        <Badge tone={TYPE_TAG[r.type]!.tone} className="ml-2">
+                          {TYPE_TAG[r.type]!.label}
+                        </Badge>
+                      )}
+                      {r.receiptUrl && (
+                        <a href={r.receiptUrl} target="_blank" rel="noreferrer" className="ml-1.5 text-[11px] font-medium text-primary hover:underline">
+                          receipt
+                        </a>
+                      )}
+                      {r.remarks && <p className="text-xs text-text-muted">{r.remarks}</p>}
+                      <p className="text-[11px] text-text-muted">
+                        {r.entryNo}
+                        {r.by && ` · ${personName(r.by)}`}
+                      </p>
+                    </div>
+                  ),
+              },
+              { header: "Mode", align: "center", cell: (r) => ("opening" in r ? "" : <Badge tone={r.mode === "Cash" ? "success" : "navy"}>{r.mode}</Badge>) },
+              { header: "Money in", align: "right", cell: (r) => ("opening" in r || !r.inPaise ? "" : <span className="font-medium tabular-nums text-success">{formatPaise(r.inPaise)}</span>) },
+              { header: "Money out", align: "right", cell: (r) => ("opening" in r || !r.outPaise ? "" : <span className="font-medium tabular-nums text-danger">{formatPaise(r.outPaise)}</span>) },
+              { header: "Balance", align: "right", cell: (r) => <span className="font-semibold tabular-nums">{formatPaise("opening" in r ? ledger.openingPaise : r.balancePaise)}</span> },
+            ]}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-border px-4 py-3 text-xs sm:px-5">
+            <p className="text-text-muted">
+              Cash and bank are separate ledgers: a deposit is cash out here and bank in on the Bank ledger. Entries are read-only; corrections go through a reversal.
+            </p>
+            <p className="font-semibold text-text tabular-nums">
+              Opening {formatPaise(ledger.openingPaise)} + in {formatPaise(ledger.totalInPaise)} − out {formatPaise(ledger.totalOutPaise)} = closing {formatPaise(ledger.closingPaise)}
+            </p>
+          </div>
+    </>
+  );
+}
+
 export default async function DaybookPage({ searchParams }: PageProps<"/finance/daybook">) {
   const { user, permission } = await requirePageAccess(FINANCE_PATHS.daybook);
   const scope = await getBranchScope(user);
@@ -89,8 +169,16 @@ export default async function DaybookPage({ searchParams }: PageProps<"/finance/
   const isToday = singleDay && fromDate === today;
   const periodLabel = singleDay ? (isToday ? "Today's" : `${fmtDay(fromDate)}'s`) : `${fmtDay(fromDate)} – ${fmtDay(toDate)}`;
 
+  // Head Office ledger filters (all-branches view only): which ledger, and optionally one branch.
+  const ledgerAcct: LedgerAccount = param(sp, "acct") === "bank" ? "bank" : "cash";
+  const ledgerBranch = scope.branchId ? "" : (param(sp, "b") ?? "");
+
   const query: Record<string, string> = {};
   if (fromDate !== today || toDate !== today) Object.assign(query, { from: fromDate, to: toDate });
+  if (!scope.branchId) {
+    if (ledgerAcct === "bank") query.acct = "bank";
+    if (ledgerBranch) query.b = ledgerBranch;
+  }
 
   const header = (status?: "open" | "closed") => (
     <PageHeader
@@ -105,6 +193,9 @@ export default async function DaybookPage({ searchParams }: PageProps<"/finance/
   // ─── All branches: one row per branch, totals on top ──────────────────────
   if (!scope.branchId) {
     const s = await getDaybookSummary(fromDate, toDate);
+    const branchFilter = s.rows.find((r) => r.id === ledgerBranch) ?? null;
+    const ledger = await getLedgerBook({ account: ledgerAcct, branchId: branchFilter?.id ?? null, fromDate, toDate });
+    const locked = await lockedBranches();
     const days = dayCount(fromDate, toDate);
     type Row = (typeof s.rows)[number] | { id: "total" };
     const rows: Row[] = [...s.rows, { id: "total" }];
@@ -115,6 +206,22 @@ export default async function DaybookPage({ searchParams }: PageProps<"/finance/
     return (
       <>
         {header()}
+
+        {locked.length > 0 && (
+          <div role="alert" className="mb-6 rounded-xl border border-danger/30 bg-danger/5 px-4 py-3 text-sm sm:px-5">
+            <p className="font-semibold text-danger">{locked.length === 1 ? "1 branch has" : `${locked.length} branches have`} an unreconciled day</p>
+            <p className="mt-1 text-xs text-text-muted">
+              New payments, receipts, expenses and transfers are blocked there until the day is closed{" "}
+              {locked.map((b, i) => (
+                <span key={b.id}>
+                  {i > 0 && ", "}
+                  <strong className="text-text">{b.name}</strong> ({fmtDay(b.unclosedDay!)}{b.override ? ", override active" : ""})
+                </span>
+              ))}
+              .
+            </p>
+          </div>
+        )}
 
         <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard
@@ -194,22 +301,67 @@ export default async function DaybookPage({ searchParams }: PageProps<"/finance/
             Cash columns are the branch cash box (ledger). UPI, Card and Bank are collections that settle straight to the bank.
           </p>
         </div>
+
+        <div className="mt-6 min-w-0 rounded-xl border border-border bg-surface shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4 sm:px-5">
+            <div>
+              <h2 className="text-sm font-semibold text-text">
+                {periodLabel} {ledgerAcct === "cash" ? "cash box" : "bank"} transactions · {branchFilter ? branchFilter.name : "all branches"}
+              </h2>
+              <p className="text-xs text-text-muted">
+                {ledgerAcct === "cash"
+                  ? "Every cash in and out at the branch cash boxes, including Head Office"
+                  : "Head Office bank: UPI, card and transfer collections, deposits from branches and bank payments"}
+              </p>
+            </div>
+            <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+              <FilterSelect
+                className="sm:w-44"
+                path={FINANCE_PATHS.daybook}
+                query={query}
+                prefix=""
+                param="acct"
+                label="Ledger"
+                value={ledgerAcct === "bank" ? "bank" : ""}
+                options={[
+                  { value: "", label: "Cash box" },
+                  { value: "bank", label: "Bank (UPI / Card / transfer)" },
+                ]}
+              />
+              <FilterSelect
+                className="sm:w-52"
+                path={FINANCE_PATHS.daybook}
+                query={query}
+                prefix=""
+                param="b"
+                label="Branch"
+                value={branchFilter?.id ?? ""}
+                options={[{ value: "", label: "All branches" }, ...s.rows.map((r) => ({ value: r.id, label: `${r.name} (${r.code})` }))]}
+              />
+            </div>
+          </div>
+          <LedgerTable ledger={ledger} singleDay={singleDay} />
+        </div>
       </>
     );
   }
 
   // ─── One branch ───────────────────────────────────────────────────────────
   const branchId = scope.branchId;
-  const [book, collections, categories, banks, unclosedBefore] = await Promise.all([
+  const isHeadOffice = branchId === (await getHeadOfficeBranch()).id;
+  const [book, collections, categories, banks, unclosedBefore, bankBook, lock] = await Promise.all([
     getDaybook(branchId, fromDate, toDate),
     getCollections(branchId, fromDate, toDate),
     listExpenseAccounts(),
     listBankAccounts(),
     singleDay ? earliestUnclosedDay(branchId, fromDate) : Promise.resolve(null),
+    // The bank is held at Head Office: it sees every deposit, UPI / card collection and bank payment of all branches.
+    isHeadOffice ? getLedgerBook({ account: "bank", branchId: null, fromDate, toDate }) : Promise.resolve(null),
+    getDayLock(db, branchId),
   ]);
   const closed = Boolean(book.close);
   // New cash entries go on today only, and only while today is open. Closing works one day at a time.
-  const canPost = permission.canCreate && isToday && !closed;
+  const canPost = permission.canCreate && isToday && !closed && !lock.locked;
   const canClose = permission.canEdit && singleDay && !closed;
   const days = dayCount(fromDate, toDate);
 
@@ -219,6 +371,21 @@ export default async function DaybookPage({ searchParams }: PageProps<"/finance/
   return (
     <>
       {header(singleDay ? (closed ? "closed" : "open") : undefined)}
+
+      {lock.unclosedDay && (
+        <div role="alert" className={`mb-6 rounded-xl border px-4 py-3 text-sm sm:px-5 ${lock.override ? "border-warning/40 bg-warning/10" : "border-danger/30 bg-danger/5"}`}>
+          <p className={`font-semibold ${lock.override ? "text-text" : "text-danger"}`}>
+            {lock.override ? `Override active: ${fmtDay(lock.unclosedDay)} is still unreconciled` : `${fmtDay(lock.unclosedDay)} is not reconciled and closed`}
+          </p>
+          <p className="mt-1 text-xs text-text-muted">
+            {lock.override ? "Transactions are allowed until the override ends. " : "Payments, receipts, sales, expenses and transfers are blocked for this branch until it is closed. "}
+            <Link href={`${FINANCE_PATHS.daybook}?from=${lock.unclosedDay}&to=${lock.unclosedDay}`} className="font-medium text-primary hover:underline">
+              Open {fmtDay(lock.unclosedDay)} to reconcile and close it
+            </Link>
+            .
+          </p>
+        </div>
+      )}
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
@@ -253,6 +420,7 @@ export default async function DaybookPage({ searchParams }: PageProps<"/finance/
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1fr_380px]">
+        <div className="min-w-0 space-y-6">
         <div className="min-w-0 rounded-xl border border-border bg-surface shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-4 sm:px-5">
             <h2 className="text-sm font-semibold text-text">{periodLabel} cash transactions</h2>
@@ -306,6 +474,17 @@ export default async function DaybookPage({ searchParams }: PageProps<"/finance/
             <p className="text-xs text-text-muted">Cash entries can&apos;t be edited or deleted after saving. Corrections go through a reversal by Finance.</p>
             <p className="shrink-0 text-xs font-semibold text-text">CRM cash balance: {formatPaise(book.balancePaise)}</p>
           </div>
+        </div>
+
+        {bankBook && (
+          <div className="min-w-0 rounded-xl border border-border bg-surface shadow-sm">
+            <div className="border-b border-border px-4 py-4 sm:px-5">
+              <h2 className="text-sm font-semibold text-text">{periodLabel} bank transactions · all branches</h2>
+              <p className="text-xs text-text-muted">Head Office bank: cash deposited by branches, UPI / card / transfer collections and bank payments. Separate from the cash box above.</p>
+            </div>
+            <LedgerTable ledger={bankBook} singleDay={singleDay} />
+          </div>
+        )}
         </div>
 
         <div className="min-w-0 space-y-4">

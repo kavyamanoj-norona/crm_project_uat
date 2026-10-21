@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { postDirectSale } from "@/modules/finance/posting";
+import { DayLockError } from "@/modules/finance/day-lock";
 import { revalidatePath } from "next/cache";
 import { db } from "@/server/db";
 import { requireActionPermission } from "@/server/rbac/guard";
@@ -33,7 +34,21 @@ const sellAccessorySchema = z.object({
   paymentMode: z.enum(["CASH", "UPI", "CARD", "OTHER"]),
 });
 
-export async function sellAccessory(_prev: FormState, formData: FormData): Promise<FormState> {
+/** A branch with an unreconciled earlier day can't record a sale; the posting rolls the sale back and this reports why. */
+async function withDayLock(run: () => Promise<FormState>): Promise<FormState> {
+  try {
+    return await run();
+  } catch (e) {
+    if (e instanceof DayLockError) return { ok: false, message: e.message };
+    throw e;
+  }
+}
+
+export async function sellAccessory(prev: FormState, formData: FormData): Promise<FormState> {
+  return withDayLock(() => sellAccessoryImpl(prev, formData));
+}
+
+async function sellAccessoryImpl(_prev: FormState, formData: FormData): Promise<FormState> {
   const user = await requireActionPermission(SALES_PATHS.direct, "canCreate");
   const scope = await getBranchScope(user);
   if (!scope.branchId) {
@@ -120,7 +135,11 @@ const sellRefurbSchema = z.object({
   paymentMode: z.enum(["CASH", "UPI", "CARD", "OTHER"]),
 });
 
-export async function sellRefurbItem(_prev: FormState, formData: FormData): Promise<FormState> {
+export async function sellRefurbItem(prev: FormState, formData: FormData): Promise<FormState> {
+  return withDayLock(() => sellRefurbItemImpl(prev, formData));
+}
+
+async function sellRefurbItemImpl(_prev: FormState, formData: FormData): Promise<FormState> {
   const user = await requireActionPermission(SALES_PATHS.direct, "canCreate");
   const scope = await getBranchScope(user);
   if (!scope.branchId) {

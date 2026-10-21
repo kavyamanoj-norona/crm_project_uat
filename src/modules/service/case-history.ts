@@ -43,6 +43,7 @@ const ACTIVITY_LABELS: Record<string, { title: string; category: HistoryCategory
   "case.lab.transfer-complete": { title: "Lab completed the transfer to the branch", category: "handover" },
   "case.password-reveal": { title: "Device passcode revealed", category: "password" },
   "case.engineer": { title: "Engineer assigned", category: "action" },
+  "case.diagnosis": { title: "Diagnosis saved", category: "action" },
   "case.feedback": { title: "Customer feedback recorded", category: "action" },
   "whatsapp.send": { title: "WhatsApp message sent", category: "action" },
 };

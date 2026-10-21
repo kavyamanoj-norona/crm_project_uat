@@ -21,9 +21,10 @@ const who = { select: { firstName: true, lastName: true } } as const;
  * Everything the New Case form needs. Branches are the counters in scope
  * (virtual branches such as the lab take no walk-ins).
  */
-export async function intakeOptions(scope: BranchScope) {
+/** `anyBranch` lists every counter regardless of the header scope (onsite pickup picks the branch per case). */
+export async function intakeOptions(scope: BranchScope, anyBranch = false) {
   const branches = await db.branch.findMany({
-    where: { isActive: true, isVirtual: false, ...(scope.branchId ? { id: scope.branchId } : {}) },
+    where: { isActive: true, isVirtual: false, ...(scope.branchId && !anyBranch ? { id: scope.branchId } : {}) },
     orderBy: { name: "asc" },
     select: { id: true, code: true, name: true },
   });

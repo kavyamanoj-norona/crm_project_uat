@@ -4,6 +4,7 @@ export const INVENTORY_PATHS = {
   dashboard: "/inventory/dashboard",
   stock: "/inventory/stock",
   purchasing: "/inventory/purchasing",
+  stockRequests: "/inventory/stock-requests",
   billing: "/inventory/billing",
   items: "/inventory/items",
   suppliers: "/inventory/suppliers",

@@ -15,6 +15,7 @@ import { settlementLines } from "./bank";
 import { ACCT, LedgerError, payAccount, postJournal, reverseJournal } from "./ledger";
 import { FINANCE_PATHS } from "./paths";
 import { postCasePayment, postPurchasePayment } from "./posting";
+import { DayLockError } from "./day-lock";
 import { postMissingEntries } from "./sync";
 import { closedCashDay } from "./daybook";
 
@@ -302,7 +303,7 @@ export async function postMissing(): Promise<ActionResult> {
     refresh();
     return { ok: true, message: total === 0 ? "Everything is already in the ledger." : `Posted ${total} missing entries.` };
   } catch (e) {
-    if (e instanceof ForbiddenError || e instanceof LedgerError) return { ok: false, message: e.message };
+    if (e instanceof ForbiddenError || e instanceof LedgerError || e instanceof DayLockError) return { ok: false, message: e.message };
     throw e;
   }
 }

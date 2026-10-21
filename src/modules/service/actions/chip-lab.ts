@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/server/db";
 import { ForbiddenError, requireActionPermission } from "@/server/rbac/guard";
+import { isEngineer } from "@/server/rbac/roles";
 import { FieldError } from "@/server/prisma-errors";
 import { logActivity } from "@/server/security/activity";
 import { initialFormState, pick, toFieldErrors, type ActionResult, type FormState } from "@/lib/form";
@@ -468,6 +469,8 @@ async function physicalLine(caseItemId: string) {
 export async function requestPartForLabCase(caseItemId: string): Promise<ActionResult> {
   try {
     const user = await requireActionPermission(SERVICE_PATHS.lab, "canEdit");
+    // Case-linked stock requests are for Front Desk and Branch Managers only; engineers never raise them.
+    if (isEngineer(user)) throw new ForbiddenError();
     const line = await physicalLine(caseItemId);
     if (!line) return { ok: false, message: "Only parts and accessories can be requested." };
     const lab = await requesterBranch(user.branchId, line.caseId);
@@ -504,6 +507,8 @@ export async function reorderPartForLabCase(caseItemId: string, _prev: FormState
   if (reason.length > 300) return { message: "Please fix the highlighted fields.", fieldErrors: { reason: ["Keep the reason under 300 characters"] } };
   try {
     const user = await requireActionPermission(SERVICE_PATHS.lab, "canEdit");
+    // Case-linked stock requests are for Front Desk and Branch Managers only; engineers never raise them.
+    if (isEngineer(user)) throw new ForbiddenError();
     const line = await physicalLine(caseItemId);
     if (!line) return { message: "Only parts and accessories can be reordered." };
     const res = await createReplacementRequest({ caseId: line.caseId, itemId: line.itemId, reason, userId: user.id });

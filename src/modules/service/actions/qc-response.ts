@@ -4,6 +4,9 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/server/db";
 import { branchWhere, getBranchScope } from "@/server/branch-scope";
 import { ForbiddenError, requireActionPermission } from "@/server/rbac/guard";
+import { isEngineer } from "@/server/rbac/roles";
+import { getCurrentUser } from "@/server/auth/session";
+import { engineerCaseScope } from "../engineer-access";
 import { logActivity } from "@/server/security/activity";
 import { pick, toFieldErrors, type FormState } from "@/lib/form";
 import { z } from "zod";
@@ -48,9 +51,13 @@ export async function saveQcAnswers(caseId: string, _prev: FormState, formData: 
     if (!probe) return { message: "This case isn't in a Quality Check stage." };
     const stage = probe.status as QcStage;
 
-    const user = await requireActionPermission(stage === "QUALITY_CHECK" ? SERVICE_PATHS.cases : SERVICE_PATHS.lab, "canEdit");
-    // Branch QC is branch-scoped; the lab works across branches.
-    const scope = stage === "QUALITY_CHECK" ? branchWhere(await getBranchScope(user)) : {};
+    // Engineers do the branch QC from their workspace, on their own assigned cases only; everyone else through Cases / the lab.
+    const me = await getCurrentUser();
+    const asEngineer = me !== null && isEngineer(me);
+    if (asEngineer && stage !== "QUALITY_CHECK") throw new ForbiddenError();
+    const user = await requireActionPermission(asEngineer ? SERVICE_PATHS.engineer : stage === "QUALITY_CHECK" ? SERVICE_PATHS.cases : SERVICE_PATHS.lab, "canEdit");
+    // Branch QC is branch-scoped (an engineer's also to their assigned cases); the lab works across branches.
+    const scope = asEngineer ? await engineerCaseScope(user) : stage === "QUALITY_CHECK" ? branchWhere(await getBranchScope(user)) : {};
     const c = await db.case.findFirst({ where: { id: caseId, status: stage, ...scope }, select: { id: true } });
     if (!c) return { message: "Case not found." };
 
@@ -60,9 +67,9 @@ export async function saveQcAnswers(caseId: string, _prev: FormState, formData: 
     if (answers.some((a) => !titles.has(a.itemId)) || (!progress && items.some((i) => !answered.has(i.id))))
       return { message: "The checklist changed. Refresh and answer every item.", fieldErrors: { answers: ["Answer every checklist item"] } };
 
-    // The lab's QC gets a "Quality Check completed" timeline entry the first time the checklist becomes complete.
+    // Every QC (branch or lab) gets a "Quality Check completed" timeline entry the first time the checklist becomes complete.
     const labStage = stage === "CHIP_LAB_QUALITY_CHECK";
-    const wasComplete = labStage ? (await qcBlockReason(caseId, stage)) === null : true;
+    const wasComplete = (await qcBlockReason(caseId, stage)) === null;
 
     const now = new Date();
     const saved = await db.$transaction(async (tx) => {
@@ -83,7 +90,7 @@ export async function saveQcAnswers(caseId: string, _prev: FormState, formData: 
           answeredById: user.id,
         })),
       });
-      if (labStage && !progress && !wasComplete) {
+      if (!progress && !wasComplete) {
         await tx.caseStatusHistory.create({
           data: { caseId, fromStatus: stage, toStatus: stage, note: note || null, changedById: user.id },
         });
@@ -102,7 +109,7 @@ export async function saveQcAnswers(caseId: string, _prev: FormState, formData: 
     });
     revalidatePath(SERVICE_PATHS.cases, "layout");
     revalidatePath(SERVICE_PATHS.lab, "layout");
-    return { ok: true, message: progress ? "Progress saved." : labStage && !wasComplete ? "Quality Check completed." : "Quality Check checklist saved." };
+    return { ok: true, message: progress ? "Progress saved." : !wasComplete ? "Quality Check completed." : "Quality Check checklist saved." };
   } catch (e) {
     if (e instanceof ForbiddenError) return { message: e.message };
     throw e;

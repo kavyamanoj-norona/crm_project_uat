@@ -12,11 +12,14 @@ import { encryptText } from "@/server/crypto";
 import { getBranchScope } from "@/server/branch-scope";
 import { FieldError, handleActionError } from "@/server/prisma-errors";
 import { ForbiddenError, requireActionPermission } from "@/server/rbac/guard";
+import { isOnsitePickup } from "@/server/rbac/roles";
+import { getCurrentUser } from "@/server/auth/session";
 import { logActivity } from "@/server/security/activity";
 import type { CurrentUser } from "@/server/auth/session";
 import { CUSTOMER_PATHS } from "@/modules/customers/paths";
 import { describeChanges, upsertIntakeCustomer } from "@/modules/customers/service";
 import { INTAKE_FIELDS, INTAKE_LABELS, intakeSchema, type CustomerMatch, type IntakeInput } from "../case-schema";
+import { markLeadWalkedIn } from "@/modules/telecaller/service";
 import { nextJobsheetNo } from "../jobsheet";
 import { SERVICE_PATHS } from "../paths";
 
@@ -50,7 +53,8 @@ function checkPhotos(photos: File[]) {
 
 /** The picked branch must be a counter inside the user's branch scope. */
 async function allowedBranch(user: CurrentUser, branchId: string) {
-  const scope = await getBranchScope(user);
+  // Onsite pickup staff assign each case to whichever branch will repair it; everyone else works in their own scope.
+  const scope = isOnsitePickup(user) ? { branchId: null } : await getBranchScope(user);
   if (scope.branchId && scope.branchId !== branchId) throw new FieldError("branchId", "Pick the branch you are working in");
   const branch = await db.branch.findUnique({ where: { id: branchId }, select: { id: true, code: true, isActive: true, isVirtual: true } });
   if (!branch?.isActive || branch.isVirtual) throw new FieldError("branchId", "Pick an active branch counter");
@@ -92,17 +96,25 @@ async function savePhotos(caseId: string, photos: File[], userId: string) {
 }
 
 export async function createCase(_prev: FormState, formData: FormData): Promise<FormState> {
-  const parsed = intakeSchema.safeParse(pick(formData, INTAKE_FIELDS));
+  // Onsite pickup staff only raise on-site cases: the type is set here, whatever the form posted.
+  const me = await getCurrentUser();
+  const onsiteRole = me !== null && isOnsitePickup(me);
+  const raw = pick(formData, INTAKE_FIELDS);
+  if (onsiteRole) raw.intakeType = "ON_SITE";
+  const parsed = intakeSchema.safeParse(raw);
   if (!parsed.success) return toFieldErrors(parsed.error, formData);
   const data = parsed.data;
   const photos = formData.getAll("photos").filter((f): f is File => f instanceof File && f.size > 0);
 
   let saved: { id: string; jobsheetNo: string };
+  let branchCode = "";
   let photosFailed = false;
   try {
     const actor = await requireActionPermission(SERVICE_PATHS.newCase, "canCreate");
+    if (isOnsitePickup(actor) && data.intakeType !== "ON_SITE") throw new FieldError("intakeType", "Onsite pickup cases are always on-site");
     checkPhotos(photos);
     const branch = await allowedBranch(actor, data.branchId);
+    branchCode = branch.code;
     await checkAccount(data);
     const devicePasswordEnc = data.devicePassword ? encryptText(data.devicePassword) : null;
 
@@ -114,6 +126,8 @@ export async function createCase(_prev: FormState, formData: FormData): Promise<
           actor.id,
           branch.id,
         );
+        // A converted lead turning up with a device has walked in (telecaller tracking).
+        await markLeadWalkedIn(tx, customer.customer.id, new Date());
         const jobsheetNo = await nextJobsheetNo(tx, branch.code);
         const created = await tx.case.create({
           data: {
@@ -169,7 +183,10 @@ export async function createCase(_prev: FormState, formData: FormData): Promise<
       }
     }
 
-    await logActivity({ action: "case.create", userId: actor.id, entity: "Case", entityId: result.id, detail: result.jobsheetNo });
+    await logActivity({ action: "case.create", userId: actor.id, entity: "Case", entityId: result.id, detail: onsiteRole ? `${result.jobsheetNo} (onsite pickup, ${data.intakeType})` : result.jobsheetNo });
+    if (onsiteRole) {
+      await logActivity({ action: "case.branch-assign", userId: actor.id, entity: "Case", entityId: result.id, detail: `${result.jobsheetNo} assigned to branch ${branchCode}` });
+    }
     const c = result.customer;
     if (c.created) {
       await logActivity({ action: "customer.create", userId: actor.id, entity: "Customer", entityId: c.customer.id, detail: `At intake of ${result.jobsheetNo}` });
@@ -189,5 +206,7 @@ export async function createCase(_prev: FormState, formData: FormData): Promise<
   revalidatePath(SERVICE_PATHS.cases, "layout");
   revalidatePath(SERVICE_PATHS.newCase);
   revalidatePath(CUSTOMER_PATHS.database, "layout");
+  // Onsite pickup staff can't open case pages: send them back to a fresh form with a confirmation.
+  if (onsiteRole) redirect(`${SERVICE_PATHS.newCase}?created=${encodeURIComponent(saved.jobsheetNo)}&branch=${encodeURIComponent(branchCode)}${photosFailed ? "&photos=failed" : ""}`);
   redirect(`${SERVICE_PATHS.cases}/${saved.id}?saved=${Date.now()}${photosFailed ? "&photos=failed" : ""}`);
 }

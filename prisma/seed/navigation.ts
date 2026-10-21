@@ -13,6 +13,10 @@ export const PRIVILEGES = [
   { code: "PURCHASE_MANAGER", name: "Purchase Manager", isSuperAdmin: false, isBranchBound: false, homePath: "/inventory/dashboard" },
   { code: "CUSTOMER_SUCCESS", name: "Customer Success", isSuperAdmin: false, isBranchBound: false, homePath: "/customers/cs-workspace" },
   { code: "CHIP_COORDINATOR", name: "Chip Level Coordinator", isSuperAdmin: false, isBranchBound: true, homePath: "/service/lab" },
+  // Field pickup staff: New Case (Intake) only, always an on-site case, and they pick the branch on every case (not branch-bound).
+  { code: "ONSITE_PICKUP", name: "Onsite Pickup", isSuperAdmin: false, isBranchBound: false, homePath: "/service/new" },
+  // Head Office telecallers: leads, calls, follow-ups, price estimates, their own incentives.
+  { code: "TELECALLER", name: "Telecaller", isSuperAdmin: false, isBranchBound: false, homePath: "/telecaller/dashboard" },
 ] as const;
 
 export type PrivilegeCode = (typeof PRIVILEGES)[number]["code"];
@@ -22,6 +26,8 @@ const SALES = "SALES";
 const PM = "PURCHASE_MANAGER";
 const CS = "CUSTOMER_SUCCESS";
 const CHIP = "CHIP_COORDINATOR";
+const ONSITE = "ONSITE_PICKUP";
+const TELECALLER = "TELECALLER";
 const EVERYONE: PrivilegeCode[] = [BM, SALES, PM, CS, CHIP];
 
 export type ItemDef = {
@@ -55,8 +61,10 @@ export const MODULES: ModuleDef[] = [
     entries: [
       { title: "Dashboard", path: "/service/dashboard", icon: "layout-dashboard", roles: [SALES, BM, CS, CHIP] },
       { title: "Cases", path: "/service/cases", icon: "list" },
-      { title: "New Case (Intake)", path: "/service/new", icon: "file-plus", roles: [SALES, BM] },
+      { title: "New Case (Intake)", path: "/service/new", icon: "file-plus", roles: [SALES, BM, ONSITE] },
       { title: "Chip-Level Lab", path: "/service/lab", icon: "cpu", roles: [CHIP, BM], approve: [CHIP] },
+      // SERVICE_ENGINEER (created in Admin → Privilege, not seeded) gets this item through its own permissions.
+      { title: "Engineer Workspace", path: "/service/engineer", icon: "stethoscope", roles: [BM] },
       { title: "Uncollected Devices", path: "/service/uncollected", icon: "laptop" },
       {
         group: "Analytics",
@@ -158,6 +166,7 @@ export const MODULES: ModuleDef[] = [
       { title: "Dashboard", path: "/inventory/dashboard", icon: "layout-dashboard" },
       { title: "Stock", path: "/inventory/stock", icon: "boxes", approve: [PM] },
       { title: "Purchasing", path: "/inventory/purchasing", icon: "shopping-cart", roles: [PM, BM, CHIP], approve: [PM] },
+      { title: "Stock Requests", path: "/inventory/stock-requests", icon: "package-plus", roles: [BM, SALES, CHIP] },
       { title: "Billing", path: "/inventory/billing", icon: "receipt", approve: [PM] },
       { title: "Vendor Replacements", path: "/inventory/vendor-replacements", icon: "repeat", roles: [PM] },
       {
@@ -183,7 +192,6 @@ export const MODULES: ModuleDef[] = [
     roles: [SALES, BM, CS],
     entries: [
       { title: "Dashboard", path: "/customers/dashboard", icon: "layout-dashboard" },
-      { title: "Leads", path: "/customers/leads", icon: "user-plus" },
       { title: "Lead Reports", path: "/customers/lead-reports", icon: "trending-up" },
       { title: "Customer Database", path: "/customers/database", icon: "contact" },
       { title: "CS Workspace", path: "/customers/cs-workspace", icon: "inbox", roles: [CS] },
@@ -194,6 +202,22 @@ export const MODULES: ModuleDef[] = [
         icon: "boxes",
         items: [{ title: "B2B Accounts", path: "/customers/b2b", icon: "building-2" }],
       },
+    ],
+  },
+  {
+    code: "telecaller",
+    title: "Telecaller",
+    icon: "phone-call",
+    path: "/telecaller",
+    roles: [TELECALLER],
+    entries: [
+      { title: "Dashboard", path: "/telecaller/dashboard", icon: "layout-dashboard" },
+      // Moved here from Customers & Support; branch staff keep their access.
+      { title: "Leads", path: "/telecaller/leads", icon: "user-plus", roles: [TELECALLER, SALES, BM, CS] },
+      // Branch staff work the leads Head Office assigned to their branch; telecallers can only look.
+      { title: "Branch Call List", path: "/telecaller/branch-calls", icon: "phone-incoming", roles: [TELECALLER, SALES, BM], readOnly: [TELECALLER] },
+      { title: "Service Prices", path: "/telecaller/service-prices", icon: "indian-rupee", readOnly: [TELECALLER] },
+      { title: "Incentives", path: "/telecaller/incentives", icon: "badge-indian-rupee", readOnly: [TELECALLER] },
     ],
   },
   {
