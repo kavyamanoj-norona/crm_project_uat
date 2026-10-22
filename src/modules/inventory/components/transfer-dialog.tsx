@@ -8,6 +8,7 @@ import { DataTable } from "@/components/data/data-table";
 import { PhotoInput } from "@/components/forms/photo-input";
 import { Badge } from "@/components/ui/badge";
 import { Field, Input, Textarea } from "@/components/ui/field";
+import { PHOTO_REQUIRED_MESSAGE, hasPhotos } from "@/lib/photos";
 import { allocateSchema } from "../schemas";
 
 /** One available stock unit: it has its own USID even when other units share the item name. */
@@ -125,7 +126,11 @@ export function TransferDialog({ requestedItemId, requestedItemName, units, acti
       title={`Transfer for ${requestedItemName}`}
       description="Select the unit by its USID. Each USID can be transferred only once."
       action={action}
-      validate={(fd) => validateForm(allocateSchema, fd)}
+      validate={(fd) => {
+        const e = validateForm(allocateSchema, fd) ?? {};
+        if (!hasPhotos(fd)) e.photos = [PHOTO_REQUIRED_MESSAGE];
+        return Object.keys(e).length ? e : null;
+      }}
       submitLabel="Transfer to case"
     >
       {(errors) => (
@@ -136,7 +141,7 @@ export function TransferDialog({ requestedItemId, requestedItemName, units, acti
           <Field label="Note" htmlFor="note" error={errors.note}>
             <Textarea id="note" name="note" rows={2} placeholder="Enter note" />
           </Field>
-          <Field label="Photos" htmlFor="photos" error={errors.photos} hint="Optional. The branch can view these with the unit.">
+          <Field label="Photos" htmlFor="photos" required error={errors.photos} hint="Upload an image or take a photo. The branch can view these with the unit.">
             <PhotoInput name="photos" allowUpload invalid={Boolean(errors.photos)} />
           </Field>
         </>

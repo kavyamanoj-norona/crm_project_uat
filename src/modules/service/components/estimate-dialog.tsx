@@ -55,7 +55,7 @@ export function EstimateDialog({ mode, trigger, triggerVariant = "secondary", jo
       description={
         mode === "start"
           ? "Assign the engineer and add what the repair needs. The total becomes the estimate."
-          : "Change the billable items. Prices can go down to each item's minimum, never above its list price."
+          : "Change the billable items. Prices can go down to each item's minimum."
       }
     >
       {(close) => <EstimateForm {...form} mode={mode} onDone={close} />}
@@ -76,13 +76,12 @@ function EstimateForm({
   const [isChipLevel, setIsChipLevel] = useState(false);
   const info = new Map<string, LineInfo>([...initial.lines.map((l) => [l.itemId, l.info] as const), ...catalog.map((c) => [c.id, c] as const)]);
 
-  // Price outside [min, list] is caught here too, so a bad line never leaves the browser.
+  // A price below the minimum is caught here too, so a bad line never leaves the browser.
   const lineError = (l: Line) => {
     const i = info.get(l.itemId)!;
     const unit = toPaise(l.unitPrice);
     if (unit === null || unit <= 0) return "Enter a price";
     if (unit < i.minPricePaise) return `Lowest allowed is ${formatPaise(i.minPricePaise)} (max ${i.maxDiscountPercent}% off)`;
-    if (unit > i.pricePaise) return `Can't be above ${formatPaise(i.pricePaise)}`;
     if (!/^\d+$/.test(l.quantity) || Number(l.quantity) < 1) return "Quantity must be 1 or more";
     return null;
   };

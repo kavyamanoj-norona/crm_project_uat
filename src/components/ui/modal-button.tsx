@@ -10,6 +10,9 @@ type ModalButtonProps = {
   variant?: "primary" | "navy" | "secondary" | "danger" | "success" | "ghost";
   buttonSize?: "sm" | "md";
   className?: string;
+  /** Greys the button out; `disabledReason` shows as its tooltip. */
+  disabled?: boolean;
+  disabledReason?: string;
   title: string;
   description?: string;
   icon?: React.ReactNode;
@@ -20,13 +23,21 @@ type ModalButtonProps = {
 };
 
 /** A button that opens a modal — use it for "View all", confirmations and small forms. */
-export function ModalButton({ trigger, variant = "secondary", buttonSize, className, children, ...modal }: ModalButtonProps) {
+export function ModalButton({ trigger, variant = "secondary", buttonSize, className, disabled, disabledReason, children, ...modal }: ModalButtonProps) {
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
 
   return (
     <>
-      <Button variant={variant} size={buttonSize} className={className} onClick={() => setOpen(true)} aria-haspopup="dialog">
+      <Button
+        variant={variant}
+        size={buttonSize}
+        className={className}
+        onClick={() => setOpen(true)}
+        aria-haspopup="dialog"
+        disabled={disabled}
+        title={disabled ? disabledReason : undefined}
+      >
         {trigger}
       </Button>
       <Modal open={open} onClose={close} {...modal}>

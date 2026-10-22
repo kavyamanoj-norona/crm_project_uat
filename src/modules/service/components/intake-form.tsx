@@ -131,11 +131,11 @@ export function IntakeForm({ action, lookup, options, onsite = false }: IntakeFo
           <Field label="Brand" htmlFor="brand" required error={errors.brand}>
             <Input {...f("brand")} placeholder="Enter brand" />
           </Field>
-          <Field label="Model" htmlFor="model" error={errors.model}>
+          <Field label="Model" htmlFor="model" required error={errors.model}>
             <Input {...f("model")} placeholder="Enter model" />
           </Field>
-          <Field label="Serial / IMEI" htmlFor="serialNo" error={errors.serialNo}>
-            <Input {...f("serialNo")} autoComplete="off" />
+          <Field label="Serial / IMEI" htmlFor="serialNo" required error={errors.serialNo}>
+            <Input {...f("serialNo")} autoComplete="off" placeholder="Enter serial / IMEI" />
           </Field>
           <Field label="Status" htmlFor="warrantyStatus" required error={errors.warrantyStatus}>
             <Select {...f("warrantyStatus")} options={warrantyOptions} />
@@ -155,10 +155,20 @@ export function IntakeForm({ action, lookup, options, onsite = false }: IntakeFo
             <PhotoInput name="photos" allowUpload invalid={Boolean(errors.photos)} />
           </Field>
           <Field
+            label="Description"
+            htmlFor="description"
+            required
+            error={errors.description}
+            hint="Additional device details or the reported issue"
+            className="sm:col-span-2 lg:col-span-3"
+          >
+            <Textarea {...f("description")} placeholder="Enter description" />
+          </Field>
+          <Field
             label="Received items"
             htmlFor="receivedItems"
             error={errors.receivedItems}
-            hint="Charger, bag, sleeve … with reference no. and condition"
+            hint="Charger, bag, sleeve … with reference no."
             className="sm:col-span-2 lg:col-span-3"
           >
             <ReceivedItemsInput name="receivedItems" initial={v.receivedItems} invalid={Boolean(errors.receivedItems)} />
@@ -307,8 +317,8 @@ function CustomerFields({
       <Field label="Name" htmlFor="name" required error={errors.name}>
         <Input {...f("name")} autoComplete="off" />
       </Field>
-      <Field label="Email" htmlFor="email" error={errors.email}>
-        <Input {...f("email")} type="email" autoComplete="off" />
+      <Field label="Email" htmlFor="email" required error={errors.email}>
+        <Input {...f("email")} type="email" autoComplete="off" placeholder="Enter email" />
       </Field>
       <Field label="Alt mobile" htmlFor="altPhone" error={errors.altPhone}>
         <Input {...f("altPhone")} type="tel" inputMode="tel" autoComplete="off" />

@@ -6,7 +6,7 @@ import { FieldError } from "@/server/prisma-errors";
 import { ForbiddenError, requireActionPermission } from "@/server/rbac/guard";
 import { logActivity } from "@/server/security/activity";
 import { pick, toFieldErrors, type FormState } from "@/lib/form";
-import { formPhotos, photoError, saveCasePhotos } from "@/server/case-photos";
+import { formPhotos, requiredPhotoError, saveCasePhotos, saveStockPhotos } from "@/server/case-photos";
 import { isChipLabStatus, isOpenStatus, type CaseStatusValue } from "@/modules/service/case-schema";
 import { getHeadOfficeBranch } from "../head-office";
 import { INVENTORY_PATHS } from "../paths";
@@ -22,6 +22,10 @@ export async function allocateUnits(requestId: string, _prev: FormState, formDat
   const parsed = allocateManySchema.safeParse(pick(formData, ["note"]));
   if (!parsed.success) return toFieldErrors(parsed.error, formData);
   const { note } = parsed.data;
+  // At least one photo of the units is required, for the branch that receives them.
+  const photos = formPhotos(formData);
+  const photoMsg = requiredPhotoError(photos);
+  if (photoMsg) return { message: "Please fix the highlighted fields.", fieldErrors: { photos: [photoMsg] } };
   const unitIds = formData.getAll("unitId").map(String).filter(Boolean);
   if (new Set(unitIds).size !== unitIds.length) return { message: "Each unit needs its own USID.", fieldErrors: { unitId: ["Each unit needs its own USID"] } };
 
@@ -86,6 +90,10 @@ export async function allocateUnits(requestId: string, _prev: FormState, formDat
       return { code: pr.code, usids, caseId: kase?.id ?? null, jobsheetNo: kase?.jobsheetNo ?? null };
     });
 
+    // Photos hang off the case (that is where the branch looks); a transfer with no case keeps them on the request.
+    if (result.caseId) await saveCasePhotos(result.caseId, photos, user.id, { kind: "ALLOCATION_PHOTO", prefix: "allocation", purchaseRequestId: requestId });
+    else await saveStockPhotos(requestId, photos, user.id, { kind: "TRANSFER_PHOTO", prefix: "transfer", purchaseRequestId: requestId });
+
     await logActivity({
       action: "inventory.allocate",
       userId: user.id,
@@ -114,9 +122,9 @@ export async function allocateUnit(requestId: string, _prev: FormState, formData
   const parsed = allocateSchema.safeParse(pick(formData, ["unitId", "note"]));
   if (!parsed.success) return toFieldErrors(parsed.error, formData);
   const { unitId, note } = parsed.data;
-  // Optional photos of the unit, for the branch that receives it.
+  // At least one photo of the unit is required, for the branch that receives it.
   const photos = formPhotos(formData);
-  const photoMsg = photoError(photos);
+  const photoMsg = requiredPhotoError(photos);
   if (photoMsg) return { message: "Please fix the highlighted fields.", fieldErrors: { photos: [photoMsg] } };
 
   try {
@@ -188,7 +196,9 @@ export async function allocateUnit(requestId: string, _prev: FormState, formData
     });
 
     // Photos hang off the case (that is where the branch looks), tagged with the unit.
+    // A transfer with no case keeps its photos on the request instead.
     if (result.caseId) await saveCasePhotos(result.caseId, photos, user.id, { kind: "ALLOCATION_PHOTO", prefix: "allocation", stockUnitId: unitId });
+    else await saveStockPhotos(requestId, photos, user.id, { kind: "TRANSFER_PHOTO", prefix: "transfer", purchaseRequestId: requestId, stockUnitId: unitId });
 
     await logActivity({
       action: "inventory.allocate",

@@ -6,6 +6,8 @@ import type { FormState } from "@/lib/form";
 import { ActionDialog } from "@/components/forms/action-dialog";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
+import { PhotoInput } from "@/components/forms/photo-input";
+import { PHOTO_REQUIRED_MESSAGE, hasPhotos } from "@/lib/photos";
 
 const MAX_QTY = 100;
 const MAX_LINES = 30;
@@ -26,6 +28,7 @@ function validate(fd: FormData) {
   if (ids.length === 0) return { lines: ["Add at least one item"] };
   if (ids.some((id) => !id)) return { lines: ["Select an item on every row"] };
   if (qtys.some((q) => !Number.isInteger(Number(q)) || Number(q) < 1 || Number(q) > MAX_QTY)) return { lines: [`Enter a whole quantity between 1 and ${MAX_QTY} for every item`] };
+  if (!hasPhotos(fd)) return { photos: [PHOTO_REQUIRED_MESSAGE] };
   return null;
 }
 
@@ -52,6 +55,9 @@ export function StockRequestDialog({ items, action }: Props) {
           <Lines items={items} error={errors.lines?.[0]} />
           <Field label="Notes" htmlFor="sr-notes" error={errors.notes}>
             <Textarea id="sr-notes" name="notes" rows={2} placeholder="Enter notes" />
+          </Field>
+          <Field label="Photos" htmlFor="photos" required error={errors.photos} hint="Upload an image or take a photo">
+            <PhotoInput name="photos" allowUpload invalid={Boolean(errors.photos)} />
           </Field>
         </>
       )}

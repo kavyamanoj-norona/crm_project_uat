@@ -14,9 +14,11 @@ import { FieldError, handleActionError } from "@/server/prisma-errors";
 import { formatPaise } from "@/lib/money";
 import { minPricePaise } from "@/lib/pricing";
 import { qcBlockReason } from "../qc-response-queries";
+import { billingBlockReason, cameFromChipLab } from "../billing-guard";
 import {
   CASE_FLOW,
   CASE_STATUS_LABELS,
+  BILLING_EDIT_STATUSES,
   ESTIMATE_EDITABLE,
   cancelSchema,
   estimateSchema,
@@ -79,6 +81,11 @@ export async function moveCaseToNextStage(caseId: string): Promise<ActionResult>
     if (row.status === "QUALITY_CHECK") {
       const blocked = await qcBlockReason(caseId, "QUALITY_CHECK");
       if (blocked) return { ok: false, message: blocked };
+    }
+    // The bill must be valid and saved before the case moves on.
+    if (BILLING_EDIT_STATUSES.includes(row.status)) {
+      const bill = await billingBlockReason(caseId);
+      if (bill) return { ok: false, message: bill };
     }
     // A case is closed only through its final bill (invoice + payment), never by a plain stage move.
     if (to === "CLOSED") return { ok: false, message: "Use Move to Closed to generate the final bill and close the case." };
@@ -257,6 +264,8 @@ export async function submitDiagnosis(caseId: string): Promise<ActionResult> {
     if (!c) return { ok: false, message: "Case not found." };
     if (c.status !== "DIAGNOSIS") return { ok: false, message: "Only cases in Diagnosis can be submitted for approval." };
     if (!c.estimatedCostPaise) return { ok: false, message: "Add at least one item to the estimate before sending to the customer." };
+    const bill = await billingBlockReason(caseId);
+    if (bill) return { ok: false, message: bill };
 
     const moved = await applyStage(caseId, "DIAGNOSIS", "PENDING_APPROVAL", "Quote sent to customer", user.id, scope);
     if (!moved) return { ok: false, message: STALE };
@@ -407,7 +416,7 @@ const ESTIMATE_FIELDS = ["engineerId", "chipLevel", "expectedDeliveryDate", "gst
  * "Start diagnosis" (mode start: Intake → Diagnosis) and "Edit items" (mode
  * edit, while in Diagnosis / Pending approval). Assigns the engineer, replaces
  * the billable lines and sets the estimate to their total. Prices are checked
- * against the catalog: never below the item's minimum, never above its list price.
+ * against the catalog: never below the item's minimum.
  */
 export async function saveEstimate(caseId: string, mode: "start" | "edit", _prev: FormState, formData: FormData): Promise<FormState> {
   const parsed = estimateSchema.safeParse(pick(formData, ESTIMATE_FIELDS));
@@ -419,12 +428,15 @@ export async function saveEstimate(caseId: string, mode: "start" | "edit", _prev
     const scope = branchWhere(await getBranchScope(user));
     const c = await db.case.findFirst({
       where: { id: caseId, ...scope },
-      select: { status: true, branchId: true, customerId: true, items: { where: { removedAt: null }, select: { itemId: true } } },
+      select: { status: true, branchId: true, customerId: true, items: { where: { removedAt: null }, select: { itemId: true, name: true, unitPricePaise: true } } },
     });
     if (!c) return { message: "Case not found." };
     if (mode === "start" && c.status !== "INTAKE") return { message: "Diagnosis has already started for this case." };
     if (mode === "edit" && !ESTIMATE_EDITABLE.includes(c.status))
       return { message: "Items can only be changed during diagnosis or while approval is pending." };
+    // The lab priced a chip-level case's items; the branch can only change the service charge (Billed ₹ column).
+    if (mode === "edit" && (await cameFromChipLab(caseId)))
+      return { message: "This case came from the chip-level lab. Change the service charge in the Billed ₹ column." };
 
     const engineer = await db.user.findUnique({ where: { id: data.engineerId }, select: { branchId: true, isActive: true, status: true } });
     if (!engineer?.isActive || engineer.status !== "WORKING" || engineer.branchId !== c.branchId)
@@ -442,7 +454,6 @@ export async function saveEstimate(caseId: string, mode: "start" | "edit", _prev
       const unit = l.unitPrice!;
       if (unit < min)
         throw new FieldError("items", `${item.name}: lowest allowed price is ${formatPaise(min)} (max ${item.maxDiscountPercent}% discount)`);
-      if (unit > item.pricePaise) throw new FieldError("items", `${item.name}: price can't be above ${formatPaise(item.pricePaise)}`);
       return {
         caseId,
         itemId: item.id,
@@ -507,6 +518,22 @@ export async function saveEstimate(caseId: string, mode: "start" | "edit", _prev
         });
         await postCasePayment(tx, pay, user.id);
       });
+    }
+
+    // Audit trail: every billed amount that changed on an existing line.
+    if (mode === "edit") {
+      const was = new Map(c.items.map((i) => [i.itemId, i]));
+      for (const l of lines) {
+        const old = was.get(l.itemId);
+        if (old && old.unitPricePaise !== l.unitPricePaise)
+          await logActivity({
+            action: "case.billing",
+            userId: user.id,
+            entity: "Case",
+            entityId: caseId,
+            detail: `${l.name}: billed ${formatPaise(old.unitPricePaise)} → ${formatPaise(l.unitPricePaise)} per unit × ${l.quantity}`,
+          });
+      }
     }
 
     const summary = `${lines.length} ${lines.length === 1 ? "item" : "items"}, ${formatPaise(total)}`;

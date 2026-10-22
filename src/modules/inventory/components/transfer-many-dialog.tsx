@@ -5,6 +5,8 @@ import { PackageCheck } from "lucide-react";
 import type { FormState } from "@/lib/form";
 import { ActionDialog } from "@/components/forms/action-dialog";
 import { Field, Select, Textarea } from "@/components/ui/field";
+import { PhotoInput } from "@/components/forms/photo-input";
+import { PHOTO_REQUIRED_MESSAGE, hasPhotos } from "@/lib/photos";
 import type { AvailableUnit } from "./transfer-dialog";
 
 type Props = {
@@ -65,6 +67,7 @@ export function TransferManyDialog({ requestedItemName, remaining, units, action
       validate={(fd) => {
         const ids = fd.getAll("unitId").map(String);
         if (ids.some((v) => !v)) return { unitId: ["Select a USID for every unit"] };
+        if (!hasPhotos(fd)) return { photos: [PHOTO_REQUIRED_MESSAGE] };
         return null;
       }}
       submitLabel={`Transfer ${remaining} units`}
@@ -76,6 +79,9 @@ export function TransferManyDialog({ requestedItemName, remaining, units, action
           </Field>
           <Field label="Note" htmlFor="note" error={errors.note}>
             <Textarea id="note" name="note" rows={2} placeholder="Enter note" />
+          </Field>
+          <Field label="Photos" htmlFor="photos" required error={errors.photos} hint="Upload an image or take a photo. The branch can view these with the units.">
+            <PhotoInput name="photos" allowUpload invalid={Boolean(errors.photos)} />
           </Field>
         </>
       )}

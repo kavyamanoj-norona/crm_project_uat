@@ -196,7 +196,6 @@ export const conditionOptions = enumOptions(ITEM_CONDITIONS);
 export const receivedItemSchema = z.object({
   name: requiredText("Item name"),
   referenceNo: optionalText,
-  condition: z.enum(ITEM_CONDITIONS, { error: "Select the item's condition" }),
 });
 export type ReceivedItem = z.input<typeof receivedItemSchema>;
 
@@ -238,26 +237,26 @@ export const intakeSchema = z
     phone: requiredPhone(),
     name: requiredText("Name"),
     email: z
-      .string()
+      .string({ error: "Email is required" })
       .trim()
       .toLowerCase()
-      .default("")
-      .transform((v) => (v === "" ? null : v))
-      .pipe(z.email("Enter a valid email").nullable()),
+      .min(1, "Email is required")
+      .pipe(z.email("Enter a valid email")),
     altPhone: optionalPhone,
     accountId: optionalText,
     source: requiredEnum(LEAD_SOURCES, "How they heard about us"),
     // 2 · Product
     productType: requiredEnum(PRODUCT_TYPES, "Product type"),
     brand: requiredText("Brand"),
-    model: optionalText,
-    serialNo: optionalText,
+    model: requiredText("Model"),
+    serialNo: requiredText("Serial / IMEI"),
     warrantyStatus: requiredEnum(WARRANTY_STATUSES, "Status"),
     devicePassword: z
       .string()
       .max(100, "Passcode is too long")
       .transform((v) => (v.trim() === "" ? null : v)),
     problemReported: requiredText("Problem reported"),
+    description: requiredText("Description"),
     receivedItems,
     // Pickup / on-site
     siteAddress: optionalText,
@@ -353,6 +352,12 @@ export const LAB_ADD_ITEM_STATUSES: CaseStatusValue[] = [
 
 /** Stages in which the items can still be changed (before the customer approves). */
 export const ESTIMATE_EDITABLE: CaseStatusValue[] = ["DIAGNOSIS", "PENDING_APPROVAL"];
+
+/**
+ * Stages in which the branch can change what each billable line is billed at (the Billed ₹ column). Prices only: the
+ * items and quantities stay as they are. On a case that came back from the chip-level lab only the service charge can change.
+ */
+export const BILLING_EDIT_STATUSES: CaseStatusValue[] = ["DIAGNOSIS", "PENDING_APPROVAL", "AWAITING_STOCK", "CHIP_BRANCH_RECEIVED", "QUALITY_CHECK"];
 
 /** Items saved during chip-level lab diagnosis. No engineer, delivery date, GST, or payment fields. */
 export const labItemsSchema = z.object({

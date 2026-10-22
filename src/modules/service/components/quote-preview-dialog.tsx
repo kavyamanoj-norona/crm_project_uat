@@ -7,8 +7,10 @@ import { Button } from "@/components/ui/button";
 import { ModalButton } from "@/components/ui/modal-button";
 import { formatPaise } from "@/lib/money";
 import type { ActionResult } from "@/lib/form";
+import { useDrafts } from "./billing-draft";
 
 type Props = {
+  caseId: string;
   jobsheetNo: string;
   branchName: string;
   device: string;
@@ -20,7 +22,7 @@ type Props = {
 };
 
 /** What the customer's phone will show: a demo, nothing on it is clickable. */
-function PhonePreview({ jobsheetNo, branchName, device, lines, totalPaise, gstInclusive }: Omit<Props, "send">) {
+function PhonePreview({ jobsheetNo, branchName, device, lines, totalPaise, gstInclusive }: Omit<Props, "send" | "caseId">) {
   return (
     <div aria-hidden className="mx-auto w-full max-w-[19rem] select-none overflow-hidden rounded-[2rem] border-[6px] border-brand-navy bg-white shadow-lg">
       <div className="bg-brand-navy px-4 py-3 text-center text-white">
@@ -108,8 +110,12 @@ function Body({ send, onDone, ...preview }: Props & { onDone: () => void }) {
 
 /** "Send quote to customer": shows the customer's view first; confirming sends the quote and moves the case on. */
 export function QuotePreviewDialog(props: Props) {
+  // Billed amounts edited but not saved: the quote would show the old prices, so it can't go out yet.
+  const unsaved = Object.keys(useDrafts(props.caseId)).length > 0;
   return (
     <ModalButton
+      disabled={unsaved}
+      disabledReason="Save your billed amount changes before sending the quote"
       trigger={
         <>
           <Send className="size-4" /> Send quote to customer

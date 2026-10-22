@@ -11,6 +11,7 @@ import { formatDateTime } from "@/lib/dates";
 import { INVENTORY_PATHS } from "@/modules/inventory/paths";
 import { getStockRequest } from "@/modules/inventory/stock-request-queries";
 import { LINE_STATUS, stockRequestStatus } from "@/modules/inventory/stock-request-status";
+import { db } from "@/server/db";
 import { branchWhere, getBranchScope } from "@/server/branch-scope";
 import { requirePageAccess } from "@/server/rbac/guard";
 
@@ -23,6 +24,11 @@ export default async function StockRequestDetailPage({ params }: { params: Promi
   const req = await getStockRequest(id, branchWhere(await getBranchScope(user)));
   if (!req) notFound();
 
+  const photos = await db.stockAttachment.findMany({
+    where: { stockRequestId: req.id, isDelete: 0 },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, url: true, fileName: true },
+  });
   const status = stockRequestStatus(req.lines);
   type Line = (typeof req.lines)[number];
 
@@ -90,6 +96,21 @@ export default async function StockRequestDetailPage({ params }: { params: Promi
               ["Requested by", personName(req.requestedBy) ?? "—"],
               ["Date", formatDateTime(req.createdAt)],
               ["Notes", req.notes ?? "—"],
+              [
+                "Photos",
+                photos.length === 0 ? (
+                  "—"
+                ) : (
+                  <span key="photos" className="flex flex-wrap gap-2">
+                    {photos.map((p) => (
+                      <a key={p.id} href={p.url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${p.fileName}`}>
+                        {/* eslint-disable-next-line @next/next/no-img-element -- stored upload */}
+                        <img src={p.url} alt={p.fileName} className="size-16 rounded-md border border-border object-cover" />
+                      </a>
+                    ))}
+                  </span>
+                ),
+              ],
             ]}
           />
         </Card>

@@ -41,6 +41,9 @@ import { SendWhatsAppButton } from "@/modules/service/components/send-whatsapp-b
 import { db } from "@/server/db";
 import { AssignEngineerDialog } from "@/modules/service/components/assign-engineer-dialog";
 import { EstimateDialog } from "@/modules/service/components/estimate-dialog";
+import { BilledAmountCell } from "@/modules/service/components/billed-amount-cell";
+import { BillingSaveBar } from "@/modules/service/components/billing-save-bar";
+import { saveBilledAmounts } from "@/modules/service/actions/billing";
 import { FeedbackDialog } from "@/modules/service/components/feedback-dialog";
 import { ITEM_TYPE_LABELS, ITEM_TYPE_TONE } from "@/modules/admin/item-schema";
 import { PartRequestDialog } from "@/modules/service/components/part-request-dialog";
@@ -66,6 +69,7 @@ import {
   CUSTOMER_BEHAVIOUR_LABELS,
   CUSTOMER_BEHAVIOUR_TONE,
   CUSTOMER_BEHAVIOURS,
+  BILLING_EDIT_STATUSES,
   ESTIMATE_EDITABLE,
   canRequestParts,
   ADD_ITEM_STATUSES,
@@ -195,7 +199,10 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
   const sendWhatsApp = sendWhatsAppTemplate.bind(null, c.id);
 
   // Start diagnosis (at Intake) / Edit items (Diagnosis, Pending approval)
-  const estimateMode = !permission.canEdit ? null : c.status === "INTAKE" ? "start" : ESTIMATE_EDITABLE.includes(c.status) ? "edit" : null;
+  const estimateMode = !permission.canEdit ? null : c.status === "INTAKE" ? "start" : ESTIMATE_EDITABLE.includes(c.status) && !isChipCase ? "edit" : null;
+  // Billed-amount editing outside the full "Edit items" dialog; a case from the chip-level lab only gets its service charge.
+  const canEditBilling = permission.canEdit && BILLING_EDIT_STATUSES.includes(c.status) && c.items.length > 0;
+  const labPriced = hasChipHistory || isInChipTrack;
   const canAssignEngineer = permission.canEdit && isOpenStatus(c.status);
   const [catalog, staff] = await Promise.all([
     estimateMode ? listCatalogForPicker() : Promise.resolve([] as Awaited<ReturnType<typeof listCatalogForPicker>>),
@@ -463,6 +470,7 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
                       : c.status === "DIAGNOSIS" && c.estimatedCostPaise && permission.canEdit
                         ? (
                             <QuotePreviewDialog
+                              caseId={c.id}
                               jobsheetNo={c.jobsheetNo}
                               branchName={c.branch.name}
                               device={device}
@@ -556,7 +564,22 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
                 },
                 { header: "Code", cell: (l) => <span className="text-text-muted">{l.code}</span> },
                 { header: "Min ₹", align: "right", cell: (l) => formatPaise(l.minPricePaise, { symbol: false }) },
-                { header: "Billed ₹", align: "right", cell: (l) => <span className="font-semibold">{formatPaise(l.unitPricePaise, { symbol: false })}</span> },
+                {
+                  header: "Billed ₹",
+                  align: "right",
+                  cell: (l) =>
+                    canEditBilling && (!labPriced || l.type === "SERVICE") ? (
+                      <BilledAmountCell
+                        key={`${l.id}-${l.unitPricePaise}`}
+                        caseId={c.id}
+                        itemId={l.id}
+                        value={paiseToInput(l.unitPricePaise)}
+                        minPricePaise={l.minPricePaise}
+                      />
+                    ) : (
+                      <span className="font-semibold">{formatPaise(l.unitPricePaise, { symbol: false })}</span>
+                    ),
+                },
                 { header: "Total ₹", align: "right", cell: (l) => <span className="font-semibold">{formatPaise(l.lineTotalPaise, { symbol: false })}</span> },
                 // {
                 //   header: "Status",
@@ -632,6 +655,13 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
                 },
               ]}
             />
+            {canEditBilling && (
+              <BillingSaveBar
+                caseId={c.id}
+                minByItem={Object.fromEntries(c.items.filter((l) => !labPriced || l.type === "SERVICE").map((l) => [l.id, l.minPricePaise]))}
+                action={saveBilledAmounts.bind(null, c.id)}
+              />
+            )}
             <div className="mt-5 grid gap-6 sm:grid-cols-2">
               <div>
                 <p className="text-sm text-text-muted">

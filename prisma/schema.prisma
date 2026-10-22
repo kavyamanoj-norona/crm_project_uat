@@ -625,9 +625,11 @@ model Case {
   // AES-256-GCM (server/crypto.ts); every reveal is written to the activity log.
   devicePasswordEnc        String?
   problemReported          String
+  // Additional device details / reported issue, required at intake (null on older cases).
+  description              String?
   // Money
   estimatedCostPaise       Int?
-  gstInvoiceRequired       Boolean        @default(false)
+  gstInvoiceRequired      Boolean        @default(false)
   expectedDeliveryDate     DateTime?      @db.Date
   engineerId               String?
   labWorkType              String?
@@ -2213,4 +2215,23 @@ model SupplierDocument {
 
   @@index([supplierId])
   @@map("supplier_document")
+}
+
+// Photos attached to a branch Stock Request, or to a stock transfer that has no case to hang them on.
+model StockAttachment {
+  id                String   @id @default(cuid())
+  kind              String // "STOCK_REQUEST_PHOTO" | "TRANSFER_PHOTO"
+  stockRequestId    String?
+  purchaseRequestId String?
+  stockUnitId       String?
+  url               String
+  fileName          String
+  sizeBytes         Int
+  createdById       String?
+  createdAt         DateTime @default(now()) @db.Timestamptz
+  isDelete          Int      @default(0) // 0 = active, 1 = soft-deleted
+
+  @@index([stockRequestId])
+  @@index([purchaseRequestId])
+  @@map("stock_attachment")
 }

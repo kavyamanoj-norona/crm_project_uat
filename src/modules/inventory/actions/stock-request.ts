@@ -7,6 +7,7 @@ import { FieldError, handleActionError } from "@/server/prisma-errors";
 import { requireActionPermission, ForbiddenError } from "@/server/rbac/guard";
 import { isEngineer } from "@/server/rbac/roles";
 import { logActivity } from "@/server/security/activity";
+import { formPhotos, requiredPhotoError, saveStockPhotos } from "@/server/case-photos";
 import { INVENTORY_PATHS } from "../paths";
 import { MAX_STOCK_REQUEST_QTY } from "../schemas";
 import { createStockRequest } from "../stock-request";
@@ -23,6 +24,11 @@ export async function createStockRequestAction(_prev: FormState, formData: FormD
     // Stock requests are for Front Desk and Branch Managers; engineers never raise them, whatever permissions they hold.
     if (isEngineer(user)) throw new ForbiddenError();
     if (!user.privilege.isBranchBound || !user.branchId) throw new ForbiddenError();
+
+    // At least one image (uploaded or taken with the camera) must come with every request.
+    const photos = formPhotos(formData);
+    const photoMsg = requiredPhotoError(photos);
+    if (photoMsg) throw new FieldError("photos", photoMsg);
 
     const ids = formData.getAll("itemId").map(String);
     const qtys = formData.getAll("quantity").map(String);
@@ -48,6 +54,8 @@ export async function createStockRequestAction(_prev: FormState, formData: FormD
     const lines = [...wanted].map(([itemId, quantity]) => ({ itemId, quantity }));
     const req = await db.$transaction((tx) => createStockRequest(tx, { branchId: user.branchId!, branchCode: branch.code, userId: user.id, notes, lines }));
 
+    await saveStockPhotos(req.id, photos, user.id, { kind: "STOCK_REQUEST_PHOTO", prefix: "request", stockRequestId: req.id });
+
     await logActivity({
       action: "inventory.stock-request",
       userId: user.id,
@@ -59,6 +67,6 @@ export async function createStockRequestAction(_prev: FormState, formData: FormD
     revalidatePath(INVENTORY_PATHS.purchasing);
     return { ok: true, message: `Request ${req.code} sent to Head Office.` };
   } catch (e) {
-    return handleActionError(e, { lines: "Items" }, formData);
+    return handleActionError(e, { lines: "Items", photos: "Photos" }, formData);
   }
 }

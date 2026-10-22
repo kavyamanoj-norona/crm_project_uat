@@ -147,6 +147,7 @@ export async function createCase(_prev: FormState, formData: FormData): Promise<
             warrantyStatus: data.warrantyStatus,
             devicePasswordEnc,
             problemReported: data.problemReported,
+            description: data.description,
             createdById: actor.id,
             updatedById: actor.id,
             receivedItems: { create: data.receivedItems.map((item, i) => ({ ...item, sortOrder: i })) },

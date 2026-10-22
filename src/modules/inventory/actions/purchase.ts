@@ -7,7 +7,7 @@ import { toFieldErrors, pick, type FormState } from "@/lib/form";
 import { ForbiddenError, requireActionPermission } from "@/server/rbac/guard";
 import { isEngineer } from "@/server/rbac/roles";
 import { branchWhere, getBranchScope } from "@/server/branch-scope";
-import { formPhotos, photoError, saveCasePhotos } from "@/server/case-photos";
+import { formPhotos, photoError, requiredPhotoError, saveCasePhotos, saveStockPhotos } from "@/server/case-photos";
 import { logActivity } from "@/server/security/activity";
 import { nextSequence } from "@/server/sequence";
 import type { PurchaseRequestStatus } from "@/generated/prisma/client";
@@ -63,6 +63,10 @@ export async function raisePurchaseRequest(_prev: FormState, formData: FormData)
 export async function requestItemStock(itemId: string, _prev: FormState, formData: FormData): Promise<FormState> {
   const parsed = stockRequestSchema.safeParse(pick(formData, ["quantity", "notes"]));
   if (!parsed.success) return toFieldErrors(parsed.error, formData);
+  // At least one image (uploaded or taken with the camera) must come with every request.
+  const photos = formPhotos(formData);
+  const photoMsg = requiredPhotoError(photos);
+  if (photoMsg) return { message: "Please fix the highlighted fields.", fieldErrors: { photos: [photoMsg] } };
   try {
     const user = await requireActionPermission(INVENTORY_PATHS.purchasing, "canCreate");
     // Stock requests are for Front Desk and Branch Managers; engineers never raise them, whatever permissions they hold.
@@ -78,9 +82,10 @@ export async function requestItemStock(itemId: string, _prev: FormState, formDat
     const branch = await db.branch.findUniqueOrThrow({ where: { id: branchId }, select: { code: true } });
     const { quantity, notes } = parsed.data;
     // Recorded as a one-line Stock Request, so it shows in the branch's Stock Requests list; Head Office still sees the same PurchaseRequest.
-    const { code } = await db.$transaction((tx) =>
+    const { id: requestId, code } = await db.$transaction((tx) =>
       createStockRequest(tx, { branchId, branchCode: branch.code, userId: user.id, notes: notes ?? null, lines: [{ itemId, quantity }] }),
     );
+    await saveStockPhotos(requestId, photos, user.id, { kind: "STOCK_REQUEST_PHOTO", prefix: "request", stockRequestId: requestId });
     await logActivity({
       action: "inventory.request",
       userId: user.id,

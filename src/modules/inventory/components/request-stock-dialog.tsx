@@ -4,6 +4,8 @@ import { PackagePlus } from "lucide-react";
 import { validateForm, type FormState } from "@/lib/form";
 import { ActionDialog } from "@/components/forms/action-dialog";
 import { Field, Input, Textarea } from "@/components/ui/field";
+import { PhotoInput } from "@/components/forms/photo-input";
+import { PHOTO_REQUIRED_MESSAGE, hasPhotos } from "@/lib/photos";
 import { MAX_STOCK_REQUEST_QTY, stockRequestSchema } from "../schemas";
 
 type Props = {
@@ -28,7 +30,11 @@ export function RequestStockDialog({ itemName, itemCode, action }: Props) {
       title={`Request ${itemName}`}
       description={`${itemCode} · Head Office will order it and transfer each unit with its own USID.`}
       action={action}
-      validate={(fd) => validateForm(stockRequestSchema, fd)}
+      validate={(fd) => {
+        const e = validateForm(stockRequestSchema, fd) ?? {};
+        if (!hasPhotos(fd)) e.photos = [PHOTO_REQUIRED_MESSAGE];
+        return Object.keys(e).length ? e : null;
+      }}
       submitLabel="Send request"
     >
       {(errors) => (
@@ -38,6 +44,9 @@ export function RequestStockDialog({ itemName, itemCode, action }: Props) {
           </Field>
           <Field label="Notes" htmlFor={`notes-${itemCode}`} error={errors.notes}>
             <Textarea id={`notes-${itemCode}`} name="notes" rows={3} placeholder="Enter notes" />
+          </Field>
+          <Field label="Photos" htmlFor="photos" required error={errors.photos} hint="Upload an image or take a photo">
+            <PhotoInput name="photos" allowUpload invalid={Boolean(errors.photos)} />
           </Field>
         </>
       )}
