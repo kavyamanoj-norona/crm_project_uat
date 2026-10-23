@@ -9,7 +9,7 @@ import {
   privilegeSchema,
 } from "./schemas";
 import { ruleSchema } from "./rule-schema";
-import { itemSchema } from "./item-schema";
+import { itemCategorySchema, itemSchema } from "./item-schema";
 import { stockAdjustSchema, purchaseRequestSchema, stockTransferSchema } from "../inventory/schemas";
 import { leadFormSchema } from "../telecaller/lead-form-schema";
 
@@ -28,6 +28,7 @@ export const FORM_SCHEMAS = {
   blockedIp: blockedIpSchema,
   rule: ruleSchema,
   item: itemSchema,
+  itemCategory: itemCategorySchema,
   stockAdjust: stockAdjustSchema,
   purchaseRequest: purchaseRequestSchema,
   stockTransfer: stockTransferSchema,

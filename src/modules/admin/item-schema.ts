@@ -31,7 +31,7 @@ export const itemSchema = z.object({
     .regex(/^[A-Z0-9][A-Z0-9\-_/.]{1,29}$/, "Code: 2–30 letters, digits, - _ / ."),
   name: requiredText("Name"),
   type: requiredEnum(ITEM_TYPES, "Type"),
-  category: optionalText,
+  categoryId: requiredText("Category"),
   brand: optionalText,
   unit: requiredText("Unit"),
   hsnSac: optionalText.refine((v) => v === null || /^\d{4,8}$/.test(v), "HSN/SAC is 4–8 digits"),
@@ -48,3 +48,9 @@ export const itemSchema = z.object({
 });
 
 export type ItemInput = z.output<typeof itemSchema>;
+
+/** A managed item category. Duplicates (ignoring case) are rejected on the server. */
+export const itemCategorySchema = z.object({
+  name: requiredText("Name").pipe(z.string().max(60, "Keep the name under 60 characters")),
+  isActive: checkbox,
+});

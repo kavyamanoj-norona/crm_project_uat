@@ -57,11 +57,13 @@ type BillEntryProps = {
   gstRates: number[];
   /** Reusable warranty periods (Inventory → Manage Warranty). */
   warranties: { id: string; name: string }[];
+  /** Active item categories (Inventory → Categories), for items created on the bill. */
+  categories: { id: string; name: string }[];
 };
 
 type Notice = { tone: "info" | "error"; text: string; duplicate?: ScanResult["duplicate"] };
 
-const blankLine = (): BillFormValues["lines"][number] => ({ itemId: "", newItem: false, newName: "", newType: "PART", description: "", hsnSac: "", warrantyId: "", quantity: "1", rate: "", discountPct: "", discountAmt: "", gstPercent: "18" });
+const blankLine = (): BillFormValues["lines"][number] => ({ itemId: "", newItem: false, newName: "", newType: "PART", newCategoryId: "", description: "", hsnSac: "", warrantyId: "", quantity: "1", rate: "", discountPct: "", discountAmt: "", gstPercent: "18" });
 
 /** Paise as a plain rupee string for an input: 25000 → "250", 25050 → "250.5". */
 const paiseToText = (p: number) => String(Number((p / 100).toFixed(2)));
@@ -92,7 +94,7 @@ const blankValues = (): BillFormValues => ({
 });
 
 /** One page: fill in the bill (or upload/capture the image and let it be read), review, confirm. */
-export function BillEntry({ scanAction, confirmAction, catalog, suppliers, nextUsid, gstRates, warranties }: BillEntryProps) {
+export function BillEntry({ scanAction, confirmAction, catalog, suppliers, nextUsid, gstRates, warranties, categories }: BillEntryProps) {
   const [v, setV] = useState<BillFormValues>(blankValues);
   const [printedTotal, setPrintedTotal] = useState<number | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -384,6 +386,16 @@ export function BillEntry({ scanAction, confirmAction, catalog, suppliers, nextU
                           onChange={(e) => setLine(i, { newType: e.target.value as (typeof NEW_ITEM_TYPES)[number] })}
                           options={NEW_ITEM_TYPES.map((t) => ({ value: t, label: NEW_ITEM_TYPE_LABELS[t] }))}
                           placeholder="Select item type"
+                        />
+                      </Field>
+                      <Field label="Category" htmlFor={`new-category-${i}`} required error={lineErr(i, "newCategoryId")}>
+                        <Select
+                          id={`new-category-${i}`}
+                          value={line.newCategoryId}
+                          onChange={(e) => setLine(i, { newCategoryId: e.target.value })}
+                          options={categories.map((c) => ({ value: c.id, label: c.name }))}
+                          placeholder="Select category"
+                          aria-invalid={lineErr(i, "newCategoryId") ? true : undefined}
                         />
                       </Field>
                     </div>

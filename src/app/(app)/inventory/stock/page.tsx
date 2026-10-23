@@ -41,12 +41,14 @@ export default async function StockPage({ searchParams }: PageProps<"/inventory/
   const withHo = !user.privilege.isBranchBound;
   const viewParam = param(sp, "view");
   const view = viewParam === "units" ? "units" : viewParam === "office" ? "office" : "items";
+  // Bill no. and supplier are for the Purchase Manager and admins only.
+  const showBill = isPurchaseManager(user);
   // Only the Purchase Manager (and admins) hand office-use units to employees.
   const canOfficeConsume = canEdit && isPurchaseManager(user);
 
   const [{ rows, total, tabs, valuePaise }, units, officeConsumed, employees, unitCounts, physicalItems, branchOptions, editing] = await Promise.all([
     listStockPage(list, scope.branchId, withHo),
-    view === "units" ? listStockUnitsPage(list, scope.branchId, withHo) : Promise.resolve({ rows: [], total: 0, tabs: [] }),
+    view === "units" ? listStockUnitsPage(list, scope.branchId, withHo, showBill) : Promise.resolve({ rows: [], total: 0, tabs: [] }),
     view === "office" ? listOfficeConsumedPage(list) : Promise.resolve({ rows: [], total: 0 }),
     view === "units" && canOfficeConsume ? listActiveStaff() : Promise.resolve([] as { value: string; label: string }[]),
     countAvailableUnits(scope.branchId, withHo),
@@ -171,7 +173,7 @@ export default async function StockPage({ searchParams }: PageProps<"/inventory/
         tabs={units.tabs}
         rows={units.rows}
         rowKey={(u) => u.id}
-        searchPlaceholder="Search by USID, item, bill, supplier or case ID"
+        searchPlaceholder={showBill ? "Search by USID, item, bill, supplier or case ID" : "Search by USID, item or case ID"}
         empty="No units yet. Each unit appears here with its USID when a supplier bill is saved under Billing."
         columns={[
           { header: "#", cell: (_, i) => i + 1 + (list.page - 1) * list.pageSize },
@@ -187,18 +189,22 @@ export default async function StockPage({ searchParams }: PageProps<"/inventory/
               </>
             ),
           },
-          {
-            header: "Bill",
-            cell: (u) =>
-              u.billItem ? (
-                <Link href={`${INVENTORY_PATHS.billing}/${u.billItem.bill.id}`} className="text-primary hover:underline">
-                  {u.billItem.bill.billNo}
-                </Link>
-              ) : (
-                <span className="text-text-muted">No bill</span>
-              ),
-          },
-          { header: "Supplier", cell: (u) => u.billItem?.bill.supplier.name ?? "—" },
+          ...(showBill
+            ? [
+              {
+                header: "Bill",
+                cell: (u: (typeof units.rows)[number]) =>
+                  u.billItem ? (
+                    <Link href={`${INVENTORY_PATHS.billing}/${u.billItem.bill.id}`} className="text-primary hover:underline">
+                      {u.billItem.bill.billNo}
+                    </Link>
+                  ) : (
+                    <span className="text-text-muted">No bill</span>
+                  ),
+              },
+              { header: "Supplier", cell: (u: (typeof units.rows)[number]) => u.billItem?.bill.supplier.name ?? "—" },
+              ]
+            : []),
           {
             header: "Warranty",
             cell: (u) => (u.warrantyEndsAt ? <>{u.warrantyLabel ?? u.warranty?.name}<p className="text-xs text-text-muted">until {formatDate(u.warrantyEndsAt)}</p></> : "—"),
@@ -207,7 +213,12 @@ export default async function StockPage({ searchParams }: PageProps<"/inventory/
           {
             header: "Status",
             cell: (u) =>
-              u.status === "AVAILABLE" ? (
+              // A unit on a case that is Ready for delivery shows as RFD instead of Allocated / Received / Consumed.
+              u.allocatedCase?.status === "READY_FOR_DELIVERY" && ["ALLOCATED", "RECEIVED", "CONSUMED"].includes(u.status) ? (
+                <Badge tone="success">RFD</Badge>
+              ) : u.allocatedCase?.status === "CLOSED" && ["ALLOCATED", "RECEIVED", "CONSUMED"].includes(u.status) ? (
+                <Badge tone="neutral">Closed</Badge>
+              ) : u.status === "AVAILABLE" ? (
                 <Badge tone="success">Available</Badge>
               ) : u.status === "RECEIVED" ? (
                 <Badge tone="navy">Received</Badge>
@@ -267,7 +278,9 @@ export default async function StockPage({ searchParams }: PageProps<"/inventory/
             cell: (s) => (
               <>
                 <p className="font-medium">{s.item.name}</p>
-                <p className="text-xs text-text-muted">{s.item.code}</p>
+                <p className="text-xs text-text-muted">
+                  {s.item.code} · {s.item.category.name}
+                </p>
               </>
             ),
           },

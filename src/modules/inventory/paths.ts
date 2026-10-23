@@ -7,6 +7,7 @@ export const INVENTORY_PATHS = {
   stockRequests: "/inventory/stock-requests",
   billing: "/inventory/billing",
   items: "/inventory/items",
+  categories: "/inventory/categories",
   suppliers: "/inventory/suppliers",
   warranties: "/inventory/warranties",
   vendorReplacements: "/inventory/vendor-replacements",

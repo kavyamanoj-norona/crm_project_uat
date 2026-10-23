@@ -165,3 +165,8 @@ export async function findDuplicateBill(input: {
   if (!supplier) return null;
   return db.purchaseBill.findFirst({ where: { supplierId: supplier.id, billNoNorm: norm }, select });
 }
+
+/** Active item categories, for items created on a purchase bill. */
+export function listItemCategoryOptions() {
+  return db.itemCategory.findMany({ where: { isDelete: 0, isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } });
+}

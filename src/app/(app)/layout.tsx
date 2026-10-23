@@ -20,7 +20,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   const [nav, scope] = await Promise.all([getNavigation(user), getBranchScope(user)]);
   const [options, counts] = await Promise.all([
     scope.canSwitch ? listBranchOptions() : [],
-    getMenuCounts(nav, branchWhere(scope)),
+    getMenuCounts(nav, branchWhere(scope), user),
   ]);
 
   return (

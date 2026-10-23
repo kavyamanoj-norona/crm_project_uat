@@ -166,6 +166,7 @@ export async function listStockPage(list: ListState, branchId: string | null, in
         OR: [
           { item: { name: containsI(list.q) } },
           { item: { code: containsI(list.q) } },
+          { item: { category: { name: containsI(list.q) } } },
           { branch: { name: containsI(list.q) } },
           { branch: { code: containsI(list.q) } },
           { unitCodes: { has: list.q } },
@@ -187,7 +188,7 @@ export async function listStockPage(list: ListState, branchId: string | null, in
       orderBy,
       ...pageArgs(list),
       include: {
-        item: { select: { id: true, code: true, name: true, type: true, pricePaise: true, maxDiscountPercent: true } },
+        item: { select: { id: true, code: true, name: true, type: true, pricePaise: true, maxDiscountPercent: true, category: { select: { name: true } } } },
         branch: { select: { id: true, code: true, name: true } },
       },
     }),
@@ -450,7 +451,7 @@ export async function listAvailableUnits() {
 const UNIT_TAB_STATUS = ["AVAILABLE", "ALLOCATED", "RECEIVED", "CONSUMED", "RETURNED", "AWAITING_VENDOR"] as const;
 
 /** Every purchased unit (one row per USID) at a location, with its bill, supplier and status. */
-export async function listStockUnitsPage(list: ListState, branchId: string | null, includeHeadOffice = false) {
+export async function listStockUnitsPage(list: ListState, branchId: string | null, includeHeadOffice = false, showBill = true) {
   const inBranches = await withHeadOffice(branchId, includeHeadOffice);
   const scope: Prisma.StockUnitWhereInput = inBranches ? { branchId: inBranches } : {};
   const search: Prisma.StockUnitWhereInput = list.q
@@ -459,8 +460,7 @@ export async function listStockUnitsPage(list: ListState, branchId: string | nul
           { usid: containsI(list.q) },
           { item: { name: containsI(list.q) } },
           { item: { code: containsI(list.q) } },
-          { billItem: { bill: { billNo: containsI(list.q) } } },
-          { billItem: { bill: { supplier: { name: containsI(list.q) } } } },
+          ...(showBill ? [{ billItem: { bill: { billNo: containsI(list.q) } } }, { billItem: { bill: { supplier: { name: containsI(list.q) } } } }] : []),
           { allocatedCase: { jobsheetNo: containsI(list.q) } },
         ],
       }
@@ -468,17 +468,25 @@ export async function listStockUnitsPage(list: ListState, branchId: string | nul
   const status = (UNIT_TAB_STATUS as readonly string[]).includes(list.tab) ? (list.tab as (typeof UNIT_TAB_STATUS)[number]) : null;
   // Office-use units sit under their own tab (still on the shelf) and are kept out of the spare-part status tabs.
   const officeTab = list.tab === "OFFICE";
+  // RFD: units used on a case that is now Ready for delivery (cuts across the status tabs).
+  const rfdTab = list.tab === "RFD";
+  const rfdWhere: Prisma.StockUnitWhereInput = { isOfficeUse: false, status: { in: ["ALLOCATED", "RECEIVED", "CONSUMED"] }, allocatedCase: { status: "READY_FOR_DELIVERY" } };
+  // Closed: units used on a case that has since been closed.
+  const closedTab = list.tab === "CLOSED";
+  const closedWhere: Prisma.StockUnitWhereInput = { isOfficeUse: false, status: { in: ["ALLOCATED", "RECEIVED", "CONSUMED"] }, allocatedCase: { status: "CLOSED" } };
+  // Such units show as RFD / Closed, so the other status tabs leave them out.
+  const notRfd: Prisma.StockUnitWhereInput = { NOT: { OR: [rfdWhere, closedWhere] } };
   const where: Prisma.StockUnitWhereInput = {
     AND: [
       scope,
       search,
       // Office-consumed units have their own Stock view, so they never show here.
       { status: { not: "OFFICE_CONSUMED" } },
-      officeTab ? { isOfficeUse: true } : status ? { status, isOfficeUse: false } : {},
+      officeTab ? { isOfficeUse: true } : rfdTab ? rfdWhere : closedTab ? closedWhere : status ? { status, isOfficeUse: false, ...notRfd } : {},
     ],
   };
 
-  const [rows, total, groups, officeCount] = await Promise.all([
+  const [rows, total, groups, officeCount, rfdCount, closedCount] = await Promise.all([
     db.stockUnit.findMany({
       where,
       orderBy: [{ createdAt: "desc" }, { usid: "asc" }],
@@ -487,26 +495,31 @@ export async function listStockUnitsPage(list: ListState, branchId: string | nul
         item: { select: { code: true, name: true } },
         branch: { select: { code: true, name: true } },
         billItem: { select: { bill: { select: { id: true, billNo: true, supplier: { select: { name: true } } } } } },
-        allocatedCase: { select: { id: true, jobsheetNo: true } },
+        allocatedCase: { select: { id: true, jobsheetNo: true, status: true } },
         allocatedBranch: { select: { code: true } },
         warranty: { select: { name: true } },
       },
     }),
     db.stockUnit.count({ where }),
-    db.stockUnit.groupBy({ by: ["status"], where: { AND: [scope, search, { isOfficeUse: false }] }, _count: { _all: true } }),
+    db.stockUnit.groupBy({ by: ["status"], where: { AND: [scope, search, { isOfficeUse: false }, notRfd] }, _count: { _all: true } }),
     db.stockUnit.count({ where: { AND: [scope, search, { isOfficeUse: true, status: { not: "OFFICE_CONSUMED" } }] } }),
+    db.stockUnit.count({ where: { AND: [scope, search, { status: { not: "OFFICE_CONSUMED" } }, rfdWhere] } }),
+    db.stockUnit.count({ where: { AND: [scope, search, { status: { not: "OFFICE_CONSUMED" } }, closedWhere] } }),
   ]);
-  const n = (s: string) => groups.find((g) => g.status === s)?._count._all ?? 0;
+  const n =(s: string) => groups.find((g) => g.status === s)?._count._all ?? 0;
   const tabs: FilterTab[] = [
-    { key: "", label: "All", count: groups.reduce((s, g) => s + g._count._all, 0) + officeCount },
+    { key: "", label: "All", count: groups.reduce((s, g) => s + g._count._all, 0) + officeCount + rfdCount + closedCount },
     { key: "AVAILABLE", label: "Available", count: n("AVAILABLE") },
     { key: "ALLOCATED", label: "Allocated", count: n("ALLOCATED") },
     { key: "RECEIVED", label: "Received", count: n("RECEIVED") },
     { key: "CONSUMED", label: "Consumed", count: n("CONSUMED") },
     { key: "RETURNED", label: "Returned", count: n("RETURNED") + n("AWAITING_VENDOR") },
+    { key: "RFD", label: "RFD", count: rfdCount },
+    { key: "CLOSED", label: "Closed", count: closedCount },
     { key: "OFFICE", label: "Office use", count: officeCount },
   ];
-  return { rows, total, tabs };
+  // Bill and supplier never leave the server for users who may not see them.
+  return { rows: showBill ? rows : rows.map((u) => ({ ...u, billItem: null })), total, tabs };
 }
 
 /** Office-use units that have been handed to an employee: who, what for, which bill and warranty. */

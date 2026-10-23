@@ -164,6 +164,18 @@ export const CHIP_BRANCH_FLOW: CaseStatusValue[] = [
   "CLOSED",
 ];
 
+/** The branch's view of a case planned for chip-level service: customer approval comes before the lab transfer. */
+export const CHIP_APPROVAL_FLOW: CaseStatusValue[] = [
+  "INTAKE",
+  "DIAGNOSIS",
+  "PENDING_APPROVAL",
+  "CHIP_TRANSFER",
+  "CHIP_BRANCH_RECEIVED",
+  "QUALITY_CHECK",
+  "READY_FOR_DELIVERY",
+  "CLOSED",
+];
+
 /** Lab-internal statuses where the branch has no actionable role — device is with the lab. */
 export const LAB_INTERNAL_STATUSES: CaseStatusValue[] = [
   "CHIP_TRANSFER",
@@ -262,6 +274,12 @@ export const intakeSchema = z
     siteAddress: optionalText,
     siteLatitude: coordinate(90),
     siteLongitude: coordinate(180),
+    // Optional promises made at the counter; Start diagnosis shows them and lets the engineer change them.
+    estimatedCost: optionalRupees("Estimated cost"),
+    expectedDeliveryDate: optionalDate.refine(
+      (d) => d === null || d.toISOString().slice(0, 10) >= todayIst(),
+      "Expected delivery can't be in the past",
+    ),
     // Advance payment (optional)
     advanceAmount: optionalRupees("Advance payment"),
     advanceMode: advanceModeField,
@@ -321,6 +339,9 @@ export const estimateSchema = z
     engineerId: requiredText("Engineer"),
     /** Checkbox: "on" when chip-level service is selected, absent otherwise. Only meaningful for mode=start. */
     chipLevel: z.string().optional().default("").transform((v) => v === "on"),
+    /** Chip-level hand-off for the lab; required when chipLevel is on, ignored otherwise. */
+    chipMaxEstimate: optionalRupees("Maximum estimate"),
+    chipDeadRisk: z.string().optional().default("").transform((v) => v === "on"),
     expectedDeliveryDate: optionalDate
       .refine((d) => d !== null, "Select the expected delivery date")
       .refine((d) => d === null || d.toISOString().slice(0, 10) >= todayIst(), "Expected delivery can't be in the past"),
@@ -334,6 +355,14 @@ export const estimateSchema = z
   .superRefine((v, ctx) => {
     if (v.advanceAmount && !v.advanceMode)
       ctx.addIssue({ code: "custom", path: ["advanceMode"], message: "Select a payment mode for the advance" });
+    if (!v.chipLevel) return;
+    if (!v.chipMaxEstimate || v.chipMaxEstimate <= 0)
+      ctx.addIssue({ code: "custom", path: ["chipMaxEstimate"], message: "Enter the maximum estimate amount" });
+    else {
+      const total = v.items.reduce((sum, l) => sum + (l.unitPrice ?? 0) * l.quantity, 0);
+      if (v.chipMaxEstimate < total)
+        ctx.addIssue({ code: "custom", path: ["chipMaxEstimate"], message: "Maximum estimate can't be below the estimate total" });
+    }
   });
 export type EstimateInput = z.output<typeof estimateSchema>;
 
@@ -409,6 +438,13 @@ export const transferToChipSchema = z.object({
     (v) => v === null || v.length <= 500,
     "Keep the note under 500 characters",
   ),
+});
+
+/** "Send to Chip-Level Lab" from Diagnosis / Quality check: the quote the customer approves before the transfer. */
+export const chipHandoffSchema = z.object({
+  chipMaxEstimate: optionalRupees("Maximum estimate").refine((v) => v !== null && v > 0, "Enter the maximum estimate amount"),
+  chipDeadRisk: z.string().optional().default("").transform((v) => v === "on"),
+  note: optionalText.refine((v) => v === null || v.length <= 500, "Keep the note under 500 characters"),
 });
 
 export const nonRepairableSchema = z.object({
@@ -488,3 +524,15 @@ export type CustomerMatch = {
   visitCount: number;
   isActive: boolean;
 };
+
+// ─── Manual customer approval (Head Office) ───────────────────────────────────
+
+/** Branch → Head Office: the customer accepted the quotation verbally or by other means. */
+export const approvalRequestSchema = z.object({
+  note: requiredText("Note").pipe(z.string().max(500, "Keep the note under 500 characters")),
+});
+
+/** Head Office decision on a request; the remarks are kept in the case history. */
+export const approvalDecisionSchema = z.object({
+  remarks: requiredText("Remarks").pipe(z.string().max(500, "Keep the remarks under 500 characters")),
+});

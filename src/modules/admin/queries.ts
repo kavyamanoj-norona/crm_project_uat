@@ -356,7 +356,7 @@ export async function listItems(list: ListState) {
         OR: [
           { code: contains(list.q) },
           { name: contains(list.q) },
-          { category: contains(list.q) },
+          { category: { name: contains(list.q) } },
           { brand: contains(list.q) },
           { hsnSac: { contains: list.q } },
         ],
@@ -366,8 +366,8 @@ export async function listItems(list: ListState) {
   const [rows, total, all, ...counts] = await Promise.all([
     db.item.findMany({
       where,
-      orderBy: [{ [list.sort]: list.dir }, { name: "asc" }],
-      include: { updatedBy: { select: { firstName: true, lastName: true } } },
+      orderBy: [list.sort === "category" ? { category: { name: list.dir } } : { [list.sort]: list.dir }, { name: "asc" }],
+      include: { updatedBy: { select: { firstName: true, lastName: true } }, category: { select: { name: true } } },
       ...pageArgs(list),
     }),
     db.item.count({ where }),
@@ -382,7 +382,12 @@ export async function listItems(list: ListState) {
   return { rows, total, tabs };
 }
 
-/** Categories in use, for the item form's suggestions. */
-export const listItemCategories = async () =>
-  (await db.item.findMany({ where: { category: { not: null } }, distinct: ["category"], select: { category: true }, orderBy: { category: "asc" } }))
-    .map((r) => r.category!);
+/** Categories an item can be filed under: the live, active ones, plus `keep` so an item's current category stays selectable. */
+export const listItemCategories = async (keep?: string | null) =>
+  (
+    await db.itemCategory.findMany({
+      where: { isDelete: 0, OR: [{ isActive: true }, ...(keep ? [{ id: keep }] : [])] },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    })
+  ).map((c) => ({ value: c.id, label: c.name }));

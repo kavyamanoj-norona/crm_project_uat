@@ -8,13 +8,17 @@ import { ModalButton } from "@/components/ui/modal-button";
 import { formatPaise } from "@/lib/money";
 import type { ActionResult } from "@/lib/form";
 import { useDrafts } from "./billing-draft";
+import { ChipApprovalPreview } from "./chip-approval-preview";
 
 type Props = {
+  /** Chip-level service: the customer is quoted the maximum estimate, with the dead-risk warning if it applies. */
+  chip?: { maxEstimatePaise: number; deadRisk: boolean };
   caseId: string;
   jobsheetNo: string;
   branchName: string;
   device: string;
-  lines: { name: string; quantity: number; totalPaise: number }[];
+  /** Customer-facing lines: category and price only, never the item name or code. */
+  lines: { category: string; quantity: number; totalPaise: number }[];
   totalPaise: number;
   gstInclusive: boolean;
   /** Server action already bound to the case: moves it to Pending approval and notifies the customer. */
@@ -45,7 +49,7 @@ function PhonePreview({ jobsheetNo, branchName, device, lines, totalPaise, gstIn
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
           <p className="text-sm font-bold">Quotation — {formatPaise(totalPaise)}</p>
           <p className="mt-1 text-[11px] leading-snug text-slate-500">
-            {lines.map((l) => `${l.name}${l.quantity > 1 ? ` ×${l.quantity}` : ""} ${formatPaise(l.totalPaise)}`).join(" · ")}
+            {lines.map((l) => `${l.category}${l.quantity > 1 ? ` ×${l.quantity}` : ""} ${formatPaise(l.totalPaise)}`).join(" · ")}
             {gstInclusive ? " · GST incl." : " · GST extra"}
           </p>
           <div className="mt-3 rounded-lg bg-primary py-2 text-center text-sm font-bold text-white">Approve quote</div>
@@ -93,7 +97,17 @@ function Body({ send, onDone, ...preview }: Props & { onDone: () => void }) {
       <p className="text-sm text-text-muted">
         This is how the quote will look to the customer. Confirming sends it and moves the case to <strong className="text-text">Pending approval</strong>.
       </p>
-      <PhonePreview {...preview} />
+      {preview.chip ? (
+        <ChipApprovalPreview
+          jobsheetNo={preview.jobsheetNo}
+          branchName={preview.branchName}
+          device={preview.device}
+          maxEstimatePaise={preview.chip.maxEstimatePaise}
+          deadRisk={preview.chip.deadRisk}
+        />
+      ) : (
+        <PhonePreview {...preview} />
+      )}
       {error && <p className="rounded-md bg-danger/5 px-3 py-2 text-sm text-danger">{error}</p>}
       <div className="flex justify-end gap-2">
         <Button variant="secondary" onClick={onDone} disabled={pending}>
@@ -118,7 +132,7 @@ export function QuotePreviewDialog(props: Props) {
       disabledReason="Save your billed amount changes before sending the quote"
       trigger={
         <>
-          <Send className="size-4" /> Send quote to customer
+          <Send className="size-4" /> {props.chip ? "Send for Customer Approval" : "Send quote to customer"}
         </>
       }
       variant="navy"

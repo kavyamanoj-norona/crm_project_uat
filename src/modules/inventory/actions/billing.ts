@@ -259,12 +259,15 @@ export async function confirmBill(_prev: FormState, formData: FormData): Promise
         if (!l.newItem) continue;
         const clash = await tx.item.findFirst({ where: { name: { equals: l.newName!, mode: "insensitive" }, isDelete: 0 }, select: { code: true } });
         if (clash) throw new FieldError(`lines.${i}.newName`, `${clash.code} already has this name. Select it from the list instead.`);
+        const category = await tx.itemCategory.findFirst({ where: { id: l.newCategoryId!, isDelete: 0, isActive: true }, select: { id: true } });
+        if (!category) throw new FieldError(`lines.${i}.newCategoryId`, "Select a category from the list");
         const n = await nextSequence(tx, `ITEM:${l.newType}`);
         const created = await tx.item.create({
           data: {
             code: `${l.newType === "PART" ? "PRT" : "ACC"}-${String(n).padStart(5, "0")}`,
             name: l.newName!,
             type: l.newType,
+            categoryId: category.id,
             hsnSac: l.hsnSac,
             gstPercent: l.gstPercent,
             pricePaise: 0, // selling price is set later in the item catalog

@@ -48,7 +48,7 @@ const ACTIVITY_LABELS: Record<string, { title: string; category: HistoryCategory
   "whatsapp.send": { title: "WhatsApp message sent", category: "action" },
 };
 /** Logged actions that duplicate rows built from the stage history, QC answers, items or outsource records. */
-const COVERED_ELSEWHERE = ["case.stage", "case.create", "case.qc", "case.estimate", "case.lab.outsource"];
+const COVERED_ELSEWHERE = ["case.stage", "case.create", "case.qc", "case.estimate", "case.lab.outsource", "case.approval.request", "case.approval.approve", "case.approval.reject", "case.approval.send"];
 
 /**
  * Everything that happened on a case, newest first: stage changes, branch ↔ lab
@@ -59,7 +59,7 @@ export async function buildCaseHistory(caseId: string, opts: { isAdmin: boolean 
   const { isAdmin } = opts;
   const who = { select: { firstName: true, lastName: true } } as const;
 
-  const [stages, qc, items, outsources, activity] = await Promise.all([
+  const [stages, qc, items, outsources, activity, approvals] = await Promise.all([
     db.caseStatusHistory.findMany({ where: { caseId }, orderBy: { at: "asc" }, include: { changedBy: who } }),
     db.caseQcResponse.findMany({ where: { caseId }, orderBy: { createdAt: "asc" }, include: { answeredBy: who } }),
     db.caseItem.findMany({ where: { caseId }, orderBy: { createdAt: "asc" }, include: { addedBy: who } }),
@@ -74,6 +74,7 @@ export async function buildCaseHistory(caseId: string, opts: { isAdmin: boolean 
       orderBy: { at: "asc" },
       include: { user: who },
     }),
+    db.caseApprovalRequest.findMany({ where: { caseId }, orderBy: { requestedAt: "asc" }, include: { requestedBy: who, reviewedBy: who } }),
   ]);
 
   /** Which side had the device when something happened. */
@@ -127,6 +128,44 @@ export async function buildCaseHistory(caseId: string, opts: { isAdmin: boolean 
           ]
         : [],
     });
+  }
+
+  // ── Head Office manual approval: the request, then the decision ──
+  for (const a of approvals) {
+    entries.push({
+      key: `approval-req-${a.id}`,
+      at: a.requestedAt,
+      category: "action",
+      title: a.kind === "LAB_QUOTE" ? "Chip-level lab estimate sent for customer approval" : "Head Office approval requested",
+      stage: null,
+      track: "Branch",
+      by: personName(a.requestedBy),
+      note: `${formatPaise(a.quoteAmountPaise)} — ${a.requestNote}`,
+      detail: isAdmin
+        ? [{ rows: [["Quotation", formatPaise(a.quoteAmountPaise)], ["Requested by", personName(a.requestedBy) ?? "—"], ["When", formatDateTime(a.requestedAt)], ["Note", a.requestNote]] }]
+        : [],
+    });
+    if (a.reviewedAt)
+      entries.push({
+        key: `approval-dec-${a.id}`,
+        at: a.reviewedAt,
+        category: "action",
+        title:
+          a.kind === "LAB_QUOTE"
+            ? a.status === "APPROVED"
+              ? "Customer approved the lab estimate"
+              : "Customer rejected the lab estimate"
+            : a.status === "APPROVED"
+              ? "Head Office approved the customer's approval"
+              : "Head Office rejected the approval request",
+        stage: null,
+        track: "Branch",
+        by: personName(a.reviewedBy),
+        note: a.reviewRemarks,
+        detail: isAdmin
+          ? [{ rows: [["Decision", a.status === "APPROVED" ? "Approved" : "Rejected"], ["Reviewed by", personName(a.reviewedBy) ?? "—"], ["When", formatDateTime(a.reviewedAt)], ["Remarks", a.reviewRemarks ?? "—"]] }]
+          : [],
+      });
   }
 
   // ── Quality Check checklists (one row per save) ──

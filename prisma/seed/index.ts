@@ -80,9 +80,15 @@ async function seedRules() {
 }
 
 async function seedItems() {
-  for (const { code, ...item } of DEFAULT_ITEMS) {
+  // Categories first (matched by name, ignoring case), then the items filed under them.
+  const categoryIds = new Map<string, string>();
+  for (const name of new Set(DEFAULT_ITEMS.map((i) => i.category))) {
+    const found = await db.itemCategory.findFirst({ where: { isDelete: 0, name: { equals: name, mode: "insensitive" } }, select: { id: true } });
+    categoryIds.set(name, found?.id ?? (await db.itemCategory.create({ data: { name }, select: { id: true } })).id);
+  }
+  for (const { code, category, ...item } of DEFAULT_ITEMS) {
     // create-only: prices edited in Master Settings → Items are kept
-    await db.item.upsert({ where: { code }, update: {}, create: { code, ...item } });
+    await db.item.upsert({ where: { code }, update: {}, create: { code, ...item, categoryId: categoryIds.get(category)! } });
   }
 }
 

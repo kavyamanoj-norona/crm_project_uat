@@ -90,7 +90,6 @@ export function LabItemsSection({ action, catalog, initial, outsource, stockInfo
     const unit = toPaise(l.unitPrice);
     if (unit === null || unit <= 0) return "Enter a price";
     if (unit < i.minPricePaise) return `Lowest allowed is ${formatPaise(i.minPricePaise)} (max ${i.maxDiscountPercent}% off)`;
-    if (unit > i.pricePaise) return `Can't be above ${formatPaise(i.pricePaise)}`;
     if (!/^\d+$/.test(l.quantity) || Number(l.quantity) < 1) return "Quantity must be 1 or more";
     return null;
   };

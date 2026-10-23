@@ -21,7 +21,7 @@ import {
   privilegeSchema,
 } from "../schemas";
 import { ruleSchema } from "../rule-schema";
-import { itemSchema } from "../item-schema";
+import { itemCategorySchema, itemSchema } from "../item-schema";
 
 type SaveOptions<S extends z.ZodType> = {
   entity: string;
@@ -201,10 +201,35 @@ export async function saveItem(_prev: FormState, formData: FormData) {
     path: INVENTORY_PATHS.items,
     schema: itemSchema,
     labels: { code: "Item code" },
-    write: (data, id, userId) => {
+    write: async (data, id, userId) => {
       const { price, ...rest } = data;
+      // An item can only be filed under a live category; keeping its current one is fine even if switched off since.
+      const current = id ? (await db.item.findUnique({ where: { id }, select: { categoryId: true } }))?.categoryId : null;
+      const category = await db.itemCategory.findFirst({
+        where: { id: data.categoryId, isDelete: 0, ...(current === data.categoryId ? {} : { isActive: true }) },
+        select: { id: true },
+      });
+      if (!category) throw new FieldError("categoryId", "Select a category from the list");
       const row = { ...rest, pricePaise: price!, updatedById: userId };
       return id ? db.item.update({ where: { id }, data: row }) : db.item.create({ data: { ...row, createdById: userId } });
+    },
+  });
+}
+
+export async function saveItemCategory(_prev: FormState, formData: FormData) {
+  return save(formData, {
+    entity: "ItemCategory",
+    path: INVENTORY_PATHS.categories,
+    schema: itemCategorySchema,
+    write: async (data, id, userId) => {
+      const same = await db.itemCategory.findFirst({
+        where: { isDelete: 0, name: { equals: data.name, mode: "insensitive" }, ...(id ? { id: { not: id } } : {}) },
+        select: { name: true },
+      });
+      if (same) throw new FieldError("name", `${same.name} already exists`);
+      return id
+        ? db.itemCategory.update({ where: { id }, data: { ...data, updatedById: userId } })
+        : db.itemCategory.create({ data: { ...data, createdById: userId, updatedById: userId } });
     },
   });
 }

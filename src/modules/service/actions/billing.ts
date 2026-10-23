@@ -25,7 +25,13 @@ export async function saveBilledAmounts(caseId: string, input: { id: string; uni
     const scope = branchWhere(await getBranchScope(user));
     const c = await db.case.findFirst({ where: { id: caseId, ...scope }, select: { status: true, jobsheetNo: true } });
     if (!c) return { ok: false, message: "Case not found." };
-    if (!BILLING_EDIT_STATUSES.includes(c.status)) return { ok: false, message: "Billed amounts can't be changed at this stage." };
+    // The lab's estimate can be repriced by the branch until it is sent to the customer.
+    const labQuote =
+      c.status === "CHIP_LAB_PENDING_APPROVAL"
+        ? await db.caseApprovalRequest.findFirst({ where: { caseId, kind: "LAB_QUOTE", status: "PENDING" }, select: { id: true } })
+        : null;
+    if (labQuote && user.privilege.code === "PURCHASE_MANAGER") throw new ForbiddenError();
+    if (!BILLING_EDIT_STATUSES.includes(c.status) && !labQuote) return { ok: false, message: "Billed amounts can't be changed at this stage." };
 
     const labCase = await cameFromChipLab(caseId);
     const current = await db.caseItem.findMany({ where: { caseId, removedAt: null } });
@@ -59,6 +65,20 @@ export async function saveBilledAmounts(caseId: string, input: { id: string; uni
         data: { estimatedCostPaise: total, updatedById: user.id },
       });
       if (count === 0) return false;
+      if (labQuote) {
+        // The approval request, the customer quote and the case total all carry the repriced amount.
+        const upd = await tx.caseApprovalRequest.updateMany({ where: { id: labQuote.id, status: "PENDING" }, data: { quoteAmountPaise: total } });
+        if (upd.count === 0) throw new StaleBill();
+        await tx.caseStatusHistory.create({
+          data: {
+            caseId,
+            fromStatus: c.status,
+            toStatus: c.status,
+            note: `Branch updated the lab estimate before sending it to the customer: ${changes.map((x) => `${x.name} ${formatPaise(x.from)} → ${formatPaise(x.to)}`).join(", ")} — total ${formatPaise(before)} → ${formatPaise(total)}`,
+            changedById: user.id,
+          },
+        });
+      }
       for (const x of changes) {
         // Matches only while the line still has the price we read, so two people saving at once can't overwrite each other.
         const { count: n } = await tx.caseItem.updateMany({

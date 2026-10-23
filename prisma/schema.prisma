@@ -214,21 +214,24 @@ model User {
   blockedIps    BlockedIp[]
   rulesUpdated  Rule[]
 
-  customersCreated   Customer[]          @relation("CustomerCreatedBy")
-  customersUpdated   Customer[]          @relation("CustomerUpdatedBy")
-  customersConverted Customer[]          @relation("CustomerConvertedBy")
-  casesCreated       Case[]              @relation("CaseCreatedBy")
-  casesUpdated       Case[]              @relation("CaseUpdatedBy")
-  casesAssigned      Case[]              @relation("CaseEngineer")
+  customersCreated   Customer[]            @relation("CustomerCreatedBy")
+  customersUpdated   Customer[]            @relation("CustomerUpdatedBy")
+  customersConverted Customer[]            @relation("CustomerConvertedBy")
+  casesCreated       Case[]                @relation("CaseCreatedBy")
+  casesUpdated       Case[]                @relation("CaseUpdatedBy")
+  casesAssigned      Case[]                @relation("CaseEngineer")
   caseStatusMoves    CaseStatusHistory[]
+  approvalsRequested CaseApprovalRequest[] @relation("ApprovalRequester")
+  approvalsReviewed  CaseApprovalRequest[] @relation("ApprovalReviewer")
+  approvalsSent      CaseApprovalRequest[] @relation("ApprovalSender")
   caseAttachments    CaseAttachment[]
   caseItemReturns    CaseItemReturn[]
-  returnsReviewed    CaseItemReturn[]    @relation("ReturnReviewedBy")
+  returnsReviewed    CaseItemReturn[]      @relation("ReturnReviewedBy")
   paymentsReceived   Payment[]
-  itemsCreated       Item[]              @relation("ItemCreatedBy")
-  itemsUpdated       Item[]              @relation("ItemUpdatedBy")
-  caseItemsAdded     CaseItem[]          @relation("CaseItemAddedBy")
-  caseItemsRemoved   CaseItem[]          @relation("CaseItemRemovedBy")
+  itemsCreated       Item[]                @relation("ItemCreatedBy")
+  itemsUpdated       Item[]                @relation("ItemUpdatedBy")
+  caseItemsAdded     CaseItem[]            @relation("CaseItemAddedBy")
+  caseItemsRemoved   CaseItem[]            @relation("CaseItemRemovedBy")
   whatsappMessages   WhatsAppMessage[]
 
   caseFeedbacks     CaseFeedback[]
@@ -408,7 +411,7 @@ model Item {
   code               String   @unique // "SV-CLN", "KB-DELL-5518"
   name               String
   type               ItemType @default(SERVICE)
-  category           String? // "Keyboard", "Display", "Cleaning" …
+  categoryId         String
   brand              String?
   unit               String   @default("Nos")
   hsnSac             String? // HSN (goods) / SAC (services) code for GST invoices
@@ -423,8 +426,9 @@ model Item {
   createdAt          DateTime @default(now()) @db.Timestamptz
   updatedAt          DateTime @updatedAt @db.Timestamptz
 
-  createdBy User?      @relation("ItemCreatedBy", fields: [createdById], references: [id])
-  updatedBy User?      @relation("ItemUpdatedBy", fields: [updatedById], references: [id])
+  createdBy User?        @relation("ItemCreatedBy", fields: [createdById], references: [id])
+  updatedBy User?        @relation("ItemUpdatedBy", fields: [updatedById], references: [id])
+  category  ItemCategory @relation(fields: [categoryId], references: [id])
   caseItems CaseItem[]
 
   stockItems         StockItem[]
@@ -439,7 +443,24 @@ model Item {
 
   @@index([name])
   @@index([type, isActive])
+  @@index([categoryId])
   @@map("item")
+}
+
+/// Managed list of item categories (Adapter, Battery, Display …). Names are unique among live rows, ignoring case.
+model ItemCategory {
+  id          String   @id @default(cuid())
+  name        String
+  isActive    Boolean  @default(true)
+  createdById String?
+  updatedById String?
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+  isDelete    Int      @default(0) // 0 = active, 1 = soft-deleted
+
+  items Item[]
+
+  @@map("item_category")
 }
 
 // ─── Numbering ───────────────────────────────────────────────────────────────
@@ -627,9 +648,14 @@ model Case {
   problemReported          String
   // Additional device details / reported issue, required at intake (null on older cases).
   description              String?
+  // Chip-level hand-off, set at "Start diagnosis" when the case is sent straight to the lab.
+  chipMaxEstimatePaise     Int?
+  chipDeadRisk             Boolean        @default(false)
+  // When the customer approved the chip-level quote; the case can go to the lab only after this.
+  chipCustomerApprovedAt   DateTime?      @db.Timestamptz
   // Money
   estimatedCostPaise       Int?
-  gstInvoiceRequired      Boolean        @default(false)
+  gstInvoiceRequired       Boolean        @default(false)
   expectedDeliveryDate     DateTime?      @db.Date
   engineerId               String?
   labWorkType              String?
@@ -638,6 +664,8 @@ model Case {
   // Lab confirms the device was handed over to the branch (set after Transfer to Branch).
   labTransferCompletedAt   DateTime?      @db.Timestamptz
   labTransferCompletedById String?
+  // The case total when it was handed to the chip-level lab (and after each approved lab estimate): the lab's estimate needs customer approval only when it goes above this.
+  chipBaselinePaise        Int?
   createdById              String?
   updatedById              String?
   createdAt                DateTime       @default(now()) @db.Timestamptz
@@ -656,6 +684,7 @@ model Case {
   stockUnits         StockUnit[]
   unitEvents         StockUnitEvent[]
   statusHistory      CaseStatusHistory[]
+  approvalRequests   CaseApprovalRequest[]
   payments           Payment[]
   invoice            CaseInvoice?
   whatsappMessages   WhatsAppMessage[]
@@ -971,6 +1000,49 @@ model TelecallerTarget {
 
   @@unique([userId, month])
   @@map("telecaller_target")
+}
+
+enum ApprovalRequestStatus {
+  PENDING
+  SENT // lab quote only: the branch has sent it to the customer and is waiting for their answer
+  APPROVED
+  REJECTED
+}
+
+enum ApprovalRequestKind {
+  MANUAL_APPROVAL // branch → Head Office: the customer approved the quotation some way other than WhatsApp
+  LAB_QUOTE // chip-level lab → branch: the lab's estimate is above the case total, so the customer must approve it
+}
+
+/// Manual customer approval: the customer accepted the quote verbally (not via WhatsApp), so the branch asks Head Office to confirm it.
+model CaseApprovalRequest {
+  id               String                @id @default(cuid())
+  caseId           String
+  branchId         String
+  kind             ApprovalRequestKind   @default(MANUAL_APPROVAL)
+  status           ApprovalRequestStatus @default(PENDING)
+  quoteAmountPaise Int // the quotation total when the request was made
+  baselinePaise    Int? // lab quotes: the case total before the lab's estimate
+  sendRemarks      String? // lab quotes: the branch's remarks when sending the quote to the customer
+  sentById         String?
+  sentAt           DateTime?             @db.Timestamptz
+  requestNote      String
+  requestedById    String
+  requestedAt      DateTime              @default(now()) @db.Timestamptz
+  reviewedById     String?
+  reviewRemarks    String?
+  reviewedAt       DateTime?             @db.Timestamptz
+  isDelete         Int                   @default(0) // 0 = active, 1 = soft-deleted
+
+  case        Case  @relation(fields: [caseId], references: [id])
+  requestedBy User  @relation("ApprovalRequester", fields: [requestedById], references: [id])
+  reviewedBy  User? @relation("ApprovalReviewer", fields: [reviewedById], references: [id])
+  sentBy      User? @relation("ApprovalSender", fields: [sentById], references: [id])
+
+  @@index([caseId, requestedAt])
+  @@index([status, requestedAt])
+  @@index([branchId, kind, status])
+  @@map("case_approval_request")
 }
 
 model CaseStatusHistory {

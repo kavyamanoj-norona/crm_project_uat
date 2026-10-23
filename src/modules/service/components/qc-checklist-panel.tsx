@@ -6,7 +6,7 @@ import { cn } from "@/lib/cn";
 import { initialFormState, type ActionResult, type FormState } from "@/lib/form";
 import { useFormFeedback } from "@/hooks/use-form-feedback";
 import { Button, buttonClass } from "@/components/ui/button";
-import { Input, Textarea } from "@/components/ui/field";
+import { Field, Input, Textarea } from "@/components/ui/field";
 import { ModalButton } from "@/components/ui/modal-button";
 import { qcAnswerError, type QcAnswer } from "../qc-answer-schema";
 
@@ -325,14 +325,40 @@ function NextStep({
               <span className="block text-xs text-text-muted">
                 {next.cameFromLab
                   ? "QC failed — the device returns to the lab for further repair."
-                  : "A new issue was found — the device goes to the chip-level lab for board-level repair."}
+                  : "A new issue was found — the customer approves the maximum estimate, then the device goes to the chip-level lab."}
               </span>
             </span>
           </label>
         )}
       </fieldset>
 
-      {outcome === "lab" && next.sendBack && (
+      {outcome === "lab" && next.sendBack && !next.cameFromLab && (
+        <div className="space-y-4">
+          <p className="text-xs text-text-muted">
+            The customer approves the maximum estimate first. The case is transferred to Head Office only after their approval is recorded.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2 sm:items-end">
+            <Field label="Maximum estimate amount" htmlFor="chipMaxEstimate" required error={state.fieldErrors?.chipMaxEstimate}>
+              <Input
+                id="chipMaxEstimate"
+                name="chipMaxEstimate"
+                placeholder="Enter maximum estimate amount"
+                inputMode="decimal"
+                aria-invalid={state.fieldErrors?.chipMaxEstimate ? true : undefined}
+              />
+            </Field>
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-surface-muted px-4 py-3 hover:bg-surface-soft">
+              <input type="checkbox" name="chipDeadRisk" value="on" className="mt-0.5 size-4 accent-primary" />
+              <p className="text-sm font-medium">Dead risk — device may be beyond repair</p>
+            </label>
+          </div>
+          <Field label="Reason / Note" htmlFor="qc-note" error={state.fieldErrors?.note} hint="Shown on the timeline">
+            <Textarea id="qc-note" name="note" rows={2} placeholder="Enter reason" />
+          </Field>
+        </div>
+      )}
+
+      {outcome === "lab" && next.sendBack && next.cameFromLab && (
         <div>
           <label htmlFor="qc-note" className="mb-1 block text-sm font-medium">
             Reason / Note
@@ -356,7 +382,7 @@ function NextStep({
           ) : (
             <ArrowRight className="size-4" />
           )}
-          {outcome === "lab" ? (next.cameFromLab ? "Confirm send-back" : "Confirm send to lab") : `Move to ${next.label}`}
+          {outcome === "lab" ? (next.cameFromLab ? "Confirm send-back" : "Send for Customer Approval") : `Move to ${next.label}`}
         </Button>
       </div>
     </form>

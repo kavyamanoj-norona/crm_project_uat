@@ -26,9 +26,13 @@ type ChipLabActionsProps = {
   /** When set, Quality Check is disabled and this explains why (parts still to consume or return). */
   qcBlock?: string | null;
   qc?: { jobsheetNo: string; items: QcPanelItem[]; action: (prev: FormState, formData: FormData) => Promise<FormState> };
+  /** The estimate went to the branch for customer approval: servicing starts when the branch records the answer. */
+  waitingOnBranch?: boolean;
+  /** The lab's estimate is above the case total, so the customer has to approve it before servicing. */
+  needsApproval?: boolean;
 };
 
-export function ChipLabActions({ caseId, status, qc, qcBlock }: ChipLabActionsProps) {
+export function ChipLabActions({ caseId, status, qc, qcBlock, waitingOnBranch, needsApproval = true }: ChipLabActionsProps) {
   if (status === "CHIP_TRANSFER") {
     return (
       <div className="flex flex-wrap items-center gap-2">
@@ -61,11 +65,25 @@ export function ChipLabActions({ caseId, status, qc, qcBlock }: ChipLabActionsPr
     return (
       <div className="flex flex-wrap items-center gap-2">
         <ActionDialog
-          trigger={<><ClipboardCheck className="size-4" /> Submit for Approval</>}
-          title="Submit diagnosis for approval"
-          description="Add a note for the customer or branch."
+          trigger={
+            needsApproval ? (
+              <>
+                <ClipboardCheck className="size-4" /> Submit for Approval
+              </>
+            ) : (
+              <>
+                <Wrench className="size-4" /> Submit to In Servicing
+              </>
+            )
+          }
+          title={needsApproval ? "Submit diagnosis for approval" : "Submit to In Servicing"}
+          description={
+            needsApproval
+              ? "The estimate is above the case total, so it goes to the branch for the customer's approval. Add a note for the branch."
+              : "The estimate is within the case total, so no customer approval is needed. Servicing starts straight away."
+          }
           action={setLabPendingApproval.bind(null, caseId)}
-          submitLabel="Submit"
+          submitLabel={needsApproval ? "Submit" : "Start servicing"}
         >
           {(errors) => (
             <Field label="Note" htmlFor="note" error={errors.note} hint="Shown on the timeline">
@@ -78,6 +96,7 @@ export function ChipLabActions({ caseId, status, qc, qcBlock }: ChipLabActionsPr
   }
 
   if (status === "CHIP_LAB_PENDING_APPROVAL") {
+    if (waitingOnBranch) return <p className="text-sm text-text-muted">Waiting for the branch to record the customer&apos;s answer.</p>;
     return (
       <div className="flex flex-wrap items-center gap-2">
         <ActionButton

@@ -35,7 +35,7 @@ export default async function ItemsPage({ searchParams }: PageProps<"/inventory/
   const [{ rows, total, tabs }, editing, categories, discountCap] = await Promise.all([
     listItems(list),
     editId && permission.canEdit ? db.item.findUnique({ where: { id: editId } }) : null,
-    listItemCategories(),
+    listItemCategories(editId ? (await db.item.findUnique({ where: { id: editId }, select: { categoryId: true } }))?.categoryId : null),
     getNumberRule(RULES.discountCapPercent, 10),
   ]);
 
@@ -43,7 +43,7 @@ export default async function ItemsPage({ searchParams }: PageProps<"/inventory/
     { name: "code", label: "Item code", required: true, placeholder: "Enter item code", hint: "Unique; printed on estimates" },
     { name: "name", label: "Name", required: true, placeholder: "Enter item name", span: 2 },
     { name: "type", label: "Type", type: "select", required: true, options: itemTypeOptions },
-    { name: "category", label: "Category", placeholder: "Enter categories", suggestions: categories },
+    { name: "categoryId", label: "Category", type: "select", searchable: true, required: true, options: categories, placeholder: "Select category" },
     { name: "brand", label: "Brand", placeholder: "Enter applicable brands" },
     { name: "unit", label: "Unit", type: "select", required: true, options: unitOptions },
     { name: "hsnSac", label: "HSN / SAC", placeholder: "Enter HSN code", hint: "For GST invoices" },
@@ -98,7 +98,7 @@ export default async function ItemsPage({ searchParams }: PageProps<"/inventory/
               </span>
             ),
           },
-          { header: "Category", sort: "category", cell: (r) => r.category ?? "—" },
+          { header: "Category", sort: "category", cell: (r) => r.category.name },
           { header: "Brand", cell: (r) => r.brand ?? "—" },
           { header: "Price", sort: "pricePaise", align: "right", cell: (r) => <span className="font-semibold tabular-nums">{formatPaise(r.pricePaise)}</span> },
           { header: "Max disc.", sort: "maxDiscountPercent", align: "right", cell: (r) => `${r.maxDiscountPercent}%` },

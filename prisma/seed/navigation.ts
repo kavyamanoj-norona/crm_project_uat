@@ -66,6 +66,8 @@ export const MODULES: ModuleDef[] = [
       // SERVICE_ENGINEER (created in Admin → Privilege, not seeded) gets this item through its own permissions.
       { title: "Engineer Workspace", path: "/service/engineer", icon: "stethoscope", roles: [BM] },
       { title: "Uncollected Devices", path: "/service/uncollected", icon: "laptop" },
+      // Purchase Manager: manual customer approvals from branches. Branch staff: the chip-level lab's quotes for their branch.
+      { title: "Approval Inbox", path: "/service/approvals", icon: "shield-check", roles: [PM, BM, SALES], approve: [PM, BM, SALES] },
       {
         group: "Analytics",
         icon: "bar-chart-2",
@@ -175,6 +177,8 @@ export const MODULES: ModuleDef[] = [
         items: [
           // The one item catalog. Everyone can look items up; only the Purchase Manager (and admins) add or change them.
           { title: "Items", path: "/inventory/items", icon: "package", roles: EVERYONE, readOnly: [BM, SALES, CS, CHIP] },
+          // The managed list the Items form picks from: Admin and the Purchase Manager.
+          { title: "Categories", path: "/inventory/categories", icon: "tags", roles: [PM] },
           { title: "Suppliers", path: "/inventory/suppliers", icon: "truck", approve: [PM] },
           // Reusable warranty periods for purchase bills: Admin and the Purchase Manager.
           { title: "Manage Warranty", path: "/inventory/warranties", icon: "shield-check", roles: [PM] },

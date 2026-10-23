@@ -1,7 +1,7 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
-import { Loader2, Trash2 } from "lucide-react";
+import { useActionState, useEffect, useRef, useState } from "react";
+import { ArrowLeft, Loader2, Send, Trash2 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { todayIst } from "@/lib/dates";
 import { initialFormState, validateForm, type FormState } from "@/lib/form";
@@ -15,6 +15,7 @@ import { ModalButton } from "@/components/ui/modal-button";
 import { estimateSchema, paymentModeOptions } from "../case-schema";
 import type { CatalogItem } from "../queries";
 import { ItemPicker } from "./item-picker";
+import { ChipApprovalPreview } from "./chip-approval-preview";
 
 /** What a line needs to render: from the catalog, or the case's own copy for an item switched off since. */
 type LineInfo = Pick<CatalogItem, "id" | "code" | "name" | "unit" | "pricePaise" | "minPricePaise" | "maxDiscountPercent">;
@@ -32,6 +33,9 @@ type EstimateDialogProps = {
   trigger: React.ReactNode;
   triggerVariant?: "primary" | "navy" | "secondary";
   jobsheetNo: string;
+  /** Shown on the customer's chip-level approval preview. */
+  branchName?: string;
+  device?: string;
   /** saveEstimate bound to the case id and mode. */
   action: (prev: FormState, formData: FormData) => Promise<FormState>;
   catalog: CatalogItem[];
@@ -45,7 +49,8 @@ const toPaise = (rupees: string) => {
 };
 
 /** "Start diagnosis" / "Edit items": engineer, delivery promise and billable items from the catalog. */
-export function EstimateDialog({ mode, trigger, triggerVariant = "secondary", jobsheetNo, ...form }: EstimateDialogProps) {
+export function EstimateDialog({ mode, trigger, triggerVariant = "secondary", ...form }: EstimateDialogProps) {
+  const { jobsheetNo } = form;
   return (
     <ModalButton
       trigger={trigger}
@@ -69,11 +74,18 @@ function EstimateForm({
   catalog,
   staff,
   initial,
+  jobsheetNo,
+  branchName = "",
+  device = "",
   onDone,
-}: Omit<EstimateDialogProps, "trigger" | "triggerVariant" | "jobsheetNo"> & { onDone: () => void }) {
+}: Omit<EstimateDialogProps, "trigger" | "triggerVariant"> & { onDone: () => void }) {
   const [state, formAction, pending] = useActionState(action, initialFormState);
   const [lines, setLines] = useState<Line[]>(initial.lines.map(({ itemId, quantity, unitPrice }) => ({ itemId, quantity, unitPrice })));
   const [isChipLevel, setIsChipLevel] = useState(false);
+  // Chip-level: the customer's view of the quote is shown first; confirming it sends the form.
+  const [preview, setPreview] = useState<{ max: number | null; deadRisk: boolean } | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const confirmed = useRef(false);
   const info = new Map<string, LineInfo>([...initial.lines.map((l) => [l.itemId, l.info] as const), ...catalog.map((c) => [c.id, c] as const)]);
 
   // A price below the minimum is caught here too, so a bad line never leaves the browser.
@@ -100,13 +112,57 @@ function EstimateForm({
     if (state.ok) onDone();
   }, [state, onDone]);
 
+  const submit = (e: React.FormEvent<HTMLFormElement>) => {
+    if (confirmed.current) {
+      confirmed.current = false;
+      return onSubmit(e);
+    }
+    if (mode === "start" && isChipLevel) {
+      onSubmit(e); // runs the checks; stops the submit when something is wrong
+      if (e.defaultPrevented) return;
+      e.preventDefault();
+      const fd = new FormData(e.currentTarget);
+      setPreview({ max: toPaise(String(fd.get("chipMaxEstimate") ?? "")), deadRisk: fd.get("chipDeadRisk") === "on" });
+      return;
+    }
+    onSubmit(e);
+  };
+
   const set = (i: number, patch: Partial<Line>) => setLines((prev) => prev.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const total = lines.reduce((sum, l) => sum + (toPaise(l.unitPrice) ?? 0) * (Number(l.quantity) || 0), 0);
   const v = state.values;
 
   return (
-    <form action={formAction} onSubmit={onSubmit} onChange={onChange} noValidate className="space-y-5">
+    <form ref={formRef} action={formAction} onSubmit={submit} onChange={onChange} noValidate className="space-y-5">
       <input type="hidden" name="items" value={JSON.stringify(lines)} />
+
+      {preview && (
+        <div className="space-y-4">
+          <p className="text-sm text-text-muted">
+            This is how the customer sees the chip-level quote. Confirming starts diagnosis and sends it for their approval; the case stays with the branch until they approve.
+          </p>
+          <ChipApprovalPreview jobsheetNo={jobsheetNo} branchName={branchName} device={device} maxEstimatePaise={preview.max} deadRisk={preview.deadRisk} />
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setPreview(null)} disabled={pending}>
+              <ArrowLeft className="size-4" /> Back
+            </Button>
+            <Button
+              variant="navy"
+              disabled={pending}
+              onClick={() => {
+                confirmed.current = true;
+                formRef.current?.requestSubmit();
+              }}
+            >
+              {pending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+              Confirm & send for approval
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <div hidden={preview !== null} className="space-y-5">
+
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Field label="Engineer" htmlFor="engineerId" required error={errors.engineerId}>
@@ -253,9 +309,28 @@ function EstimateForm({
           />
           <div>
             <p className="text-sm font-medium">Chip-level service</p>
-            <p className="text-xs text-text-muted">Board-level repair required — case will be queued directly in the chip-level lab instead of proceeding to branch diagnosis.</p>
+            <p className="text-xs text-text-muted">Board-level repair required — the customer approves the maximum estimate first, then the case is transferred to the chip-level lab.</p>
           </div>
         </label>
+      )}
+
+      {mode === "start" && isChipLevel && (
+        <div className="grid gap-4 sm:grid-cols-2 sm:items-end">
+          <Field label="Maximum estimate amount" htmlFor="chipMaxEstimate" required error={errors.chipMaxEstimate}>
+            <Input
+              id="chipMaxEstimate"
+              name="chipMaxEstimate"
+              placeholder="Enter maximum estimate amount"
+              inputMode="decimal"
+              defaultValue={v?.chipMaxEstimate ?? ""}
+              aria-invalid={errors.chipMaxEstimate ? true : undefined}
+            />
+          </Field>
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-surface-muted px-4 py-3 hover:bg-surface-soft">
+            <input type="checkbox" name="chipDeadRisk" value="on" defaultChecked={v?.chipDeadRisk === "on"} className="mt-0.5 size-4 accent-primary" />
+            <p className="text-sm font-medium">Dead risk — device may be beyond repair</p>
+          </label>
+        </div>
       )}
 
       {mode === "start" && (
@@ -285,8 +360,9 @@ function EstimateForm({
         </Button>
         <Button type="submit" disabled={pending}>
           {pending && <Loader2 className="size-4 animate-spin" />}
-          {mode === "start" ? (isChipLevel ? "Transfer to chip-level lab" : "Start diagnosis") : "Save items"}
+          {mode === "start" ? (isChipLevel ? "Send for Customer Approval" : "Start diagnosis") : "Save items"}
         </Button>
+      </div>
       </div>
     </form>
   );

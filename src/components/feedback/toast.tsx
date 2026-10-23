@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { CircleAlert, CircleCheck, Info, TriangleAlert, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -77,11 +77,28 @@ const BAR: Record<ToastType, string> = {
 /** Mount once in the root layout. */
 export function Toaster() {
   const list = useSyncExternalStore(subscribe, () => items, () => items);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Dialogs are opened in the browser's top layer, which sits above any z-index. Showing the toasts as a popover
+  // puts them in that layer too, and re-showing on each change keeps the newest above a dialog opened earlier,
+  // so an error is never hidden behind (or blurred by) a modal's backdrop.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof el.showPopover !== "function") return;
+    try {
+      if (el.matches(":popover-open")) el.hidePopover();
+      if (list.length > 0) el.showPopover();
+    } catch {
+      // older browsers: the fixed positioning below still shows them
+    }
+  }, [list]);
 
   return (
     <div
+      ref={ref}
+      popover="manual"
       aria-live="polite"
-      className="pointer-events-none fixed inset-x-0 bottom-0 z-[100] flex flex-col items-center gap-2 p-4 sm:inset-x-auto sm:right-0 sm:items-end"
+      className="pointer-events-none fixed inset-x-0 top-auto bottom-0 z-[100] m-0 flex h-auto w-full flex-col items-center gap-2 overflow-visible border-0 bg-transparent p-4 sm:left-auto sm:right-0 sm:w-[26rem] sm:items-end"
     >
       {list.map((t) => (
         <ToastCard key={t.id} item={t} />

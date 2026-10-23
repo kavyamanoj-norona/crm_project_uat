@@ -3,6 +3,7 @@
 import { useActionState, useRef, useState, useTransition } from "react";
 import { CircleCheck, Loader2, LocateFixed, UserPlus } from "lucide-react";
 import { initialFormState, validateForm, type FormState } from "@/lib/form";
+import { todayIst } from "@/lib/dates";
 import { isValidPhone, normalizePhone } from "@/lib/phone";
 import { useFormFeedback } from "@/hooks/use-form-feedback";
 import { Button } from "@/components/ui/button";
@@ -146,7 +147,7 @@ export function IntakeForm({ action, lookup, options, onsite = false }: IntakeFo
             error={errors.devicePassword}
             hint="Stored encrypted; every reveal is logged"
           >
-            <Input id="devicePassword" name="devicePassword" type="password" autoComplete="off" />
+            <Input id="devicePassword" name="devicePassword" type="password" autoComplete="new-password" data-lpignore="true" data-1p-ignore />
           </Field>
           <Field label="Problem reported" htmlFor="problemReported" required error={errors.problemReported} className="lg:col-span-2">
             <Input {...f("problemReported")} placeholder="Enter problem reported" />
@@ -176,14 +177,26 @@ export function IntakeForm({ action, lookup, options, onsite = false }: IntakeFo
         </div>
       </FormSection>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Field label="Advance payment" htmlFor="advanceAmount" error={errors.advanceAmount} hint="Leave blank if not collecting now">
-          <Input {...f("advanceAmount")} placeholder="Enter amount" inputMode="decimal" />
-        </Field>
-        <Field label="Payment mode" htmlFor="advanceMode" error={errors.advanceMode}>
-          <Select {...f("advanceMode")} placeholder="Select payment mode" options={paymentModeOptions} />
-        </Field>
-      </div>
+      <FormSection step={3} title="Estimate & payment">
+        <div className="space-y-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Field label="Estimated cost" htmlFor="estimatedCost" error={errors.estimatedCost} >
+            <Input {...f("estimatedCost")} placeholder="Enter estimated cost" inputMode="decimal" />
+          </Field>
+          <Field label="Expected delivery date" htmlFor="expectedDeliveryDate" error={errors.expectedDeliveryDate}>
+            <Input {...f("expectedDeliveryDate")} type="date" min={todayIst()} />
+          </Field>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Field label="Advance payment" htmlFor="advanceAmount" error={errors.advanceAmount}>
+            <Input {...f("advanceAmount")} placeholder="Enter amount" inputMode="decimal" />
+          </Field>
+          <Field label="Payment mode" htmlFor="advanceMode" error={errors.advanceMode}>
+            <Select {...f("advanceMode")} placeholder="Select payment mode" options={paymentModeOptions} />
+          </Field>
+        </div>
+        </div>
+      </FormSection>
 
       <div className="flex justify-end">
         <SaveButton pending={pending} />
@@ -318,7 +331,7 @@ function CustomerFields({
         <Input {...f("name")} autoComplete="off" />
       </Field>
       <Field label="Email" htmlFor="email" required error={errors.email}>
-        <Input {...f("email")} type="email" autoComplete="off" placeholder="Enter email" />
+        <Input {...f("email")} type="email" autoComplete="off" data-lpignore="true" data-1p-ignore placeholder="Enter email" />
       </Field>
       <Field label="Alt mobile" htmlFor="altPhone" error={errors.altPhone}>
         <Input {...f("altPhone")} type="tel" inputMode="tel" autoComplete="off" />

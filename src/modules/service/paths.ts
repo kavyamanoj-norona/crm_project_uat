@@ -11,5 +11,6 @@ export const SERVICE_PATHS = {
   tatConfig: "/service/tat-config",
   ageing: "/service/ageing",
   vendors: "/service/lab/vendors",
+  approvals: "/service/approvals",
   qcChecklist: "/service/qc-checklist",
 } as const;

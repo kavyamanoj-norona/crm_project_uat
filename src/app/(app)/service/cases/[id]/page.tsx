@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, ArrowRight, Eye, FileText, History, Image as ImageIcon, IndianRupee, MessageCircle, Pencil } from "lucide-react";
+import { ArrowLeft, ArrowRight, Eye, FileText, History, Image as ImageIcon, IndianRupee, MessageCircle, Pencil, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ActionButton } from "@/components/ui/action-button";
 import { buttonClass, LinkButton } from "@/components/ui/button";
@@ -25,7 +25,7 @@ import { LEAD_SOURCE_LABELS } from "@/modules/customers/schemas";
 import { closeCaseWithBill } from "@/modules/service/actions/close-case";
 import { closeBlockReason, closingAccessories, closingBill } from "@/modules/service/case-billing";
 import { CloseCaseDialog } from "@/modules/service/components/close-case-dialog";
-import { addItemToCase, assignEngineer, cancelCase, changeCaseStage, moveCaseToNextStage, receiveFromChipLab, revealDevicePassword, saveEstimate, saveCaseFeedback, sendBackToChipLab, submitDiagnosis, transferToChipLab } from "@/modules/service/actions/case";
+import { addItemToCase, assignEngineer, confirmChipCustomerApproval, cancelCase, changeCaseStage, moveCaseToNextStage, receiveFromChipLab, requestChipApproval, revealDevicePassword, saveEstimate, saveCaseFeedback, sendBackToChipLab, submitDiagnosis, transferToChipLab } from "@/modules/service/actions/case";
 import { consumePartForCase, returnPartForCase } from "@/modules/inventory/actions/case-parts";
 import { caseUsids, consumableUnits, qcConsumptionBlock } from "@/modules/inventory/case-parts";
 import { openVendorReplacementsForCase } from "@/modules/inventory/queries";
@@ -50,10 +50,12 @@ import { PartRequestDialog } from "@/modules/service/components/part-request-dia
 import { ItemReturnDialog } from "@/modules/service/components/item-return-dialog";
 import { getWarrantyCover, type WarrantyCover } from "@/modules/service/warranty";
 import { requestItemReturn } from "@/modules/service/actions/item-return";
+import { RequestApprovalDialog } from "@/modules/service/components/approval-dialogs";
+import { requestHeadOfficeApproval } from "@/modules/service/actions/approval";
 import { StageActions } from "@/modules/service/components/stage-actions";
 import { QuotePreviewDialog } from "@/modules/service/components/quote-preview-dialog";
 import { STAGE_ICONS } from "@/modules/service/components/stage-icons";
-import { ChipBranchActions } from "@/modules/service/components/chip-branch-actions";
+import { ChipBranchActions, ChipCustomerApprovalDialog, ChipTransferDialog } from "@/modules/service/components/chip-branch-actions";
 import { QcChecklistCard } from "@/modules/service/components/qc-checklist-card";
 import { QcChecklistDialog } from "@/modules/service/components/qc-checklist-panel";
 import { saveQcAnswers } from "@/modules/service/actions/qc-response";
@@ -61,6 +63,7 @@ import { getQcState } from "@/modules/service/qc-response-queries";
 import {
   CASE_FLOW,
   CHIP_BRANCH_FLOW,
+  CHIP_APPROVAL_FLOW,
   LAB_INTERNAL_STATUSES,
   branchChipRailStatus,
   CASE_KIND_LABELS,
@@ -94,7 +97,14 @@ export const metadata = { title: "Case details" };
 type Event = TimelineItem & { at: Date };
 
 /** Stage moves, payments and photos, newest first. */
-function timeline(c: CaseDetails): TimelineItem[] {
+type ApprovalRow = Awaited<ReturnType<typeof loadApprovals>>[number];
+
+function loadApprovals(caseId: string) {
+  const who = { select: { firstName: true, lastName: true } } as const;
+  return db.caseApprovalRequest.findMany({ where: { caseId }, orderBy: { requestedAt: "asc" }, include: { requestedBy: who, reviewedBy: who } });
+}
+
+function timeline(c: CaseDetails, approvals: ApprovalRow[]): TimelineItem[] {
   const icon = (Icon: React.ComponentType) => <Icon />;
   const events: Event[] = c.statusHistory.map((h) => ({
     key: h.id,
@@ -113,6 +123,33 @@ function timeline(c: CaseDetails): TimelineItem[] {
     meta: `${formatDateTime(h.at)} · ${personName(h.changedBy) ?? "System"}`,
     tone: h.toStatus === "CANCELLED" ? "danger" : "default",
   }));
+  for (const a of approvals) {
+    events.push({
+      key: `${a.id}-request`,
+      at: a.requestedAt,
+      icon: icon(ShieldCheck),
+      title: a.kind === "LAB_QUOTE" ? "Chip-level lab estimate sent for customer approval" : "Head Office approval requested",
+      detail: `${formatPaise(a.quoteAmountPaise)} — ${a.requestNote}`,
+      meta: `${formatDateTime(a.requestedAt)} · ${personName(a.requestedBy) ?? "System"}`,
+    });
+    if (a.reviewedAt)
+      events.push({
+        key: `${a.id}-decision`,
+        at: a.reviewedAt,
+        icon: icon(ShieldCheck),
+        title:
+          a.kind === "LAB_QUOTE"
+            ? a.status === "APPROVED"
+              ? "Customer approved the lab estimate"
+              : "Customer rejected the lab estimate"
+            : a.status === "APPROVED"
+              ? "Head Office approved"
+              : "Head Office rejected the request",
+        detail: a.reviewRemarks,
+        meta: `${formatDateTime(a.reviewedAt)} · ${personName(a.reviewedBy) ?? "System"}`,
+        tone: a.status === "REJECTED" ? "danger" : "default",
+      });
+  }
   for (const p of c.payments) {
     events.push({
       key: p.id,
@@ -154,8 +191,9 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
   const [c, customers] = await Promise.all([getCase(id, scope), getMenuPermission(user, CUSTOMER_PATHS.database)]);
   // Outside the header branch → 404, so other branches' cases don't leak.
   if (!c) notFound();
-  const [extras, waMessages] = await Promise.all([
+  const [extras, approvals, waMessages] = await Promise.all([
     getCaseExtras(c.customer.id, scope),
+    loadApprovals(c.id),
     db.whatsAppMessage.findMany({
       where: { caseId: c.id },
       orderBy: { createdAt: "desc" },
@@ -166,6 +204,8 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
     }),
   ]);
   const reached = reachedAt(c);
+  const approvalPending = approvals.some((a) => a.kind === "MANUAL_APPROVAL" && a.status === "PENDING");
+  const labQuote = approvals.findLast((a) => a.kind === "LAB_QUOTE" && (a.status === "PENDING" || a.status === "SENT")) ?? null;
   const qc = c.status === "QUALITY_CHECK" ? await getQcState(c.id, "QUALITY_CHECK", c.stageChangedAt) : null;
 
   const paid = c.payments.reduce((sum, p) => sum + p.amountPaise, 0);
@@ -185,13 +225,18 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
   const half = extras.gstPercent / 2;
 
   // WhatsApp link shown when the quote is pending customer decision
-  const waLink = c.status === "PENDING_APPROVAL" && c.estimatedCostPaise
+  // A chip-level quote the customer hasn't answered yet: they are quoted the maximum estimate.
+  const chipPlanned = c.chipMaxEstimatePaise !== null && !hasChipHistory;
+  const chipAwaitingCustomer = c.status === "PENDING_APPROVAL" && chipPlanned && !c.chipCustomerApprovedAt;
+  const chipApproved = c.status === "PENDING_APPROVAL" && chipPlanned && Boolean(c.chipCustomerApprovedAt);
+  const quotedPaise = chipAwaitingCustomer ? c.chipMaxEstimatePaise : c.estimatedCostPaise;
+  const waLink = c.status === "PENDING_APPROVAL" && quotedPaise
     ? quoteWhatsAppLink({
         customerName: c.customer.name,
         customerPhone: c.customer.phone,
         jobsheetNo: c.jobsheetNo,
         device,
-        estimatePaise: c.estimatedCostPaise,
+        estimatePaise: quotedPaise,
         branchName: c.branch.name,
       })
     : null;
@@ -201,7 +246,9 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
   // Start diagnosis (at Intake) / Edit items (Diagnosis, Pending approval)
   const estimateMode = !permission.canEdit ? null : c.status === "INTAKE" ? "start" : ESTIMATE_EDITABLE.includes(c.status) && !isChipCase ? "edit" : null;
   // Billed-amount editing outside the full "Edit items" dialog; a case from the chip-level lab only gets its service charge.
-  const canEditBilling = permission.canEdit && BILLING_EDIT_STATUSES.includes(c.status) && c.items.length > 0;
+  // Before the branch sends the lab's estimate to the customer it may reprice the service charge.
+  const quoteRepricing = c.status === "CHIP_LAB_PENDING_APPROVAL" && labQuote?.status === "PENDING" && user.privilege.code !== "PURCHASE_MANAGER";
+  const canEditBilling = permission.canEdit && (BILLING_EDIT_STATUSES.includes(c.status) || quoteRepricing) && c.items.length > 0;
   const labPriced = hasChipHistory || isInChipTrack;
   const canAssignEngineer = permission.canEdit && isOpenStatus(c.status);
   const [catalog, staff] = await Promise.all([
@@ -324,6 +371,8 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
       }
       triggerVariant={estimateMode === "start" ? "navy" : "secondary"}
       jobsheetNo={c.jobsheetNo}
+      branchName={c.branch.name}
+      device={device}
       action={saveEstimate.bind(null, c.id, estimateMode)}
       catalog={catalog}
       staff={staff}
@@ -386,6 +435,19 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
                 <MessageCircle className="size-4" /> WhatsApp customer
               </LinkButton>
             )}
+            {permission.canEdit && c.status === "PENDING_APPROVAL" && !approvalPending && c.estimatedCostPaise ? (
+              <RequestApprovalDialog jobsheetNo={c.jobsheetNo} action={requestHeadOfficeApproval.bind(null, c.id)} />
+            ) : null}
+            {labQuote && c.status === "CHIP_LAB_PENDING_APPROVAL" && (
+              <LinkButton href={SERVICE_PATHS.approvals} variant="secondary">
+                <ShieldCheck className="size-4" /> {labQuote.status === "PENDING" ? "Lab estimate — send to customer" : "Lab estimate — record customer's answer"}
+              </LinkButton>
+            )}
+            {approvalPending && c.status === "PENDING_APPROVAL" && (
+              <Badge tone="warning" className="px-3 py-2 text-xs">
+                <ShieldCheck className="size-4" /> Head Office approval pending
+              </Badge>
+            )}
             {permission.canEdit && c.customer.phone && (
               <SendWhatsAppButton
                 customerName={c.customer.name}
@@ -397,8 +459,10 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
               <ChipBranchActions
                 status={c.status}
                 hasChipHistory={hasChipHistory}
+                chipPlanned={chipPlanned}
+                chipApproved={chipApproved}
                 qcInModal={qcInModal}
-                transferToChipLab={transferToChipLab.bind(null, c.id)}
+                requestChipApproval={requestChipApproval.bind(null, c.id)}
                 sendBackToChipLab={sendBackToChipLab.bind(null, c.id)}
               />
             )}
@@ -433,6 +497,10 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
                             action={closeCaseWithBill.bind(null, c.id)}
                           />
                         )
+                    : chipAwaitingCustomer && permission.canEdit
+                    ? <ChipCustomerApprovalDialog jobsheetNo={c.jobsheetNo} action={confirmChipCustomerApproval.bind(null, c.id)} />
+                    : chipApproved
+                    ? <ChipTransferDialog action={transferToChipLab.bind(null, c.id)} />
                     : estimateMode === "start"
                     ? estimate
                     : qcInModal && next && qc
@@ -450,7 +518,8 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
                             next={{
                               label: CASE_STATUS_LABELS[next],
                               move: moveCaseToNextStage.bind(null, c.id),
-                              sendBack: sendBackToChipLab.bind(null, c.id),
+                              // First trip to the lab goes through customer approval of the maximum estimate.
+                              sendBack: hasChipHistory ? sendBackToChipLab.bind(null, c.id) : requestChipApproval.bind(null, c.id),
                               cameFromLab: hasChipHistory,
                             }}
                           />
@@ -467,15 +536,16 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
                             </span>
                           </ActionButton>
                         )
-                      : c.status === "DIAGNOSIS" && c.estimatedCostPaise && permission.canEdit
+                      : c.status === "DIAGNOSIS" && (c.estimatedCostPaise || c.chipMaxEstimatePaise) && permission.canEdit
                         ? (
                             <QuotePreviewDialog
+                              chip={c.chipMaxEstimatePaise !== null ? { maxEstimatePaise: c.chipMaxEstimatePaise, deadRisk: c.chipDeadRisk } : undefined}
                               caseId={c.id}
                               jobsheetNo={c.jobsheetNo}
                               branchName={c.branch.name}
                               device={device}
-                              lines={c.items.map((l) => ({ name: l.name, quantity: l.quantity, totalPaise: l.unitPricePaise * l.quantity }))}
-                              totalPaise={c.estimatedCostPaise}
+                              lines={c.items.map((l) => ({ category: l.item.category.name, quantity: l.quantity, totalPaise: l.unitPricePaise * l.quantity }))}
+                              totalPaise={c.estimatedCostPaise ?? 0}
                               gstInclusive={extras.gstInclusive}
                               send={submitDiagnosis.bind(null, c.id)}
                             />
@@ -509,11 +579,11 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
 
       <div className="mb-6 rounded-xl border border-border bg-surface px-4 py-5 shadow-sm">
         <StageRail
-          stages={(isChipCase ? CHIP_BRANCH_FLOW : CASE_FLOW).map((s) => {
+          stages={(c.chipMaxEstimatePaise !== null ? CHIP_APPROVAL_FLOW : isChipCase ? CHIP_BRANCH_FLOW : CASE_FLOW).map((s) => {
             const Icon = STAGE_ICONS[s];
             return { key: s, label: CASE_STATUS_LABELS[s], icon: <Icon />, caption: reached.has(s) ? formatShortDateTime(reached.get(s)) : undefined };
           })}
-          current={cancelledFrom ?? (isChipCase ? branchChipRailStatus(c.status) : c.status)}
+          current={cancelledFrom ?? (isChipCase || c.chipMaxEstimatePaise !== null ? branchChipRailStatus(c.status) : c.status)}
           stoppedLabel={c.status === "CANCELLED" ? "Cancelled" : undefined}
           complete={c.status === "CLOSED"}
         />
@@ -534,6 +604,12 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
             title="Billable items"
             actions={
               <div className="flex items-center gap-3">
+                {c.items.length === 0 && c.estimatedCostPaise !== null && (
+                  <div className="rounded-lg border border-border bg-surface-muted px-3 py-1.5 text-sm">
+                    <span className="text-text-muted">Estimated cost (intake) </span>
+                    <span className="font-bold tabular-nums">{formatPaise(c.estimatedCostPaise)}</span>
+                  </div>
+                )}
                 <span className="text-xs text-text-muted">Minimum selling price enforced per item</span>
                 {estimateMode === "edit" && estimate}
                 {permission.canEdit && ADD_ITEM_STATUSES.includes(c.status) && estimateMode !== "edit" && (
@@ -875,7 +951,7 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
         </div>
 
         <div className="space-y-6">
-          <TimelineCard items={timeline(c)} limit={5} />
+          <TimelineCard items={timeline(c, approvals)} limit={5} />
 
           <Card title="Customer">
             <KvList

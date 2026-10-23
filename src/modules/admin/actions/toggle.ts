@@ -24,6 +24,7 @@ const TARGETS = {
   blockedIp: { path: ADMIN_PATHS.blockedIps, model: () => db.blockedIp },
   rule: { path: ADMIN_PATHS.rules, model: () => db.rule },
   item: { path: INVENTORY_PATHS.items, model: () => db.item },
+  itemCategory: { path: INVENTORY_PATHS.categories, model: () => db.itemCategory },
 } as const;
 
 export type ToggleTarget = keyof typeof TARGETS;
@@ -37,6 +38,12 @@ export async function deleteRecord(target: ToggleTarget, id: string): Promise<Ac
     // Don't let an admin delete the privilege they are signed in with.
     if (target === "privilege" && id === user.privilege.id) {
       return { ok: false, message: "You can't delete the privilege you are signed in with." };
+    }
+
+    // A category still holding live items can't be deleted: move those items first.
+    if (target === "itemCategory") {
+      const used = await db.item.count({ where: { categoryId: id, isDelete: 0 } });
+      if (used > 0) return { ok: false, message: `${used} ${used === 1 ? "item uses" : "items use"} this category. Move them to another category first.` };
     }
 
     const model = t.model() as unknown as SoftDeletable;
@@ -64,4 +71,5 @@ const LABELS: Record<ToggleTarget, string> = {
   blockedIp: "IP block",
   rule: "Rule",
   item: "Item",
+  itemCategory: "Category",
 };

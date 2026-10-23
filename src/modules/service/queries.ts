@@ -194,7 +194,7 @@ export const getCase = (id: string, scope: { branchId?: string }) =>
       engineer: who,
       createdBy: who,
       updatedBy: who,
-      items: { where: { removedAt: null }, orderBy: { sortOrder: "asc" } },
+      items: { where: { removedAt: null }, orderBy: { sortOrder: "asc" }, include: { item: { select: { category: { select: { name: true } } } } } },
       receivedItems: { orderBy: { sortOrder: "asc" } },
       attachments: { orderBy: { createdAt: "asc" }, include: { createdBy: who } },
       statusHistory: { orderBy: { at: "desc" }, include: { changedBy: who } },
@@ -241,9 +241,9 @@ export async function listCatalogForPicker() {
     where: { isActive: true },
     orderBy: [{ name: "asc" }],
     take: 2000,
-    select: { id: true, code: true, name: true, type: true, category: true, brand: true, unit: true, pricePaise: true, maxDiscountPercent: true, gstPercent: true },
+    select: { id: true, code: true, name: true, type: true, category: { select: { name: true } }, brand: true, unit: true, pricePaise: true, maxDiscountPercent: true, gstPercent: true },
   });
-  return items.map((i) => ({ ...i, minPricePaise: minPricePaise(i.pricePaise, i.maxDiscountPercent) }));
+  return items.map(({ category, ...i }) => ({ ...i, category: category.name, minPricePaise: minPricePaise(i.pricePaise, i.maxDiscountPercent) }));
 }
 export type CatalogItem = Awaited<ReturnType<typeof listCatalogForPicker>>[number];
 

@@ -128,15 +128,84 @@ export async function setLabPendingApproval(caseId: string, _prev: FormState, fo
     const user = await requireActionPermission(SERVICE_PATHS.lab, "canEdit");
     const row = await db.case.findFirst({
       where: { id: caseId, status: { in: LAB_STATUSES } },
-      select: { status: true, labWorkType: true },
+      select: { status: true, labWorkType: true, branchId: true, jobsheetNo: true, estimatedCostPaise: true, chipBaselinePaise: true },
     });
     if (!row) return { message: "Case not found in lab queue." };
     if (row.status !== "CHIP_LAB_DIAGNOSIS") return { message: "Case must be in Lab Diagnosis stage." };
     if (!row.labWorkType)
       return { message: "Set the work type (Inhouse or Outsource) before moving to Pending Approval." };
-    if (!(await applyLabStage(caseId, "CHIP_LAB_DIAGNOSIS", "CHIP_LAB_PENDING_APPROVAL", note, user.id)))
-      return { message: STALE };
-    return { ok: true, message: "Moved to Pending Customer Approval." };
+
+    // The customer only has to approve an estimate that goes above the total they already know about.
+    const total = row.estimatedCostPaise ?? 0;
+    const baseline = row.chipBaselinePaise ?? 0;
+    const now = new Date();
+    if (total <= baseline) {
+      const text = `Estimate ${formatPaise(total)} is within the case total ${formatPaise(baseline)} — no customer approval needed${note ? `. ${note}` : ""}`;
+      const moved = await db.$transaction(async (tx) => {
+        const { count } = await tx.case.updateMany({
+          where: { id: caseId, status: "CHIP_LAB_DIAGNOSIS" },
+          data: { status: "CHIP_LAB_SERVICING", stageChangedAt: now, updatedById: user.id, chipBaselinePaise: total },
+        });
+        if (count === 0) return false;
+        await tx.caseStatusHistory.create({
+          data: { caseId, fromStatus: "CHIP_LAB_DIAGNOSIS", toStatus: "CHIP_LAB_SERVICING", note: text, changedById: user.id, at: now },
+        });
+        return true;
+      });
+      if (!moved) return { message: STALE };
+      await logActivity({ action: "case.stage", userId: user.id, entity: "Case", entityId: caseId, detail: `CHIP_LAB_DIAGNOSIS → CHIP_LAB_SERVICING: ${text}` });
+      revalidatePath(SERVICE_PATHS.lab, "layout");
+      revalidatePath(SERVICE_PATHS.cases, "layout");
+      return { ok: true, message: "Estimate is within the case total — servicing can start without customer approval." };
+    }
+
+    const requested = await db.$transaction(async (tx) => {
+      const { count } = await tx.case.updateMany({
+        where: { id: caseId, status: "CHIP_LAB_DIAGNOSIS" },
+        data: { status: "CHIP_LAB_PENDING_APPROVAL", stageChangedAt: now, updatedById: user.id },
+      });
+      if (count === 0) return false;
+      await tx.caseStatusHistory.create({
+        data: {
+          caseId,
+          fromStatus: "CHIP_LAB_DIAGNOSIS",
+          toStatus: "CHIP_LAB_PENDING_APPROVAL",
+          note: `Estimate ${formatPaise(total)} is above the case total ${formatPaise(baseline)} — sent to the branch for customer approval${note ? `. ${note}` : ""}`,
+          changedById: user.id,
+          at: now,
+        },
+      });
+      // Closes any earlier open request for this case, so the branch only ever sees the latest estimate.
+      await tx.caseApprovalRequest.updateMany({
+        where: { caseId, kind: "LAB_QUOTE", status: { in: ["PENDING", "SENT"] } },
+        data: { status: "REJECTED", reviewRemarks: "Replaced by a newer lab estimate", reviewedAt: now, reviewedById: user.id },
+      });
+      await tx.caseApprovalRequest.create({
+        data: {
+          caseId,
+          branchId: row.branchId,
+          kind: "LAB_QUOTE",
+          quoteAmountPaise: total,
+          baselinePaise: baseline,
+          requestNote: note ?? "Estimate revised by the chip-level lab",
+          requestedById: user.id,
+          requestedAt: now,
+        },
+      });
+      return true;
+    });
+    if (!requested) return { message: STALE };
+    await logActivity({
+      action: "case.approval.request",
+      userId: user.id,
+      entity: "Case",
+      entityId: caseId,
+      detail: `Lab estimate ${formatPaise(total)} above case total ${formatPaise(baseline)}: sent to the branch for customer approval`,
+    });
+    revalidatePath(SERVICE_PATHS.lab, "layout");
+    revalidatePath(SERVICE_PATHS.cases, "layout");
+    revalidatePath(SERVICE_PATHS.approvals);
+    return { ok: true, message: `Estimate ${formatPaise(total)} is above the case total — sent to ${row.jobsheetNo}'s branch for customer approval.` };
   } catch (e) {
     if (e instanceof ForbiddenError) return { message: e.message };
     throw e;
@@ -150,6 +219,9 @@ export async function startLabServicing(caseId: string): Promise<ActionResult> {
     const row = await findLabCase(caseId);
     if (!row) return { ok: false, message: "Case not found in lab queue." };
     if (row.status !== "CHIP_LAB_PENDING_APPROVAL") return { ok: false, message: "Case must be in Pending Approval stage." };
+    // With an open lab quote the branch records the customer's answer, and that moves the case.
+    const open = await db.caseApprovalRequest.findFirst({ where: { caseId, kind: "LAB_QUOTE", status: { in: ["PENDING", "SENT"] } }, select: { id: true } });
+    if (open) return { ok: false, message: "Waiting for the branch to record the customer's approval. Servicing starts once they do." };
     if (!(await applyLabStage(caseId, "CHIP_LAB_PENDING_APPROVAL", "CHIP_LAB_SERVICING", null, user.id)))
       return { ok: false, message: STALE };
     return { ok: true, message: "Lab servicing started." };
@@ -388,8 +460,6 @@ export async function saveLabItems(caseId: string, _prev: FormState, formData: F
       const unit = l.unitPrice!;
       if (unit < min)
         throw new FieldError("items", `${item.name}: lowest allowed price is ${formatPaise(min)} (max ${item.maxDiscountPercent}% discount)`);
-      if (unit > item.pricePaise)
-        throw new FieldError("items", `${item.name}: price can't be above ${formatPaise(item.pricePaise)}`);
       // Outsourced services are paid to the vendor per unit, so every service line needs its vendor charge.
       if (outsourced && item.type === "SERVICE" && (l.vendorCost === null || l.vendorCost <= 0))
         throw new FieldError(`vendorCost-${item.id}`, "Enter the vendor charge");

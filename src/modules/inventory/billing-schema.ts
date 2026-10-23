@@ -91,6 +91,8 @@ export const billLineSchema = z.object({
   newItem: z.boolean(),
   newName: opt(150),
   newType: z.enum(NEW_ITEM_TYPES),
+  // Category for a new item, picked from Inventory → Categories.
+  newCategoryId: opt(40),
   // Name as printed on the bill (from the scan); falls back to the catalog item's name when saved.
   description: opt(200),
   hsnSac: opt(20),
@@ -150,6 +152,7 @@ export const billSchema = z
     b.lines.forEach((l, i) => {
       if (!l.newItem && !l.itemId) ctx.addIssue({ code: "custom", path: ["lines", i, "itemId"], message: "Select an item, or add a new one" });
       if (l.newItem && !l.newName) ctx.addIssue({ code: "custom", path: ["lines", i, "newName"], message: "Enter the item name" });
+      if (l.newItem && !l.newCategoryId) ctx.addIssue({ code: "custom", path: ["lines", i, "newCategoryId"], message: "Select a category" });
     });
     if (b.isOfficeUse && !b.officePurpose)
       ctx.addIssue({ code: "custom", path: ["officePurpose"], message: "Enter what the office items are for" });
@@ -187,6 +190,7 @@ export type BillFormValues = {
     newItem: boolean;
     newName: string;
     newType: (typeof NEW_ITEM_TYPES)[number];
+    newCategoryId: string;
     description: string;
     hsnSac: string;
     warrantyId: string;

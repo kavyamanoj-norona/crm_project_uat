@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { ArrowLeft, Eye, FileText, History } from "lucide-react";
+import { ArrowLeft, Eye, FileText, History, TriangleAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { KvList } from "@/components/ui/kv-list";
@@ -13,6 +13,7 @@ import { personName } from "@/components/data/who-when";
 import { formatDate, formatDateTime, formatShortDateTime } from "@/lib/dates";
 import { formatPaise, paiseToInput } from "@/lib/money";
 import { requirePageAccess } from "@/server/rbac/guard";
+import { db } from "@/server/db";
 import { SERVICE_PATHS } from "@/modules/service/paths";
 import {
   CASE_STATUS_LABELS,
@@ -97,6 +98,12 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
   const showWorkTypeForm = isDiagnosis && permission.canEdit;
 
   const outsource = c.labWorkType === "OUTSOURCE";
+  const quoteRequest = await db.caseApprovalRequest.findFirst({
+    where: { caseId: c.id, kind: "LAB_QUOTE" },
+    orderBy: { requestedAt: "desc" },
+    include: { sentBy: { select: { firstName: true, lastName: true } }, reviewedBy: { select: { firstName: true, lastName: true } } },
+  });
+  const quoteOpen = quoteRequest?.status === "PENDING" || quoteRequest?.status === "SENT";
   const [catalog, engineers, vendors, labStock] = await Promise.all([
     canEditItems ? listCatalogForPicker() : Promise.resolve([]),
     showWorkTypeForm ? listLabEngineers() : Promise.resolve([]),
@@ -128,6 +135,15 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
   for (const h of [...c.statusHistory].reverse()) {
     if (h.fromStatus && !reached.has(h.toStatus)) reached.set(h.toStatus, h.at);
   }
+
+  // Customer approval is a stage only when it is needed: the lab's estimate is above the case total (or it already went through approval).
+  const pastServicing = ["CHIP_LAB_SERVICING", "CHIP_LAB_READY_DISPATCH", "CHIP_LAB_QUALITY_CHECK", "CHIP_BRANCH_RECEIVED", "NON_REPAIRABLE"].includes(status);
+  const needsApproval =
+    status === "CHIP_LAB_PENDING_APPROVAL" ||
+    Boolean(quoteRequest) ||
+    reached.has("CHIP_LAB_PENDING_APPROVAL") ||
+    (!pastServicing && (c.estimatedCostPaise ?? 0) > (c.chipBaselinePaise ?? 0));
+  const railStages = LAB_FLOW.filter((s) => s !== "CHIP_LAB_PENDING_APPROVAL" || needsApproval);
 
   // Non-repairable sits outside the rail — show it stopped at In Servicing with a label.
   // Every other status (including Quality Check and the final Transfer to Branch) is on the rail.
@@ -177,7 +193,16 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
     <>
       <PageHeader
         title={c.jobsheetNo}
-        badges={<Badge tone={CASE_STATUS_TONE[status]}>{qcDone ? "Quality Check completed" : CASE_STATUS_LABELS[status]}</Badge>}
+        badges={
+          <>
+            <Badge tone={CASE_STATUS_TONE[status]}>{qcDone ? "Quality Check completed" : CASE_STATUS_LABELS[status]}</Badge>
+            {c.chipDeadRisk && (
+              <Badge tone="danger" className="bg-danger text-white">
+                <TriangleAlert className="size-3.5" /> Dead risk
+              </Badge>
+            )}
+          </>
+        }
         subtitle={[
           [c.brand, c.model].filter(Boolean).join(" ") || "—",
           WARRANTY_LABELS[c.warrantyStatus],
@@ -200,6 +225,8 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
               <ChipLabActions
                 caseId={c.id}
                 status={status}
+                waitingOnBranch={quoteOpen}
+                needsApproval={(c.estimatedCostPaise ?? 0) > (c.chipBaselinePaise ?? 0)}
                 qcBlock={qcBlock}
                 qc={
                   qc && !qc.complete && qc.rows.length > 0
@@ -223,6 +250,40 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
         </div>
       )}
 
+      {c.chipDeadRisk && (status === "CHIP_TRANSFER" || status === "CHIP_LAB_RECEIVED") && (
+        <div className="mb-4 flex items-start gap-3 rounded-xl border-2 border-danger bg-danger/10 px-4 py-3">
+          <TriangleAlert className="mt-0.5 size-5 shrink-0 text-danger" />
+          <div>
+            <p className="text-sm font-bold text-danger">Dead risk</p>
+            <p className="text-sm text-danger/90">The branch flagged this device as possibly beyond repair. Check carefully before committing to work.</p>
+          </div>
+        </div>
+      )}
+
+      {quoteRequest && (quoteOpen || (status === "CHIP_LAB_DIAGNOSIS" && quoteRequest.status === "REJECTED")) && (
+        <div className="mb-4 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3">
+          <p className="text-sm font-medium text-warning">
+            {quoteRequest.status === "PENDING"
+              ? `Estimate ${formatPaise(quoteRequest.quoteAmountPaise)} is above the case total — waiting for the branch to send it to the customer.`
+              : quoteRequest.status === "SENT"
+                ? `Estimate ${formatPaise(quoteRequest.quoteAmountPaise)} sent to the customer — waiting for their answer.`
+                : `The customer rejected the estimate of ${formatPaise(quoteRequest.quoteAmountPaise)}. Revise the items or mark the case non-repairable.`}
+          </p>
+          {quoteRequest.status === "SENT" && quoteRequest.sentAt && (
+            <p className="mt-0.5 text-xs text-text-muted">
+              Sent by {personName(quoteRequest.sentBy) ?? "—"} · {formatDateTime(quoteRequest.sentAt)}
+              {quoteRequest.sendRemarks ? ` · ${quoteRequest.sendRemarks}` : ""}
+            </p>
+          )}
+          {quoteRequest.status === "REJECTED" && quoteRequest.reviewedAt && (
+            <p className="mt-0.5 text-xs text-text-muted">
+              {personName(quoteRequest.reviewedBy) ?? "—"} · {formatDateTime(quoteRequest.reviewedAt)}
+              {quoteRequest.reviewRemarks ? ` · ${quoteRequest.reviewRemarks}` : ""}
+            </p>
+          )}
+        </div>
+      )}
+
       {leftLab && (
         <div className="mb-4 rounded-xl border border-success/30 bg-success/5 px-4 py-3">
           <p className="text-sm font-medium text-success">
@@ -241,7 +302,7 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
       {/* Lab stage rail */}
       <div className="mb-6 rounded-xl border border-border bg-surface px-4 py-5 shadow-sm">
         <StageRail
-          stages={LAB_FLOW.map((s) => {
+          stages={railStages.map((s) => {
             const Icon = STAGE_ICONS[s];
             return {
               key: s,
@@ -263,7 +324,7 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
           {isDiagnosis && permission.canEdit && (
             <Card title="Work type">
               <p className="mb-4 text-sm text-text-muted">
-                Select how this case is being handled. This is required before moving to Pending Approval.
+                Select how this case is being handled. This is required before submitting the case.
               </p>
               <LabWorkTypeForm
                 caseId={c.id}
@@ -311,14 +372,22 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
           <Card
             title="Billable items"
             actions={
-              permission.canEdit && LAB_ADD_ITEM_STATUSES.includes(status) ? (
-                <AddItemDialog
-                  options={addCatalog.filter((i) => !c.items.some((l) => l.itemId === i.id)).map((i) => ({ value: i.id, label: `${i.code} — ${i.name}` }))}
-                  action={addItemToLabCase.bind(null, c.id)}
-                  backToDiagnosis={status !== "CHIP_LAB_DIAGNOSIS"}
-                  backLabel="Lab Diagnosis"
-                />
-              ) : undefined
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {c.chipMaxEstimatePaise !== null && (
+                  <div className="rounded-lg border border-border bg-surface-muted px-3 py-1.5 text-sm">
+                    <span className="text-text-muted">Max estimate </span>
+                    <span className="font-bold tabular-nums">{formatPaise(c.chipMaxEstimatePaise)}</span>
+                  </div>
+                )}
+                {permission.canEdit && LAB_ADD_ITEM_STATUSES.includes(status) && (
+                  <AddItemDialog
+                    options={addCatalog.filter((i) => !c.items.some((l) => l.itemId === i.id)).map((i) => ({ value: i.id, label: `${i.code} — ${i.name}` }))}
+                    action={addItemToLabCase.bind(null, c.id)}
+                    backToDiagnosis={status !== "CHIP_LAB_DIAGNOSIS"}
+                    backLabel="Lab Diagnosis"
+                  />
+                )}
+              </div>
             }
           >
             {canEditItems ? (
