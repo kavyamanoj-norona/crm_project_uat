@@ -5,6 +5,7 @@ import { db } from "@/server/db";
 import { branchWhere, getBranchScope } from "@/server/branch-scope";
 import { ForbiddenError, requireActionPermission } from "@/server/rbac/guard";
 import { logActivity } from "@/server/security/activity";
+import { labCasePath, notify } from "@/server/notify/push";
 import { sendQuoteNotification } from "@/server/notify/customer";
 import { pick, toFieldErrors, type FormState } from "@/lib/form";
 import { handleActionError } from "@/server/prisma-errors";
@@ -152,6 +153,10 @@ export async function recordLabQuoteDecision(
       entityId: c.id,
       detail: `Customer ${word} the lab estimate (${formatPaise(req.quoteAmountPaise)}): ${remarks}`,
     });
+    notify(
+      { privileges: ["CHIP_COORDINATOR"], exceptUserId: user.id },
+      { category: "SERVICE", title: `${c.jobsheetNo}: customer ${word} the lab estimate`, body: decision === "APPROVED" ? "You can start servicing." : "The case is back in lab diagnosis.", url: labCasePath(c.id), tag: `lab-quote-${c.id}` },
+    );
     revalidatePath(SERVICE_PATHS.cases, "layout");
     revalidatePath(SERVICE_PATHS.lab, "layout");
     revalidatePath(SERVICE_PATHS.approvals);

@@ -5,6 +5,7 @@ import { db } from "@/server/db";
 import { branchWhere, getBranchScope } from "@/server/branch-scope";
 import { ForbiddenError, requireActionPermission } from "@/server/rbac/guard";
 import { logActivity } from "@/server/security/activity";
+import { casePath, notify } from "@/server/notify/push";
 import { pick, toFieldErrors, type FormState } from "@/lib/form";
 import { handleActionError } from "@/server/prisma-errors";
 import { formatPaise } from "@/lib/money";
@@ -51,6 +52,10 @@ export async function requestHeadOfficeApproval(caseId: string, _prev: FormState
       entityId: caseId,
       detail: `Requested Head Office approval for ${formatPaise(quote)}: ${parsed.data.note}`,
     });
+    notify(
+      { privileges: ["PURCHASE_MANAGER", "ADMIN"], exceptUserId: user.id },
+      { category: "APPROVAL", title: "Approval needed", body: `${c.jobsheetNo} is waiting for Head Office approval`, url: SERVICE_PATHS.approvals, tag: `approval-${caseId}` },
+    );
     revalidatePath(SERVICE_PATHS.cases, "layout");
     revalidatePath(SERVICE_PATHS.approvals);
     return { ok: true, message: `Approval requested from Head Office for ${c.jobsheetNo}.` };
@@ -131,6 +136,10 @@ export async function decideApprovalRequest(
       entityId: c.id,
       detail: `${decision === "APPROVED" ? "Approved" : "Rejected"} Head Office approval request (${formatPaise(req.quoteAmountPaise)}): ${remarks}`,
     });
+    notify(
+      { userIds: [req.requestedById], exceptUserId: user.id },
+      { category: "APPROVAL", title: `${c.jobsheetNo}: Head Office ${decision === "APPROVED" ? "approved" : "rejected"} the request`, body: remarks, url: casePath(c.id), tag: `approval-${c.id}` },
+    );
     revalidatePath(SERVICE_PATHS.cases, "layout");
     revalidatePath(SERVICE_PATHS.approvals);
     return {

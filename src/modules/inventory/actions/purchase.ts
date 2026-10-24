@@ -9,6 +9,7 @@ import { isEngineer } from "@/server/rbac/roles";
 import { branchWhere, getBranchScope } from "@/server/branch-scope";
 import { formPhotos, photoError, requiredPhotoError, saveCasePhotos, saveStockPhotos } from "@/server/case-photos";
 import { logActivity } from "@/server/security/activity";
+import { casePath, notify } from "@/server/notify/push";
 import { nextSequence } from "@/server/sequence";
 import type { PurchaseRequestStatus } from "@/generated/prisma/client";
 import { canRequestParts, type CaseStatusValue } from "@/modules/service/case-schema";
@@ -93,6 +94,10 @@ export async function requestItemStock(itemId: string, _prev: FormState, formDat
       entityId: code,
       detail: `${code}: requested ${quantity} × ${item.name} from Head Office`,
     });
+    notify(
+      { privileges: ["PURCHASE_MANAGER"], exceptUserId: user.id },
+      { category: "INVENTORY", title: "New stock request", body: `${code} from ${branch.code}: ${quantity} × ${item.name}`, url: INVENTORY_PATHS.purchasing, tag: `stock-request-${requestId}` },
+    );
     revalidatePath(INVENTORY_PATHS.purchasing);
     return { ok: true, message: `Requested ${quantity} × ${item.name} (${code}).` };
   } catch (e) {
@@ -146,7 +151,7 @@ export async function requestPartForCase(caseItemId: string, _prev: FormState, f
     const scope = branchWhere(await getBranchScope(user));
     const line = await db.caseItem.findFirst({
       where: { id: caseItemId, removedAt: null, case: { ...scope } },
-      select: { itemId: true, quantity: true, caseId: true, case: { select: { branchId: true, status: true } } },
+      select: { itemId: true, quantity: true, caseId: true, case: { select: { branchId: true, status: true, jobsheetNo: true } } },
     });
     if (!line) return { message: "Item not found." };
     if (!canRequestParts(line.case.status as CaseStatusValue)) return { message: "Parts can be requested once the approval is complete." };
@@ -163,6 +168,12 @@ export async function requestPartForCase(caseItemId: string, _prev: FormState, f
       return pr.id;
     });
     if (photos.length > 0) await saveCasePhotos(caseId, photos, user.id, { kind: "PART_REQUEST_PHOTO", prefix: "request", purchaseRequestId: requestId });
+
+    // Only the Purchase Manager is told; the message names the branch and case, nothing more.
+    notify(
+      { privileges: ["PURCHASE_MANAGER"], exceptUserId: user.id },
+      { category: "INVENTORY", title: "Part requested", body: `${branch.code}: spare part needed for ${line.case.jobsheetNo}`, url: INVENTORY_PATHS.purchasing, tag: `part-request-${requestId}` },
+    );
 
     revalidatePath(INVENTORY_PATHS.stock);
     revalidatePath(INVENTORY_PATHS.purchasing);
@@ -184,6 +195,13 @@ export async function markRequestOrdered(id: string): Promise<void> {
   });
   if (done.count > 0) {
     await logActivity({ action: "inventory.order", userId: user.id, entity: "PurchaseRequest", entityId: id, detail: "Marked as ordered" });
+    const pr = await db.purchaseRequest.findUnique({ where: { id }, select: { code: true, branchId: true, requestedById: true, caseId: true } });
+    // Told only to the branch that asked.
+    if (pr)
+      notify(
+        { privileges: ["BRANCH_MANAGER", "SALES"], branchId: pr.branchId, userIds: [pr.requestedById], exceptUserId: user.id },
+        { category: "INVENTORY", title: "Your request was ordered", body: `${pr.code} has been ordered by Head Office`, url: pr.caseId ? casePath(pr.caseId) : INVENTORY_PATHS.stockRequests, tag: `pr-${id}` },
+      );
   }
   revalidatePath(INVENTORY_PATHS.purchasing);
 }
@@ -201,6 +219,12 @@ export async function markSpareUnavailable(id: string, _prev: FormState, formDat
     });
     if (done.count === 0) return { message: "This request can no longer be changed." };
     await logActivity({ action: "inventory.spare-unavailable", userId: user.id, entity: "PurchaseRequest", entityId: id, detail: remark || "Spare not available" });
+    const pr = await db.purchaseRequest.findUnique({ where: { id }, select: { code: true, branchId: true, requestedById: true, caseId: true } });
+    if (pr)
+      notify(
+        { privileges: ["BRANCH_MANAGER", "SALES"], branchId: pr.branchId, userIds: [pr.requestedById], exceptUserId: user.id },
+        { category: "INVENTORY", title: "Spare not available", body: `${pr.code}: Head Office cannot get this spare right now`, url: pr.caseId ? casePath(pr.caseId) : INVENTORY_PATHS.stockRequests, tag: `pr-${id}` },
+      );
   } catch (e) {
     if (e instanceof ForbiddenError) return { message: e.message };
     throw e;

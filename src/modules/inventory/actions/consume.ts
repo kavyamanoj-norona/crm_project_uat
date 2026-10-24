@@ -5,6 +5,7 @@ import { db } from "@/server/db";
 import { FieldError } from "@/server/prisma-errors";
 import { ForbiddenError, requireActionPermission } from "@/server/rbac/guard";
 import { logActivity } from "@/server/security/activity";
+import { casePath, notify } from "@/server/notify/push";
 import { pick, toFieldErrors, type FormState } from "@/lib/form";
 import { formPhotos, requiredPhotoError, saveCasePhotos, saveStockPhotos } from "@/server/case-photos";
 import { isChipLabStatus, isOpenStatus, type CaseStatusValue } from "@/modules/service/case-schema";
@@ -87,8 +88,14 @@ export async function allocateUnits(requestId: string, _prev: FormState, formDat
         where: { id: requestId },
         data: { consumedQty: { increment: unitIds.length }, status: "TRANSFERRED", transferredAt: new Date() },
       });
-      return { code: pr.code, usids, caseId: kase?.id ?? null, jobsheetNo: kase?.jobsheetNo ?? null };
+      return { code: pr.code, usids, caseId: kase?.id ?? null, jobsheetNo: kase?.jobsheetNo ?? null, toBranchId };
     });
+
+    // The branch (or the lab at Head Office) that is receiving the units.
+    notify(
+      { privileges: ["BRANCH_MANAGER", "SALES", "CHIP_COORDINATOR"], branchId: result.toBranchId, exceptUserId: user.id },
+      { category: "INVENTORY", title: "Stock on its way", body: `${result.usids.length} ${result.usids.length === 1 ? "unit" : "units"} transferred for ${result.jobsheetNo ?? result.code}. Confirm when they arrive.`, url: result.caseId ? casePath(result.caseId) : INVENTORY_PATHS.stockRequests, tag: `allocate-${result.code}` },
+    );
 
     // Photos hang off the case (that is where the branch looks); a transfer with no case keeps them on the request.
     if (result.caseId) await saveCasePhotos(result.caseId, photos, user.id, { kind: "ALLOCATION_PHOTO", prefix: "allocation", purchaseRequestId: requestId });
@@ -192,8 +199,14 @@ export async function allocateUnit(requestId: string, _prev: FormState, formData
           ...(done ? { status: "TRANSFERRED", transferredAt: new Date() } : {}),
         },
       });
-      return { usid: unit.usid, caseId: kase?.id ?? null, jobsheetNo: kase?.jobsheetNo ?? null, done };
+      return { usid: unit.usid, caseId: kase?.id ?? null, jobsheetNo: kase?.jobsheetNo ?? null, done, toBranchId };
     });
+
+    // The receiving branch's Branch Manager and front desk (or the lab at Head Office): nobody from another branch.
+    notify(
+      { privileges: ["BRANCH_MANAGER", "SALES", "CHIP_COORDINATOR"], branchId: result.toBranchId, exceptUserId: user.id },
+      { category: "INVENTORY", title: "Stock on its way", body: `${result.usid} transferred${result.jobsheetNo ? ` for ${result.jobsheetNo}` : ""}. Confirm when it arrives.`, url: result.caseId ? casePath(result.caseId) : INVENTORY_PATHS.stockRequests, tag: `allocate-${requestId}` },
+    );
 
     // Photos hang off the case (that is where the branch looks), tagged with the unit.
     // A transfer with no case keeps its photos on the request instead.

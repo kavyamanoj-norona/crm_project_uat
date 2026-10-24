@@ -6,6 +6,7 @@ import { decryptText } from "@/server/crypto";
 import { branchWhere, getBranchScope } from "@/server/branch-scope";
 import { ForbiddenError, requireActionPermission } from "@/server/rbac/guard";
 import { logActivity } from "@/server/security/activity";
+import { casePath, labCasePath, notify } from "@/server/notify/push";
 import { sendQuoteNotification } from "@/server/notify/customer";
 import { pick, toFieldErrors, type ActionResult, type FormState } from "@/lib/form";
 import type { CurrentUser } from "@/server/auth/session";
@@ -61,6 +62,15 @@ async function applyStage(caseId: string, from: CaseStatusValue, to: CaseStatusV
   });
   if (moved) {
     await logActivity({ action: "case.stage", userId, entity: "Case", entityId: caseId, detail: `${from} → ${to}${note ? `: ${note}` : ""}` });
+    // A case arriving in the chip-level lab queue: the Chip Level Coordinator picks it up.
+    if (to === "CHIP_TRANSFER") {
+      const c = await db.case.findUnique({ where: { id: caseId }, select: { jobsheetNo: true, chipDeadRisk: true } });
+      if (c)
+        notify(
+          { privileges: ["CHIP_COORDINATOR"], exceptUserId: userId },
+          { category: "SERVICE", title: "New case for the chip-level lab", body: `${c.jobsheetNo}${c.chipDeadRisk ? " · dead risk" : ""} is waiting in the incoming queue`, url: labCasePath(caseId), tag: `lab-incoming-${caseId}` },
+        );
+    }
     revalidatePath(SERVICE_PATHS.cases, "layout");
   }
   return moved;
@@ -459,7 +469,7 @@ export async function assignEngineer(caseId: string, _prev: FormState, formData:
     const scope = branchWhere(await getBranchScope(user));
     const c = await db.case.findFirst({
       where: { id: caseId, ...scope },
-      select: { status: true, branchId: true },
+      select: { status: true, branchId: true, jobsheetNo: true, engineerId: true },
     });
     if (!c) return { message: "Case not found." };
     if (!isOpenStatus(c.status)) return { message: "Cannot reassign engineer on a closed or cancelled case." };
@@ -477,6 +487,8 @@ export async function assignEngineer(caseId: string, _prev: FormState, formData:
       entityId: caseId,
       detail: `Assigned to ${[engineer.firstName, engineer.lastName].filter(Boolean).join(" ")}`,
     });
+    if (engineerId !== c.engineerId)
+      notify({ userIds: [engineerId], exceptUserId: user.id }, { category: "SERVICE", title: "Case assigned to you", body: `${c.jobsheetNo} was assigned to you`, url: casePath(caseId), tag: `assign-${caseId}` });
     revalidatePath(SERVICE_PATHS.cases, "layout");
     return { ok: true, message: "Engineer assigned." };
   } catch (e) {

@@ -6,6 +6,7 @@ import { ForbiddenError, requireActionPermission } from "@/server/rbac/guard";
 import { isEngineer } from "@/server/rbac/roles";
 import { FieldError } from "@/server/prisma-errors";
 import { logActivity } from "@/server/security/activity";
+import { casePath, notify } from "@/server/notify/push";
 import { initialFormState, pick, toFieldErrors, type ActionResult, type FormState } from "@/lib/form";
 import { formatPaise } from "@/lib/money";
 import { minPricePaise } from "@/lib/pricing";
@@ -74,6 +75,15 @@ async function applyLabStage(
       entityId: caseId,
       detail: `${from} → ${to}${note ? `: ${note}` : ""}`,
     });
+    // The device is back with the branch: tell the case's branch staff and its engineer.
+    if (to === "CHIP_BRANCH_RECEIVED") {
+      const c = await db.case.findUnique({ where: { id: caseId }, select: { branchId: true, engineerId: true, jobsheetNo: true } });
+      if (c)
+        notify(
+          { privileges: ["BRANCH_MANAGER", "SALES"], branchId: c.branchId, userIds: [c.engineerId], exceptUserId: userId },
+          { category: "SERVICE", title: "Device back from the chip-level lab", body: `${c.jobsheetNo} is ready to be received at the branch`, url: casePath(caseId), tag: `lab-return-${caseId}` },
+        );
+    }
     revalidatePath(SERVICE_PATHS.lab, "layout");
     revalidatePath(SERVICE_PATHS.cases, "layout");
   }
@@ -202,6 +212,10 @@ export async function setLabPendingApproval(caseId: string, _prev: FormState, fo
       entityId: caseId,
       detail: `Lab estimate ${formatPaise(total)} above case total ${formatPaise(baseline)}: sent to the branch for customer approval`,
     });
+    notify(
+      { privileges: ["BRANCH_MANAGER", "SALES"], branchId: row.branchId, exceptUserId: user.id },
+      { category: "APPROVAL", title: "Lab estimate needs the customer", body: `${row.jobsheetNo}: send the lab estimate to the customer for approval`, url: SERVICE_PATHS.approvals, tag: `lab-quote-${caseId}` },
+    );
     revalidatePath(SERVICE_PATHS.lab, "layout");
     revalidatePath(SERVICE_PATHS.cases, "layout");
     revalidatePath(SERVICE_PATHS.approvals);

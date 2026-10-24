@@ -1,7 +1,5 @@
 "use server";
 
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/server/db";
@@ -10,6 +8,7 @@ import { hashPassword } from "@/server/auth/password";
 import { FieldError, handleActionError } from "@/server/prisma-errors";
 import { ForbiddenError, requireActionPermission } from "@/server/rbac/guard";
 import { logActivity } from "@/server/security/activity";
+import { pickedImage, saveUserImage } from "@/server/user-image";
 import { ADMIN_PATHS } from "../paths";
 import {
   USER_FIELDS,
@@ -20,8 +19,6 @@ import {
 } from "../user-schema";
 
 const LABELS = { username: "Username", email: "Email", mobile: "Mobile", userCode: "User ID" };
-const IMAGE_TYPES: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
-const IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 
 /** Next user code: LC00001, LC00002 … */
 async function nextUserCode() {
@@ -42,18 +39,6 @@ async function checkRelations(data: Omit<UserInput, "password">) {
     throw new FieldError("departmentId", "Pick a department of the selected domain");
 }
 
-/** Saves an uploaded photo under public/uploads/users. TODO: move to S3 (blueprint §13). */
-async function saveImage(file: File, userId: string) {
-  const ext = IMAGE_TYPES[file.type];
-  if (!ext) throw new FieldError("image", "Use a JPG, PNG or WebP image");
-  if (file.size > IMAGE_MAX_BYTES) throw new FieldError("image", "Image must be 2 MB or smaller");
-  const dir = path.join(process.cwd(), "public", "uploads", "users");
-  await mkdir(dir, { recursive: true });
-  const name = `${userId}-${Date.now()}.${ext}`;
-  await writeFile(path.join(dir, name), Buffer.from(await file.arrayBuffer()));
-  return `/uploads/users/${name}`;
-}
-
 export async function saveUser(_prev: FormState, formData: FormData): Promise<FormState> {
   const id = formData.get("id")?.toString() || null;
   // Create needs a password; edit never touches it (see changeUserPassword).
@@ -62,8 +47,7 @@ export async function saveUser(_prev: FormState, formData: FormData): Promise<Fo
   if (!parsed.success) return toFieldErrors(parsed.error, formData);
 
   const { password, ...data } = { password: undefined as string | undefined, ...parsed.data };
-  const image = formData.get("image");
-  const file = image instanceof File && image.size > 0 ? image : null;
+  const file = pickedImage(formData);
 
   let savedId: string;
   try {
@@ -78,7 +62,7 @@ export async function saveUser(_prev: FormState, formData: FormData): Promise<Fo
     savedId = user.id;
 
     if (file) {
-      await db.user.update({ where: { id: user.id }, data: { imageUrl: await saveImage(file, user.id) } });
+      await db.user.update({ where: { id: user.id }, data: { imageUrl: await saveUserImage(file, user.id) } });
     }
     await logActivity({ action: id ? "user.update" : "user.create", userId: actor.id, entity: "User", entityId: user.id });
   } catch (e) {

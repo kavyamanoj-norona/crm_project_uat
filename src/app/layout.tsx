@@ -19,6 +19,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: { default: "Laptop Clinic CRM", template: "%s · Laptop Clinic CRM" },
   description: "Laptop Clinic CRM — Norona Tech LLP",
+  icons: { icon: "/CRM-logo.png", shortcut: "/CRM-logo.png", apple: "/CRM-logo.png" },
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {

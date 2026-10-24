@@ -60,7 +60,8 @@ export const MODULES: ModuleDef[] = [
     readOnly: [CS],
     entries: [
       { title: "Dashboard", path: "/service/dashboard", icon: "layout-dashboard", roles: [SALES, BM, CS, CHIP] },
-      { title: "Cases", path: "/service/cases", icon: "list" },
+      // The Purchase Manager reads cases (and joins their comments) but never edits them.
+      { title: "Cases", path: "/service/cases", icon: "list", roles: [SALES, BM, CS, PM], readOnly: [CS, PM] },
       { title: "New Case (Intake)", path: "/service/new", icon: "file-plus", roles: [SALES, BM, ONSITE] },
       { title: "Chip-Level Lab", path: "/service/lab", icon: "cpu", roles: [CHIP, BM], approve: [CHIP] },
       // SERVICE_ENGINEER (created in Admin → Privilege, not seeded) gets this item through its own permissions.

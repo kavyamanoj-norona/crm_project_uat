@@ -41,6 +41,9 @@ import { SendWhatsAppButton } from "@/modules/service/components/send-whatsapp-b
 import { db } from "@/server/db";
 import { AssignEngineerDialog } from "@/modules/service/components/assign-engineer-dialog";
 import { EstimateDialog } from "@/modules/service/components/estimate-dialog";
+import { CaseComments } from "@/modules/service/components/case-comments";
+import { addCaseComment } from "@/modules/service/actions/comment";
+import { listCaseComments, listMentionable } from "@/modules/service/comment-queries";
 import { BilledAmountCell } from "@/modules/service/components/billed-amount-cell";
 import { BillingSaveBar } from "@/modules/service/components/billing-save-bar";
 import { saveBilledAmounts } from "@/modules/service/actions/billing";
@@ -251,9 +254,11 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
   const canEditBilling = permission.canEdit && (BILLING_EDIT_STATUSES.includes(c.status) || quoteRepricing) && c.items.length > 0;
   const labPriced = hasChipHistory || isInChipTrack;
   const canAssignEngineer = permission.canEdit && isOpenStatus(c.status);
-  const [catalog, staff] = await Promise.all([
+  const [catalog, staff, comments, mentionable] = await Promise.all([
     estimateMode ? listCatalogForPicker() : Promise.resolve([] as Awaited<ReturnType<typeof listCatalogForPicker>>),
     canAssignEngineer ? listBranchStaff(c.branchId) : Promise.resolve([] as { value: string; label: string }[]),
+    listCaseComments(c.id),
+    listMentionable(c.branchId),
   ]);
   // Stock + active purchase-request lookup for billable items (PART + ACCESSORY only)
   const physicalItemIds = c.items
@@ -951,6 +956,8 @@ export default async function CaseDetailsPage({ params, searchParams }: PageProp
         </div>
 
         <div className="space-y-6">
+          <CaseComments currentUserId={user.id} comments={comments} staff={mentionable} action={addCaseComment.bind(null, c.id)} />
+
           <TimelineCard items={timeline(c, approvals)} limit={5} />
 
           <Card title="Customer">

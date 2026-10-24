@@ -221,6 +221,10 @@ model User {
   casesUpdated       Case[]                @relation("CaseUpdatedBy")
   casesAssigned      Case[]                @relation("CaseEngineer")
   caseStatusMoves    CaseStatusHistory[]
+  caseComments       CaseComment[]         @relation("CaseCommentAuthor")
+  deviceTokens       DeviceToken[]         @relation("UserDeviceTokens")
+  notifications      Notification[]        @relation("UserNotifications")
+  caseMentions       CaseCommentMention[]  @relation("CaseMentionedUser")
   approvalsRequested CaseApprovalRequest[] @relation("ApprovalRequester")
   approvalsReviewed  CaseApprovalRequest[] @relation("ApprovalReviewer")
   approvalsSent      CaseApprovalRequest[] @relation("ApprovalSender")
@@ -684,6 +688,7 @@ model Case {
   stockUnits         StockUnit[]
   unitEvents         StockUnitEvent[]
   statusHistory      CaseStatusHistory[]
+  comments           CaseComment[]
   approvalRequests   CaseApprovalRequest[]
   payments           Payment[]
   invoice            CaseInvoice?
@@ -1060,6 +1065,85 @@ model CaseStatusHistory {
 
   @@index([caseId, at])
   @@map("case_status_history")
+}
+
+// ─── In-app notifications (bell + notifications page) ────────────────────────
+
+/** One alert for one person. Every event that sends a push also lands here, so the bell works with push switched off. */
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  // MENTION | APPROVAL | SERVICE | INVENTORY
+  category  String
+  title     String
+  body      String
+  url       String
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  readAt    DateTime? @db.Timestamptz
+  isDelete  Int       @default(0) // 0 = active, 1 = soft-deleted (archived)
+
+  user User @relation("UserNotifications", fields: [userId], references: [id])
+
+  @@index([userId, readAt, createdAt])
+  @@map("notification")
+}
+
+// ─── Push notifications (Firebase Cloud Messaging) ───────────────────────────
+
+/** One browser / device a user has allowed notifications on. The token is a delivery secret: never sent to the client. */
+model DeviceToken {
+  id         String   @id @default(cuid())
+  userId     String
+  token      String   @unique
+  userAgent  String?
+  createdAt  DateTime @default(now()) @db.Timestamptz
+  lastSeenAt DateTime @default(now()) @db.Timestamptz
+  isDelete   Int      @default(0) // 0 = active, 1 = soft-deleted
+
+  user User @relation("UserDeviceTokens", fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("device_token")
+}
+
+// ─── Service: case comments & mentions ───────────────────────────────────────
+
+/** A chat message on a case. Replies point at the message they answer; nothing is ever deleted. */
+model CaseComment {
+  id        String   @id @default(cuid())
+  caseId    String
+  authorId  String
+  parentId  String?
+  body      String
+  createdAt DateTime @default(now()) @db.Timestamptz
+  isDelete  Int      @default(0) // 0 = active, 1 = soft-deleted
+
+  case     Case                 @relation(fields: [caseId], references: [id])
+  author   User                 @relation("CaseCommentAuthor", fields: [authorId], references: [id])
+  parent   CaseComment?         @relation("CommentReplies", fields: [parentId], references: [id])
+  replies  CaseComment[]        @relation("CommentReplies")
+  mentions CaseCommentMention[]
+
+  @@index([caseId, createdAt])
+  @@map("case_comment")
+}
+
+/** A staff member tagged in a comment; doubles as their notification until they read it. */
+model CaseCommentMention {
+  id        String    @id @default(cuid())
+  commentId String
+  userId    String
+  caseId    String
+  readAt    DateTime? @db.Timestamptz
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  isDelete  Int       @default(0) // 0 = active, 1 = soft-deleted
+
+  comment CaseComment @relation(fields: [commentId], references: [id])
+  user    User        @relation("CaseMentionedUser", fields: [userId], references: [id])
+
+  @@unique([commentId, userId])
+  @@index([userId, readAt])
+  @@map("case_comment_mention")
 }
 
 // ─── Service: feedback ───────────────────────────────────────────────────────

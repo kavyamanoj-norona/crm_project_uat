@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, LogOut, Maximize, Menu, PanelLeft, Settings, Sun, Moon } from "lucide-react";
+import { LogOut, Maximize, Menu, PanelLeft, Settings, Sun, Moon } from "lucide-react";
 import type { NavModule } from "@/lib/navigation";
-import { useDismiss } from "@/hooks/use-dismiss";
+import { PushRegistration } from "@/components/notifications/push-registration";
+import { PushPrompt } from "@/components/notifications/push-prompt";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 import { AppSwitcher } from "./app-switcher";
 import { BranchSwitcher } from "./branch-switcher";
 import { AskKiran } from "./ask-kiran-modal";
-import type { LogoutAction, ShellBranch } from "./types";
+import type { LogoutAction, ShellBranch, ShellNotifications } from "./types";
 
 type TopBarProps = {
   nav: NavModule[];
@@ -15,6 +17,7 @@ type TopBarProps = {
   greeting: string;
   logout: LogoutAction;
   branch: ShellBranch;
+  notifications: ShellNotifications;
   restricted?: boolean;
   onOpenMobile: () => void;
   onToggleSidebar: () => void;
@@ -30,6 +33,7 @@ export function TopBar({
   greeting,
   logout,
   branch,
+  notifications,
   restricted,
   onOpenMobile,
   onToggleSidebar,
@@ -64,6 +68,7 @@ export function TopBar({
       </div>
 
       <div className="ml-auto flex min-w-0 items-center gap-1">
+        <PushPrompt register={notifications.registerDevice} />
         {!restricted && (
           <>
             <div className="mr-1 sm:mr-2">
@@ -79,7 +84,8 @@ export function TopBar({
           <Maximize className="size-5" />
         </button>
 
-        <NotificationButton />
+        <NotificationBell {...notifications} buttonClass={iconBtn} />
+        <PushRegistration register={notifications.registerDevice} />
 
         <Link href="/settings/profile" className={`${iconBtn} hidden sm:inline-flex`} aria-label="Settings">
           <Settings className="size-5" />
@@ -92,29 +98,5 @@ export function TopBar({
         </form>
       </div>
     </header>
-  );
-}
-
-function NotificationButton() {
-  const { open, setOpen, ref } = useDismiss();
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        className={iconBtn}
-        aria-label="Notifications"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-      >
-        <Bell className="size-5" />
-      </button>
-      {open && (
-        <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-1.5rem)] rounded-xl border border-border bg-surface p-4 shadow-lg">
-          <p className="text-sm font-semibold">Notifications</p>
-          <p className="mt-6 mb-4 text-center text-sm text-text-muted">You&apos;re all caught up.</p>
-        </div>
-      )}
-    </div>
   );
 }

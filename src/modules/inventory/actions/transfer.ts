@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/server/db";
 import { toFieldErrors, pick, type FormState } from "@/lib/form";
 import { requireActionPermission } from "@/server/rbac/guard";
+import { notify } from "@/server/notify/push";
 import { getBranchScope } from "@/server/branch-scope";
 import { nextSequence } from "@/server/sequence";
 import type { TransferStatus } from "@/generated/prisma/client";
@@ -41,7 +42,7 @@ export async function createTransfer(_prev: FormState, formData: FormData): Prom
 
   const codes = unitCodes ? unitCodes.split(",").map((c) => c.trim()).filter(Boolean) : [];
 
-  await db.$transaction(async (tx) => {
+  const created = await db.$transaction(async (tx) => {
     const key = `TR:${fromBranch.code}-${toBranch.code}:${period()}`;
     const seq = await nextSequence(tx, key);
     const code = `TR-${fromBranch.code.toUpperCase()}-${toBranch.code.toUpperCase()}-${period()}-${String(seq).padStart(3, "0")}`;
@@ -55,7 +56,14 @@ export async function createTransfer(_prev: FormState, formData: FormData): Prom
         items: { create: [{ itemId, quantity, unitCodes: codes }] },
       },
     });
+    return code;
   });
+
+  // The Purchase Manager sees every branch; nobody else is told.
+  notify(
+    { privileges: ["PURCHASE_MANAGER"], exceptUserId: user.id },
+    { category: "INVENTORY", title: "Stock transfer requested", body: `${created}: ${fromBranch.code} → ${toBranch.code}`, url: INVENTORY_PATHS.purchasing, tag: `transfer-${created}` },
+  );
 
   revalidatePath(INVENTORY_PATHS.stock);
   redirect(`${INVENTORY_PATHS.stock}?saved=${Date.now()}`);
@@ -68,6 +76,7 @@ export async function updateTransferStatus(
   const needsApprove = status === "APPROVED";
   const user = await requireActionPermission(INVENTORY_PATHS.stock, needsApprove ? "canApprove" : "canEdit");
   const now = new Date();
+  const before = await db.stockTransfer.findUnique({ where: { id }, select: { code: true, toBranchId: true, fromBranchId: true, createdById: true } });
   await db.stockTransfer.update({
     where: { id },
     data: {
@@ -77,5 +86,11 @@ export async function updateTransferStatus(
       ...(status === "RECEIVED" ? { receivedAt: now } : {}),
     },
   });
+  // Dispatched stock is announced only to the branch it is going to (Branch Manager and front desk).
+  if (before && status === "DISPATCHED")
+    notify(
+      { privileges: ["BRANCH_MANAGER", "SALES"], branchId: before.toBranchId, exceptUserId: user.id },
+      { category: "INVENTORY", title: "Stock dispatched to your branch", body: `${before.code} is on its way. Confirm when it arrives.`, url: INVENTORY_PATHS.stock, tag: `transfer-${before.code}` },
+    );
   revalidatePath(INVENTORY_PATHS.stock);
 }

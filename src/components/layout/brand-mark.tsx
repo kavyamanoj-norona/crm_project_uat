@@ -7,17 +7,20 @@ type BrandMarkProps = {
   className?: string;
 };
 
-/** The Laptop Clinic hourglass mark (L + C), as in the brand guidelines. */
+/**
+ * The CRM logo. On the navy sidebar it uses CRM-logo-dark.png (the same mark with its dark-blue halves in white),
+ * so it sits straight on the sidebar colour with no tile behind it.
+ */
 export function BrandMark({ on = "dark", size = 34, className }: BrandMarkProps) {
-  const navy = on === "dark" ? "#ffffff" : "#1f1c5b";
-  const sky = "#29ace1";
   return (
-    <svg viewBox="0 0 120 120" width={size} height={size} aria-hidden className={cn("shrink-0", className)}>
-      <path fill={navy} d="M16 22 Q16 10 28 10 L50 10 Q57 10 57 17 L57 56 Q40 38 22 30 Q16 27 16 22 Z" />
-      <path fill={sky} d="M63 17 Q63 10 70 10 L92 10 Q104 10 104 22 Q104 27 98 30 Q80 38 63 56 Z" />
-      <path fill={sky} d="M16 98 Q16 110 28 110 L50 110 Q57 110 57 103 L57 64 Q40 82 22 90 Q16 93 16 98 Z" />
-      <path fill={navy} d="M63 103 Q63 110 70 110 L92 110 Q104 110 104 98 Q104 93 98 90 Q80 82 63 64 Z" />
-    </svg>
+    // eslint-disable-next-line @next/next/no-img-element -- small static brand asset
+    <img
+      src={on === "dark" ? "/CRM-logo-dark.png" : "/CRM-logo.png"}
+      alt="Laptop Clinic CRM"
+      width={size}
+      style={{ height: "auto" }}
+      className={cn("block shrink-0", className)}
+    />
   );
 }
 

@@ -11,13 +11,10 @@ export default async function LoginPage() {
   return (
     <>
       <div className="mb-8 text-center">
-        <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-xl bg-brand-navy text-lg font-bold text-white">
-          LC
-        </div>
-        <h1 className="text-2xl font-semibold">
-          Laptop <span className="text-primary">Clinic</span>
-        </h1>
-        <p className="mt-1 text-sm text-text-muted">Please sign in to continue</p>
+        <h1 className="sr-only">Laptop Clinic CRM</h1>
+        {/* eslint-disable-next-line @next/next/no-img-element -- static brand asset */}
+        <img src="/crm-full-logo.png" alt="Laptop Clinic CRM" width={220} style={{ height: "auto" }} className="mx-auto mb-4 block" />
+        <p className="text-sm text-text-muted">Please sign in to continue</p>
       </div>
       <LoginForm action={login} />
     </>

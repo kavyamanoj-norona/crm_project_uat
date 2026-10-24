@@ -6,6 +6,8 @@ import { db } from "@/server/db";
 import { requireUser } from "@/server/auth/session";
 import { hashPassword, verifyPassword } from "@/server/auth/password";
 import { logActivity } from "@/server/security/activity";
+import { FieldError } from "@/server/prisma-errors";
+import { pickedImage, saveUserImage } from "@/server/user-image";
 import { toFieldErrors, formValues, pick, type FormState } from "@/lib/form";
 
 // ─── Schemas ─────────────────────────────────────────────────────────────────
@@ -57,9 +59,20 @@ export async function updateProfile(_prev: FormState, formData: FormData): Promi
     };
   }
 
+  // Photo: a new file replaces the current one; "remove" clears it (the sidebar then shows initials again).
+  let imageUrl: string | null | undefined;
+  try {
+    const file = pickedImage(formData);
+    if (file) imageUrl = await saveUserImage(file, user.id);
+    else if (formData.get("removeImage") === "1") imageUrl = null;
+  } catch (e) {
+    if (e instanceof FieldError) return { ok: false, message: "Please fix the highlighted fields.", fieldErrors: { [e.field]: [e.message] }, values: formValues(formData) };
+    throw e;
+  }
+
   await db.user.update({
     where: { id: user.id },
-    data: { firstName, lastName: lastName ?? null, email },
+    data: { firstName, lastName: lastName ?? null, email, ...(imageUrl !== undefined ? { imageUrl } : {}) },
   });
 
   await logActivity({
@@ -69,7 +82,7 @@ export async function updateProfile(_prev: FormState, formData: FormData): Promi
     entityId: user.id,
   });
 
-  revalidatePath("/settings/profile", "layout");
+  revalidatePath("/", "layout");
   return { ok: true, message: "Profile updated." };
 }
 

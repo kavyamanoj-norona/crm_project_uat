@@ -7,6 +7,7 @@ import { FieldError, handleActionError } from "@/server/prisma-errors";
 import { requireActionPermission, ForbiddenError } from "@/server/rbac/guard";
 import { isEngineer } from "@/server/rbac/roles";
 import { logActivity } from "@/server/security/activity";
+import { notify } from "@/server/notify/push";
 import { formPhotos, requiredPhotoError, saveStockPhotos } from "@/server/case-photos";
 import { INVENTORY_PATHS } from "../paths";
 import { MAX_STOCK_REQUEST_QTY } from "../schemas";
@@ -63,6 +64,10 @@ export async function createStockRequestAction(_prev: FormState, formData: FormD
       entityId: req.id,
       detail: `${req.code}: ${lines.map((l) => `${l.quantity} × ${name.get(l.itemId)}`).join(", ")}`,
     });
+    notify(
+      { privileges: ["PURCHASE_MANAGER"], exceptUserId: user.id },
+      { category: "INVENTORY", title: "New stock request", body: `${req.code} from ${branch.code}: ${lines.length} ${lines.length === 1 ? "item" : "items"}`, url: INVENTORY_PATHS.purchasing, tag: `stock-request-${req.id}` },
+    );
     revalidatePath(INVENTORY_PATHS.stockRequests);
     revalidatePath(INVENTORY_PATHS.purchasing);
     return { ok: true, message: `Request ${req.code} sent to Head Office.` };

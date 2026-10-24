@@ -9,7 +9,7 @@ import { IconRail } from "./icon-rail";
 import { ModuleSidebar } from "./module-sidebar";
 import { SettingsFooter } from "./settings-footer";
 import { TopBar } from "./top-bar";
-import type { LogoutAction, ShellBranch, ShellUser } from "./types";
+import type { LogoutAction, ShellBranch, ShellNotifications, ShellUser } from "./types";
 
 type AppShellProps = {
   nav: NavModule[];
@@ -18,11 +18,12 @@ type AppShellProps = {
   greeting: string;
   logout: LogoutAction;
   branch: ShellBranch;
+  notifications: ShellNotifications;
   children: React.ReactNode;
 };
 
 /** Icon rail (48px) + module sidebar (192px) + top bar (64px) + content. Below lg the rail and sidebar become a slide-in drawer. */
-export function AppShell({ nav, counts, user, greeting, logout, branch, children }: AppShellProps) {
+export function AppShell({ nav, counts, user, greeting, logout, branch, notifications, children }: AppShellProps) {
   const pathname = usePathname();
 
   // Settings is NOT a module — detect the route separately so it never appears
@@ -81,6 +82,7 @@ export function AppShell({ nav, counts, user, greeting, logout, branch, children
           greeting={greeting}
           logout={logout}
           branch={branch}
+          notifications={notifications}
           restricted={user.restricted}
           onOpenMobile={() => setMobileOpen(true)}
           onToggleSidebar={() => setCollapsed((c) => !c)}

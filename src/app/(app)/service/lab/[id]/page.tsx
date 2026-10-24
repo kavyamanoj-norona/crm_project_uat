@@ -7,6 +7,9 @@ import { LinkButton } from "@/components/ui/button";
 import { StageRail } from "@/components/ui/stage-rail";
 import { PageHeader } from "@/components/layout/page-header";
 import { DataTable } from "@/components/data/data-table";
+import { CaseComments } from "@/modules/service/components/case-comments";
+import { addCaseComment } from "@/modules/service/actions/comment";
+import { listCaseComments, listMentionable } from "@/modules/service/comment-queries";
 import { TimelineCard } from "@/components/data/timeline-card";
 import type { TimelineItem } from "@/components/data/timeline";
 import { personName } from "@/components/data/who-when";
@@ -104,6 +107,7 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
     include: { sentBy: { select: { firstName: true, lastName: true } }, reviewedBy: { select: { firstName: true, lastName: true } } },
   });
   const quoteOpen = quoteRequest?.status === "PENDING" || quoteRequest?.status === "SENT";
+  const [comments, mentionable] = await Promise.all([listCaseComments(c.id), listMentionable(c.branchId)]);
   const [catalog, engineers, vendors, labStock] = await Promise.all([
     canEditItems ? listCatalogForPicker() : Promise.resolve([]),
     showWorkTypeForm ? listLabEngineers() : Promise.resolve([]),
@@ -572,6 +576,8 @@ export default async function LabCaseDetailPage({ params }: { params: Promise<{ 
         </div>
 
         <div className="space-y-6">
+          <CaseComments currentUserId={user.id} comments={comments} staff={mentionable} action={addCaseComment.bind(null, c.id)} />
+
           <TimelineCard items={timelineItems} limit={8} />
 
           <Card title="Customer">

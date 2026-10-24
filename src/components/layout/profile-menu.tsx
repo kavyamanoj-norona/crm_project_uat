@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Bell, KeyRound, LogOut, MonitorSmartphone, Palette, User } from "lucide-react";
 import { useDismiss } from "@/hooks/use-dismiss";
+import { Avatar } from "@/components/ui/avatar";
 import type { LogoutAction, ShellUser } from "./types";
 
 const LINKS = [
@@ -12,15 +13,6 @@ const LINKS = [
   { href: "/settings/notifications", label: "Notifications", hint: "What you get alerted about", Icon: Bell, tone: "bg-emerald-100 text-emerald-600" },
   { href: "/settings/sessions", label: "Sessions", hint: "Signed-in devices", Icon: MonitorSmartphone, tone: "bg-rose-100 text-rose-600" },
 ];
-
-function initials(name: string) {
-  return name
-    .split(/\s+/)
-    .map((p) => p[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-}
 
 export function ProfileMenu({ user, logout }: { user: ShellUser; logout: LogoutAction }) {
   const { open, setOpen, ref } = useDismiss();
@@ -32,18 +24,16 @@ export function ProfileMenu({ user, logout }: { user: ShellUser; logout: LogoutA
         aria-label="Open profile menu"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className="relative flex size-9 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground"
+        className="relative flex size-9 rounded-full"
       >
-        {initials(user.name)}
+        <Avatar name={user.name} imageUrl={user.imageUrl} className="size-9 text-xs" />
         <span className="absolute right-0 bottom-0 size-2.5 rounded-full bg-success ring-2 ring-sidebar-rail" />
       </button>
 
       {open && (
         <div className="absolute bottom-0 left-full z-50 ml-3 w-72 rounded-xl border border-border bg-surface p-2 shadow-lg">
           <div className="flex items-center gap-3 border-b border-border p-3">
-            <span className="flex size-10 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
-              {initials(user.name)}
-            </span>
+            <Avatar name={user.name} imageUrl={user.imageUrl} className="size-10 text-sm" />
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold">{user.name}</p>
               <p className="truncate text-xs text-text-muted">{user.roleName}</p>

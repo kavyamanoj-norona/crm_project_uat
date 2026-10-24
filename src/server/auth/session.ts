@@ -44,6 +44,7 @@ export type CurrentUser = {
   username: string;
   name: string;
   email: string;
+  imageUrl: string | null;
   companyId: string;
   branchId: string | null;
   branch: { id: string; code: string; name: string } | null;
@@ -88,6 +89,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     username: user.username,
     name: [user.firstName, user.lastName].filter(Boolean).join(" "),
     email: user.email,
+    imageUrl: user.imageUrl,
     companyId: user.companyId,
     branchId: user.branchId,
     branch: user.branch,

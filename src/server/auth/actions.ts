@@ -1,5 +1,6 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/server/db";
@@ -96,6 +97,13 @@ export async function login(_prev: LoginState, formData: FormData): Promise<Logi
 export async function logout() {
   const user = await getCurrentUser();
   if (user) await logActivity({ action: "logout", userId: user.id, username: user.username });
+  // Stop push notifications reaching this browser for the person who just signed out (its token comes back on the next sign-in).
+  const jar = await cookies();
+  const pushToken = jar.get("lc_push")?.value;
+  if (pushToken) {
+    await db.deviceToken.updateMany({ where: { token: decodeURIComponent(pushToken) }, data: { isDelete: 1 } });
+    jar.delete("lc_push");
+  }
   await deleteSession();
   redirect("/login");
 }
